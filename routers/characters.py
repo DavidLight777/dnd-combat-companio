@@ -234,24 +234,26 @@ async def calc_damage_intake(body: DamageIntakeRequest, db: AsyncSession = Depen
     multiplier = _get_damage_multiplier(hit_diff)
     tier_label = _multiplier_label(hit_diff)
 
-    base_damage = body.damage_rolled * multiplier
-
-    # Apply effects
+    # Apply effects — percentages ADD to the tier reduction, not multiply
     effect_breakdown = []
-    percent_product = 1.0
+    tier_reduction_pct = (1.0 - multiplier) * 100.0  # e.g. multiplier 0.7 → 30%
+    total_percent_reduction = tier_reduction_pct
     flat_sum = 0.0
 
     active_effects = [e for e in c.effects if e.is_active]
     for e in active_effects:
         if e.effect_type == "percent_reduction":
-            factor = 1.0 - e.value / 100.0
-            percent_product *= factor
-            effect_breakdown.append({"name": e.name, "type": "percent_reduction", "value": e.value, "factor": factor})
+            total_percent_reduction += e.value
+            effect_breakdown.append({"name": e.name, "type": "percent_reduction", "value": e.value})
         elif e.effect_type == "flat_reduction":
             flat_sum += e.value
             effect_breakdown.append({"name": e.name, "type": "flat_reduction", "value": e.value})
 
-    after_percent = base_damage * percent_product
+    # Cap total percent reduction at 100%
+    total_percent_reduction = min(total_percent_reduction, 100.0)
+    combined_multiplier = 1.0 - total_percent_reduction / 100.0
+    base_damage = body.damage_rolled * combined_multiplier
+    after_percent = base_damage
     final_damage = max(0, math.floor(after_percent - flat_sum))
 
     return {
@@ -262,6 +264,8 @@ async def calc_damage_intake(body: DamageIntakeRequest, db: AsyncSession = Depen
         "tier_label": tier_label,
         "damage_rolled": body.damage_rolled,
         "base_damage": round(base_damage, 2),
+        "total_percent_reduction": round(total_percent_reduction, 1),
+        "combined_multiplier": round(combined_multiplier, 4),
         "effect_breakdown": effect_breakdown,
         "after_percent": round(after_percent, 2),
         "flat_sum": flat_sum,

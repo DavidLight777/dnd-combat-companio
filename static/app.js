@@ -1012,13 +1012,19 @@ function renderDamageIntake() {
       });
 
       let breakdown = `Diff: ${res.hit_diff} → <span class="tier-text">${res.tier_label}</span><br>`;
-      breakdown += `Base: ${damageRolled} × ${res.multiplier} = ${res.base_damage}`;
+      // Show combined reduction (tier + effects summed)
+      const tierPct = Math.round((1 - res.multiplier) * 100);
+      breakdown += `Tier reduction: ${tierPct}%`;
       if (res.effect_breakdown.length) {
         for (const e of res.effect_breakdown) {
-          if (e.type === 'percent_reduction') breakdown += `<br>→ ${e.name}: ×${(e.factor).toFixed(2)}`;
-          else breakdown += `<br>→ ${e.name}: -${e.value}`;
+          if (e.type === 'percent_reduction') breakdown += ` + ${e.name}: ${e.value}%`;
+          else breakdown += `<br>→ ${e.name}: -${e.value} flat`;
         }
-        breakdown += `<br>After effects: ${res.after_percent.toFixed(1)} - ${res.flat_sum} flat`;
+        breakdown += `<br>Total reduction: <span class="text-accent">${res.total_percent_reduction}%</span> → ×${res.combined_multiplier}`;
+        breakdown += `<br>${damageRolled} × ${res.combined_multiplier} = ${res.base_damage}`;
+        if (res.flat_sum > 0) breakdown += ` - ${res.flat_sum} flat = ${res.after_percent - res.flat_sum}`;
+      } else {
+        breakdown += `<br>${damageRolled} × ${res.combined_multiplier} = ${res.base_damage}`;
       }
       breakdown += `<br><strong>Final: <span class="damage-num">${res.final_damage} damage</span></strong>`;
 
