@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DnD Combat Companion</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300..600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- ── TOP BAR ────────────────────────────────────────── -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <div class="app-logo"><span class="icon-swords"></span> <span>Combat Companion</span></div>
+      <nav id="character-tabs" class="tabs"></nav>
+      <button id="btn-add-char" class="btn btn-accent btn-sm" title="New Character">+ New</button>
+    </div>
+    <div class="topbar-right">
+      <button id="btn-save-battle" class="btn btn-ghost btn-sm" title="Save battle state">💾 Save</button>
+      <button id="btn-load-battle" class="btn btn-ghost btn-sm" title="Load battle state">📂 Load</button>
+      <button id="btn-export" class="btn btn-ghost btn-sm" title="Export all data as JSON"><span class="icon-download"></span> Export</button>
+      <button id="btn-settings" class="btn btn-ghost btn-sm" title="Settings"><span class="icon-settings"></span></button>
+      <button id="btn-dice-roller-toggle" class="btn btn-ghost btn-sm" title="Dice Roller (D)"><span class="icon-dice"></span></button>
+      <button id="btn-undo" class="btn btn-ghost btn-sm" title="Undo (Ctrl+Z)"><span class="icon-undo"></span></button>
+    </div>
+  </header>
+
+  <!-- ── DICE ROLLER POPUP ──────────────────────────────── -->
+  <div id="dice-roller-popup" class="popup hidden">
+    <div class="popup-header"><h3>🎲 Dice Roller</h3><button class="btn-close" data-close="dice-roller-popup">✕</button></div>
+    <div class="dice-roller-body">
+      <div class="dice-row">
+        <label>Count</label><input type="number" id="dr-count" value="1" min="1" max="100">
+        <label>Die</label>
+        <select id="dr-die">
+          <option value="4">d4</option><option value="6">d6</option><option value="8">d8</option>
+          <option value="10">d10</option><option value="12">d12</option><option value="20" selected>d20</option><option value="100">d100</option>
+        </select>
+        <button id="dr-roll" class="btn btn-accent btn-sm">ROLL</button>
+      </div>
+      <div id="dr-result" class="dice-result"></div>
+      <div id="dr-history" class="dice-history"></div>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS MODAL ─────────────────────────────────── -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header"><h3>⚙️ Settings</h3><button class="btn-close" data-close="settings-modal">✕</button></div>
+      <div class="modal-body">
+        <label>Font Size</label>
+        <select id="setting-fontsize"><option value="normal">Normal</option><option value="large">Large</option></select>
+        <label>Theme</label>
+        <select id="setting-theme"><option value="dark">Dark</option><option value="darker">Darker</option><option value="light">Light</option></select>
+        <label>Sound Effects</label>
+        <select id="setting-sound"><option value="on">On</option><option value="off">Off</option></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CONFIRM DIALOG ─────────────────────────────────── -->
+  <div id="confirm-dialog" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <p id="confirm-msg"></p>
+      <div class="modal-actions">
+        <button id="confirm-yes" class="btn btn-danger btn-sm">Confirm</button>
+        <button id="confirm-no" class="btn btn-ghost btn-sm">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── WELCOME SCREEN ─────────────────────────────────── -->
+  <div id="welcome-screen" class="hidden">
+    <div class="welcome-box">
+      <h1>⚔️ Combat Companion</h1>
+      <p>Create your first character to begin</p>
+      <input type="text" id="welcome-name" placeholder="Character name..." maxlength="40">
+      <button id="welcome-create" class="btn btn-accent">Create Character</button>
+    </div>
+  </div>
+
+  <!-- ── MAIN LAYOUT ────────────────────────────────────── -->
+  <div id="main-layout" class="hidden">
+    <div class="main-area">
+      <!-- Row 1: Stats + Attack/Damage -->
+      <div class="panels-row">
+        <section class="panel" id="panel-stats">
+          <div class="panel-header"><h2><span class="icon-chart"></span> Character Stats</h2></div>
+          <div class="panel-body" id="stats-body"></div>
+        </section>
+        <section class="panel panel-wide" id="panel-attack">
+          <div class="panel-header"><h2><span class="icon-swords"></span> Attack & Damage Roll</h2></div>
+          <div class="panel-body" id="attack-body"></div>
+        </section>
+      </div>
+      <!-- Row 2: Incoming Damage + HP Recovery -->
+      <div class="panels-row">
+        <section class="panel" id="panel-damage-intake">
+          <div class="panel-header"><h2><span class="icon-shield"></span> Incoming Damage</h2></div>
+          <div class="panel-body" id="damage-intake-body"></div>
+        </section>
+        <section class="panel" id="panel-hp-recovery">
+          <div class="panel-header"><h2><span class="icon-heart"></span> HP Recovery</h2></div>
+          <div class="panel-body" id="hp-recovery-body"></div>
+        </section>
+      </div>
+      <!-- Row 3: Turn Counter -->
+      <section class="panel panel-full" id="panel-turns">
+        <div class="panel-header"><h2><span class="icon-clock"></span> Turn Counter</h2></div>
+        <div class="panel-body" id="turns-body"></div>
+      </section>
+      <!-- Row 4: Effects -->
+      <section class="panel panel-full" id="panel-effects">
+        <div class="panel-header"><h2><span class="icon-sparkles"></span> Effects & Passive Bonuses</h2></div>
+        <div class="panel-body" id="effects-body"></div>
+      </section>
+      <!-- Calc Log + Roll History -->
+      <section class="panel panel-full" id="panel-log">
+        <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+          <h2 style="flex:1"><span class="icon-scroll"></span> Log</h2>
+          <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
+          <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
+        </div>
+        <div class="panel-body" id="log-body">
+          <div id="calc-log" class="calc-log"></div>
+          <div id="roll-history-log" class="calc-log" style="display:none"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── ENEMY CALC SIDEBAR ───────────────────────────── -->
+    <aside class="sidebar" id="sidebar-enemy">
+      <div class="panel-header"><h2><span class="icon-target"></span> Enemy Damage Calc</h2></div>
+      <div class="panel-body" id="enemy-calc-body"></div>
+    </aside>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
