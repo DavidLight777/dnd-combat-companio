@@ -128,6 +128,27 @@
         </div>
       </div>
     </div>
+
+    <!-- ── AI SIDEBAR ─────────────────────────────────────── -->
+    <div class="gm-ai-sidebar" id="ai-sidebar">
+      <div class="gm-sidebar-header" style="cursor:pointer" id="ai-sidebar-toggle">
+        <h2>🤖 ARIA AI</h2>
+        <button class="btn btn-ghost btn-xs" id="btn-ai-collapse">◀</button>
+      </div>
+      <div id="ai-sidebar-content">
+        <div class="ai-quick-actions" style="padding:6px 8px;display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+          <button class="btn btn-ghost btn-xs" data-ai-quick="narrate">🎭 Narrate</button>
+          <button class="btn btn-ghost btn-xs" data-ai-quick="npc">⚔️ NPC Action</button>
+          <button class="btn btn-ghost btn-xs" data-ai-quick="item">🗡️ Gen Item</button>
+          <button class="btn btn-ghost btn-xs" data-ai-quick="summary">📜 Summary</button>
+        </div>
+        <div id="ai-messages" style="flex:1;overflow-y:auto;padding:8px;font-size:0.8rem"></div>
+        <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:4px">
+          <input type="text" id="ai-input" placeholder="Ask ARIA..." style="flex:1;font-size:0.8rem">
+          <button class="btn btn-primary btn-sm" id="btn-ai-send">Send</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/js/websocket-client.js"></script>

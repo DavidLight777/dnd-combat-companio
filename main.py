@@ -19,6 +19,7 @@ from app.routers.websocket import router as websocket_router
 from app.routers.initiative import router as initiative_router
 from app.routers.map import router as map_router
 from app.routers.inventory import router as inventory_router
+from app.routers.ai import router as ai_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -54,6 +55,7 @@ app.include_router(websocket_router)
 app.include_router(initiative_router)
 app.include_router(map_router)
 app.include_router(inventory_router)
+app.include_router(ai_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

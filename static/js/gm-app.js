@@ -603,8 +603,129 @@ ws.on('*', (event, data) => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// AI CHAT
+// ══════════════════════════════════════════════════════════════
+let aiSending = false;
+
+$('#ai-sidebar-toggle').addEventListener('click', () => {
+  $('#ai-sidebar').classList.toggle('collapsed');
+});
+
+async function loadAIHistory() {
+  try {
+    const data = await api.get(`/api/ai/history/${SESSION_CODE}`);
+    const container = $('#ai-messages');
+    container.innerHTML = '';
+    for (const msg of data.messages) {
+      appendAIMessage(msg.role, msg.content);
+    }
+    container.scrollTop = container.scrollHeight;
+  } catch { /* silent */ }
+}
+
+function appendAIMessage(role, content) {
+  const container = $('#ai-messages');
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+
+  if (role === 'assistant') {
+    // Try to detect JSON item in the response
+    const jsonMatch = content.match(/\{[^{}]*"name"\s*:\s*"[^"]+"/s);
+    let itemJson = null;
+    if (jsonMatch) {
+      try {
+        // Find the full JSON object
+        const start = content.indexOf(jsonMatch[0]);
+        let depth = 0, end = start;
+        for (let i = start; i < content.length; i++) {
+          if (content[i] === '{') depth++;
+          if (content[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+        }
+        itemJson = JSON.parse(content.substring(start, end));
+      } catch { itemJson = null; }
+    }
+
+    // Simple markdown rendering
+    let html = content.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/\n/g, '<br>');
+    div.innerHTML = html;
+
+    if (itemJson && itemJson.name) {
+      const preview = document.createElement('div');
+      preview.className = 'ai-item-preview';
+      preview.innerHTML = `
+        <strong>${itemJson.name}</strong> (${itemJson.rarity || 'common'} ${itemJson.category || 'misc'})<br>
+        ${itemJson.description || ''}<br>
+        Price: ${itemJson.base_price || 0}g${itemJson.effect_type ? ` · ${itemJson.effect_type}: ${itemJson.effect_value}` : ''}
+        <br><button class="btn btn-primary btn-xs ai-add-item-btn">+ Add to Database</button>
+      `;
+      preview.querySelector('.ai-add-item-btn').addEventListener('click', async () => {
+        try {
+          await api.post('/api/items', itemJson);
+          showToast(`Item "${itemJson.name}" added to database!`);
+          preview.querySelector('.ai-add-item-btn').textContent = '✓ Added';
+          preview.querySelector('.ai-add-item-btn').disabled = true;
+        } catch (e) { showToast('Failed to add item: ' + e.message); }
+      });
+      div.appendChild(preview);
+    }
+  } else {
+    div.textContent = content;
+  }
+
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendAIMessage(msg) {
+  if (aiSending || !msg.trim()) return;
+  aiSending = true;
+  appendAIMessage('user', msg);
+  $('#ai-input').value = '';
+  $('#btn-ai-send').textContent = '...';
+  $('#btn-ai-send').disabled = true;
+
+  try {
+    const res = await api.post('/api/ai/chat', { session_code: SESSION_CODE, message: msg });
+    if (res.error) {
+      appendAIMessage('assistant', `⚠️ ${res.error}`);
+    } else {
+      appendAIMessage('assistant', res.reply);
+    }
+  } catch (e) {
+    appendAIMessage('assistant', `⚠️ Error: ${e.message}`);
+  }
+  aiSending = false;
+  $('#btn-ai-send').textContent = 'Send';
+  $('#btn-ai-send').disabled = false;
+}
+
+$('#btn-ai-send').addEventListener('click', () => sendAIMessage($('#ai-input').value));
+$('#ai-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAIMessage($('#ai-input').value); }
+});
+
+// Quick action buttons
+$$('[data-ai-quick]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const action = btn.dataset.aiQuick;
+    const prompts = {
+      narrate: 'Describe the current combat situation dramatically. Set the scene for the players.',
+      npc: 'Based on the current game state, what should the NPCs do on their turn? Consider their health, position, and tactical options.',
+      item: 'Generate a creative fantasy item appropriate for the current session. Respond with a JSON object in the item creation format.',
+      summary: 'Summarize everything that has happened in this session so far. Include key events, damage dealt, items used, and notable moments.',
+    };
+    if (prompts[action]) sendAIMessage(prompts[action]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 refreshChars();
 loadInitiativeOrder();
+loadAIHistory();
 ws.connect();

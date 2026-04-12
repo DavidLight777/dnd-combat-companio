@@ -246,3 +246,16 @@ class ShopItem(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     price_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stock: Mapped[int] = mapped_column(Integer, default=-1)  # -1 = unlimited
+
+
+# ══════════════════════════════════════════════════════════════
+# AI CONVERSATION
+# ══════════════════════════════════════════════════════════════
+class AIConversation(Base):
+    __tablename__ = "ai_conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # user / assistant
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
