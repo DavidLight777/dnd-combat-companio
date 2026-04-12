@@ -76,6 +76,11 @@ async def player_page():
     return FileResponse("static/player.html")
 
 
+@app.get("/settings")
+async def settings_page():
+    return FileResponse("static/settings.html")
+
+
 @app.get("/api/server-info")
 async def server_info():
     """Return LAN IP for other players to connect."""
@@ -88,6 +93,41 @@ async def server_info():
         local_ip = "127.0.0.1"
     port = config.get("server_port", 8000)
     return {"local_ip": local_ip, "port": port, "url": f"http://{local_ip}:{port}"}
+
+
+PROMPT_PATH = os.path.join(os.path.dirname(__file__), "ai_system_prompt.txt")
+
+
+@app.get("/api/settings")
+async def get_settings():
+    prompt = ""
+    if os.path.exists(PROMPT_PATH):
+        with open(PROMPT_PATH) as f:
+            prompt = f.read()
+    return {
+        "openrouter_api_key": config.get("openrouter_api_key", ""),
+        "ai_model": config.get("ai_model", "google/gemma-3-27b-it:free"),
+        "system_prompt": prompt,
+        "max_players": config.get("max_players", 10),
+        "default_dice": config.get("default_dice", "d20"),
+        "ai_npc_control": config.get("ai_npc_control", False),
+    }
+
+
+@app.put("/api/settings")
+async def save_settings(body: dict):
+    config["openrouter_api_key"] = body.get("openrouter_api_key", "")
+    config["ai_model"] = body.get("ai_model", "google/gemma-3-27b-it:free")
+    config["max_players"] = body.get("max_players", 10)
+    config["default_dice"] = body.get("default_dice", "d20")
+    config["ai_npc_control"] = body.get("ai_npc_control", False)
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
+    # Save system prompt
+    prompt = body.get("system_prompt", "")
+    with open(PROMPT_PATH, "w") as f:
+        f.write(prompt)
+    return {"ok": True}
 
 
 def open_browser():

@@ -1,12 +1,14 @@
+import json
 import random
 import secrets
 import string
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, Character
+from app.models import Session, Character, CombatLog, InventoryItem, Item
 from app.schemas import SessionCreate, SessionJoin, SessionCreated, SessionJoined, SessionOut
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -83,6 +85,22 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
     )
 
 
+# ── Session History (must be before /{code} to avoid route conflict) ──
+@router.get("/history")
+async def session_history(db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(Session).order_by(Session.created_at.desc()))
+    sessions = result.scalars().all()
+    return [
+        {
+            "id": s.id, "code": s.code, "name": s.name,
+            "status": s.status, "turn_number": s.turn_number,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "player_count": len([c for c in s.characters if not c.is_npc]),
+        }
+        for s in sessions
+    ]
+
+
 # ── Get session info ─────────────────────────────────────────
 @router.get("/{code}", response_model=SessionOut)
 async def get_session_info(code: str, db: AsyncSession = Depends(get_session)):
@@ -150,3 +168,63 @@ async def update_session_status(code: str, body: dict, db: AsyncSession = Depend
     session.status = new_status
     await db.commit()
     return {"status": session.status}
+
+
+# ── Export session as JSON ───────────────────────────────────
+@router.get("/{code}/export")
+async def export_session(code: str, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(Session).where(Session.code == code))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    chars_result = await db.execute(select(Character).where(Character.session_id == session.id))
+    chars = chars_result.scalars().all()
+
+    characters_data = []
+    for c in chars:
+        inv_result = await db.execute(select(InventoryItem).where(InventoryItem.character_id == c.id))
+        inv_entries = inv_result.scalars().all()
+        items = []
+        for ie in inv_entries:
+            item = await db.get(Item, ie.item_id)
+            if item:
+                items.append({
+                    "name": item.name, "category": item.category, "rarity": item.rarity,
+                    "quantity": ie.quantity, "is_equipped": ie.is_equipped,
+                })
+
+        characters_data.append({
+            "name": c.name, "is_npc": c.is_npc,
+            "current_hp": c.current_hp, "max_hp": c.max_hp,
+            "armor_class": c.armor_class, "gold": c.gold,
+            "strength": c.strength, "dexterity": c.dexterity, "constitution": c.constitution,
+            "intelligence": c.intelligence, "wisdom": c.wisdom, "charisma": c.charisma,
+            "is_alive": c.is_alive, "turn_count": c.turn_count,
+            "status_effects": json.loads(c.status_effects) if c.status_effects else [],
+            "inventory": items,
+        })
+
+    log_result = await db.execute(
+        select(CombatLog).where(CombatLog.session_id == session.id).order_by(CombatLog.timestamp)
+    )
+    logs = log_result.scalars().all()
+    log_data = [
+        {
+            "event_type": l.event_type, "description": l.description,
+            "timestamp": l.timestamp.isoformat() if l.timestamp else None,
+        }
+        for l in logs
+    ]
+
+    export = {
+        "session_code": session.code, "session_name": session.name,
+        "status": session.status, "turn_number": session.turn_number,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "characters": characters_data,
+        "combat_log": log_data,
+    }
+
+    return JSONResponse(content=export, headers={
+        "Content-Disposition": f'attachment; filename="session_{session.code}.json"'
+    })

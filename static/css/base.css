@@ -182,3 +182,46 @@ textarea { resize: vertical; width: 100%; }
 .mt-md { margin-top: 16px; }
 .mb-md { margin-bottom: 16px; }
 .hidden { display: none !important; }
+
+/* ── Visual Polish — Animations ──────────────────────────────── */
+.hp-bar { transition: width 0.6s ease, background 0.4s ease; }
+
+@keyframes damageFlash {
+  0% { box-shadow: inset 0 0 0 2px var(--accent-red); }
+  50% { box-shadow: inset 0 0 20px 2px rgba(184,64,64,0.4); }
+  100% { box-shadow: none; }
+}
+.damage-flash { animation: damageFlash 0.5s ease; }
+
+@keyframes healFlash {
+  0% { box-shadow: inset 0 0 0 2px var(--accent-green); }
+  50% { box-shadow: inset 0 0 20px 2px rgba(74,156,93,0.4); }
+  100% { box-shadow: none; }
+}
+.heal-flash { animation: healFlash 0.5s ease; }
+
+@keyframes dicePopIn {
+  0% { transform: scale(0.5) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.dice-pop { animation: dicePopIn 0.35s ease-out; }
+
+@keyframes skeletonShimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-surface-2) 25%, var(--bg-surface-3) 50%, var(--bg-surface-2) 75%);
+  background-size: 400px 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: var(--r-sm);
+}
+
+/* ── Dead indicator ─────────────────────────────────────────── */
+.char-dead { opacity: 0.5; filter: grayscale(0.5); }
+.skull-icon::before { content: "💀 "; }
+
+/* ── Settings link in lobby ──────────────────────────────────── */
+.settings-link { color: var(--text-muted); text-decoration: none; font-size: 0.8rem; }
+.settings-link:hover { color: var(--accent); }

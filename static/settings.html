@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Combat Companion</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .settings-container { max-width: 640px; margin: 40px auto; padding: 0 20px; }
+    .settings-container h1 { font-size: 1.4rem; margin-bottom: 24px; color: var(--accent); }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 8px 10px; font-size: 0.88rem;
+      background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+    }
+    .field textarea { min-height: 200px; font-family: monospace; font-size: 0.78rem; resize: vertical; }
+    .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--border-active); outline: none; }
+    .actions { display: flex; gap: 8px; margin-top: 24px; }
+    .saved-msg { color: var(--accent-green); font-size: 0.82rem; display: none; margin-left: 8px; }
+    .back-link { display: inline-block; margin-bottom: 16px; color: var(--accent); text-decoration: none; font-size: 0.85rem; }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="settings-container">
+    <a class="back-link" href="/">← Back to Lobby</a>
+    <h1>⚙️ Settings</h1>
+
+    <div class="field">
+      <label>OpenRouter API Key</label>
+      <input type="password" id="api-key" placeholder="sk-or-...">
+    </div>
+    <div class="field">
+      <label>AI Model</label>
+      <select id="ai-model">
+        <option value="google/gemma-3-27b-it:free">Gemma 3 27B (free)</option>
+        <option value="google/gemma-4-27b-it:free">Gemma 4 27B (free)</option>
+        <option value="meta-llama/llama-4-maverick:free">Llama 4 Maverick (free)</option>
+        <option value="deepseek/deepseek-chat-v3-0324:free">Deepseek V3 (free)</option>
+        <option value="microsoft/mai-ds-r1:free">MAI DS R1 (free)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>AI System Prompt</label>
+      <textarea id="system-prompt"></textarea>
+    </div>
+    <div class="field">
+      <label>Max Players per Session</label>
+      <input type="number" id="max-players" value="10" min="2" max="20">
+    </div>
+    <div class="field">
+      <label>Default Dice Type</label>
+      <select id="default-dice">
+        <option value="d20">d20</option>
+        <option value="d12">d12</option>
+        <option value="d10">d10</option>
+        <option value="d8">d8</option>
+        <option value="d6">d6</option>
+      </select>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="ai-npc-control"> AI NPC Control (experimental)</label>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="btn-save">Save Settings</button>
+      <span class="saved-msg" id="saved-msg">✓ Saved</span>
+    </div>
+  </div>
+
+  <script>
+    async function loadSettings() {
+      try {
+        const r = await fetch('/api/settings');
+        const d = await r.json();
+        document.getElementById('api-key').value = d.openrouter_api_key || '';
+        document.getElementById('ai-model').value = d.ai_model || 'google/gemma-3-27b-it:free';
+        document.getElementById('system-prompt').value = d.system_prompt || '';
+        document.getElementById('max-players').value = d.max_players || 10;
+        document.getElementById('default-dice').value = d.default_dice || 'd20';
+        document.getElementById('ai-npc-control').checked = d.ai_npc_control || false;
+      } catch {}
+    }
+    document.getElementById('btn-save').addEventListener('click', async () => {
+      const body = {
+        openrouter_api_key: document.getElementById('api-key').value,
+        ai_model: document.getElementById('ai-model').value,
+        system_prompt: document.getElementById('system-prompt').value,
+        max_players: parseInt(document.getElementById('max-players').value),
+        default_dice: document.getElementById('default-dice').value,
+        ai_npc_control: document.getElementById('ai-npc-control').checked,
+      };
+      await fetch('/api/settings', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const msg = document.getElementById('saved-msg');
+      msg.style.display = 'inline';
+      setTimeout(() => msg.style.display = 'none', 2000);
+    });
+    loadSettings();
+  </script>
+</body>
+</html>
