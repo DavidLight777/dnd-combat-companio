@@ -16,6 +16,7 @@ from app.routers.sessions import router as sessions_router
 from app.routers.characters import router as characters_router
 from app.routers.combat import router as combat_router
 from app.routers.websocket import router as websocket_router
+from app.routers.initiative import router as initiative_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -48,6 +49,7 @@ app.include_router(sessions_router)
 app.include_router(characters_router)
 app.include_router(combat_router)
 app.include_router(websocket_router)
+app.include_router(initiative_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
