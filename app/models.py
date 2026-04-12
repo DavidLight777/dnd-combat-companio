@@ -17,6 +17,7 @@ class Session(Base):
     status: Mapped[str] = mapped_column(String(20), default="waiting")  # waiting, active, paused, ended
     current_turn_character_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("characters.id", use_alter=True), nullable=True)
     turn_number: Mapped[int] = mapped_column(Integer, default=0)
+    shop_open: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     characters: Mapped[list["Character"]] = relationship(
@@ -67,6 +68,7 @@ class Character(Base):
     status_effects: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
     notes: Mapped[str] = mapped_column(Text, default="")
     is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
+    gold: Mapped[int] = mapped_column(Integer, default=0)
 
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -204,3 +206,43 @@ class MapData(Base):
     revealed_cells: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [[col,row],...]
     image_width: Mapped[int] = mapped_column(Integer, default=0)
     image_height: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ══════════════════════════════════════════════════════════════
+# ITEMS & INVENTORY
+# ══════════════════════════════════════════════════════════════
+class Item(Base):
+    __tablename__ = "items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(20), default="misc")  # weapon/armor/potion/misc/quest
+    rarity: Mapped[str] = mapped_column(String(20), default="common")  # common/uncommon/rare/epic/legendary
+    base_price: Mapped[int] = mapped_column(Integer, default=0)
+    weight: Mapped[float] = mapped_column(Float, default=0.0)
+    effect_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # percent_reduction/flat_reduction/stat_bonus/hp_bonus
+    effect_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    equippable: Mapped[bool] = mapped_column(Boolean, default=False)
+    consumable: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class InventoryItem(Base):
+    __tablename__ = "inventory_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    is_equipped: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ShopItem(Base):
+    __tablename__ = "shop_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
+    price_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stock: Mapped[int] = mapped_column(Integer, default=-1)  # -1 = unlimited
