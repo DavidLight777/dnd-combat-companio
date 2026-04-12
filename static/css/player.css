@@ -223,3 +223,53 @@
 }
 .confirm-box p { margin-bottom: 16px; }
 .confirm-box .btns { display: flex; gap: 8px; justify-content: center; }
+
+/* ── Inventory Grid ──────────────────────────────────────────── */
+.inventory-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+.inv-card {
+  background: var(--bg-surface-3); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px; cursor: pointer;
+  transition: all var(--t-fast); position: relative;
+}
+.inv-card:hover { border-color: var(--border-active); }
+.inv-card.equipped { border-color: var(--accent-green); box-shadow: 0 0 0 1px var(--accent-green); }
+.inv-card .inv-icon { font-size: 1.3rem; margin-right: 6px; }
+.inv-card .inv-name { font-weight: 600; font-size: 0.82rem; }
+.inv-card .inv-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; }
+.inv-card .inv-qty { position: absolute; top: 6px; right: 8px; font-size: 0.7rem; color: var(--text-muted); }
+.inv-card .inv-actions { display: none; margin-top: 6px; gap: 4px; }
+.inv-card.expanded .inv-actions { display: flex; flex-wrap: wrap; }
+.inv-card .inv-desc { display: none; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.inv-card.expanded .inv-desc { display: block; }
+
+.rarity-common { color: #aaa; }
+.rarity-uncommon { color: #4ec04e; }
+.rarity-rare { color: #4a8fd4; }
+.rarity-epic { color: #a94ec0; }
+.rarity-legendary { color: #d4a44a; }
+
+/* ── Shop Modal ──────────────────────────────────────────────── */
+.shop-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+}
+.shop-panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); width: 90%; max-width: 700px; max-height: 80vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.shop-header {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border); background: var(--bg-surface-2);
+}
+.shop-header h2 { flex: 1; font-size: 1rem; }
+.shop-body { flex: 1; overflow-y: auto; padding: 12px; }
+.shop-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.shop-item .si-name { flex: 1; font-weight: 600; font-size: 0.85rem; }
+.shop-item .si-price { font-size: 0.82rem; color: var(--accent); font-weight: 700; }

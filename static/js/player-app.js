@@ -16,6 +16,7 @@ $('#session-code').textContent = SESSION_CODE;
 
 // ── State ────────────────────────────────────────────────────
 let char = null;          // Current character data
+let charData = null;      // Alias for shop access
 let calcLog = [];         // Calc log entries
 let rollHistory = [];     // Roll history entries
 let _atkD20Result = null; // Last d20 roll
@@ -72,8 +73,10 @@ function confirmAction(msg) {
 // ══════════════════════════════════════════════════════════════
 async function loadChar() {
   char = await api.get(`/api/characters/${CHAR_ID}`);
+  charData = char;
   $('#char-name').textContent = char.name;
   document.title = `${char.name} — Combat Companion`;
+  if ($('#gold-display')) $('#gold-display').textContent = char.gold || 0;
   renderAll();
 }
 function renderAll() {
@@ -637,6 +640,131 @@ document.addEventListener('click', e => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// INVENTORY
+// ══════════════════════════════════════════════════════════════
+const CATEGORY_ICONS = { weapon: '⚔️', armor: '🛡️', potion: '🧪', misc: '📦', quest: '📜' };
+
+async function loadInventory() {
+  if (!CHAR_ID) return;
+  try {
+    const data = await api.get(`/api/inventory/${CHAR_ID}`);
+    $('#weight-display').textContent = data.total_weight;
+    renderInventoryGrid(data.items);
+  } catch { /* silent */ }
+}
+
+function renderInventoryGrid(items) {
+  const grid = $('#inventory-grid');
+  if (!items || !items.length) {
+    grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No items yet.</span>';
+    return;
+  }
+  grid.innerHTML = items.map(i => {
+    const icon = CATEGORY_ICONS[i.category] || '📦';
+    const eq = i.is_equipped ? ' equipped' : '';
+    return `<div class="inv-card${eq}" data-inv-id="${i.inventory_id}" data-item-id="${i.id}">
+      <span class="inv-qty">x${i.quantity}</span>
+      <div><span class="inv-icon">${icon}</span><span class="inv-name rarity-${i.rarity}">${i.name}</span></div>
+      <div class="inv-meta">${i.rarity} ${i.category} · ${i.weight}lb${i.effect_type ? ' · ' + i.effect_type.replace('_',' ') + ': ' + i.effect_value : ''}</div>
+      <div class="inv-desc">${i.description}</div>
+      <div class="inv-actions">
+        ${i.equippable ? `<button class="btn btn-ghost btn-xs" data-inv-equip="${i.inventory_id}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
+        ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use="${i.inventory_id}">Use</button>` : ''}
+        <button class="btn btn-ghost btn-xs" data-inv-drop="${i.inventory_id}" style="color:var(--accent-red)">Drop</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Toggle expand
+  grid.querySelectorAll('.inv-card').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      card.classList.toggle('expanded');
+    });
+  });
+
+  // Equip
+  grid.querySelectorAll('[data-inv-equip]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api.patch(`/api/inventory/${btn.dataset.invEquip}/equip`, {});
+      loadInventory();
+    });
+  });
+
+  // Use consumable
+  grid.querySelectorAll('[data-inv-use]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const res = await api.post(`/api/inventory/${btn.dataset.invUse}/use`, {});
+      if (res.result) addCalcLog(res.result);
+      await loadChar();
+      loadInventory();
+    });
+  });
+
+  // Drop
+  grid.querySelectorAll('[data-inv-drop]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api.del(`/api/inventory/${btn.dataset.invDrop}`);
+      loadInventory();
+    });
+  });
+}
+
+// ── Shop ─────────────────────────────────────────────────────
+$('#btn-open-shop').addEventListener('click', async () => {
+  try {
+    const data = await api.get(`/api/shop/${SESSION_CODE}`);
+    if (!data.items || !data.items.length) {
+      showToast('Shop is empty or closed');
+      return;
+    }
+    showShopModal(data.items);
+  } catch { showToast('Shop not available'); }
+});
+
+function showShopModal(items) {
+  const overlay = document.createElement('div');
+  overlay.className = 'shop-overlay';
+  overlay.innerHTML = `
+    <div class="shop-panel">
+      <div class="shop-header">
+        <h2>🛒 Shop</h2>
+        <span style="font-size:0.78rem;color:var(--text-muted)">Your Gold: <strong style="color:var(--accent)">${charData.gold || 0}</strong></span>
+        <button class="btn btn-ghost btn-sm shop-close">✕</button>
+      </div>
+      <div class="shop-body">
+        ${items.map(i => {
+          const icon = CATEGORY_ICONS[i.category] || '📦';
+          return `<div class="shop-item">
+            <span>${icon}</span>
+            <span class="si-name rarity-${i.rarity}">${i.name}</span>
+            <span style="font-size:0.7rem;color:var(--text-muted)">${i.rarity}</span>
+            <span class="si-price">${i.price}g</span>
+            ${i.stock === 0 ? '<span style="color:var(--accent-red);font-size:0.7rem">OUT</span>' : `<button class="btn btn-primary btn-xs" data-buy-shop="${i.shop_item_id}">Buy</button>`}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('.shop-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelectorAll('[data-buy-shop]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        const res = await api.post(`/api/shop/${SESSION_CODE}/buy`, { shop_item_id: parseInt(btn.dataset.buyShop), character_id: CHAR_ID });
+        showToast(`Bought ${res.item_name}! Gold: ${res.gold_remaining}`);
+        overlay.remove();
+        await loadChar();
+        loadInventory();
+      } catch (e) { showToast('Purchase failed: ' + e.message); }
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
 // MAP MODAL
 // ══════════════════════════════════════════════════════════════
 let playerMapCanvas = null;
@@ -693,4 +821,5 @@ ws.on('session.status_change', d => {
 // INIT
 // ══════════════════════════════════════════════════════════════
 loadChar();
+loadInventory();
 ws.connect();
