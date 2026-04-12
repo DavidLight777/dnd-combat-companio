@@ -1,0 +1,9 @@
+{
+  "openrouter_api_key": "",
+  "ai_model": "google/gemma-4-26b-a4b-it:free",
+  "ai_npc_control": false,
+  "max_players": 10,
+  "default_dice_type": 20,
+  "server_host": "0.0.0.0",
+  "server_port": 8000
+}

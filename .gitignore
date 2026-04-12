@@ -24,3 +24,6 @@ Thumbs.db
 
 # Windsurf
 .windsurf/
+
+# Config with secrets
+# config.json  # uncomment if you add secrets

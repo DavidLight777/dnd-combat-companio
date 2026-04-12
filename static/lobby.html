@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Combat Companion — Lobby</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .lobby-container {
+      max-width: 480px; margin: 60px auto; padding: 0 20px;
+    }
+    .logo { text-align: center; margin-bottom: 40px; }
+    .logo h1 { font-size: 2rem; color: var(--accent); margin-bottom: 4px; }
+    .logo p { color: var(--text-muted); font-size: 0.9rem; }
+    .section { margin-bottom: 32px; }
+    .section h2 { margin-bottom: 12px; font-size: 0.95rem; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+    .form-group input { width: 100%; }
+    .divider {
+      text-align: center; color: var(--text-faint); font-size: 0.8rem;
+      margin: 28px 0; position: relative;
+    }
+    .divider::before, .divider::after {
+      content: ''; position: absolute; top: 50%; width: 40%; height: 1px;
+      background: var(--border);
+    }
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+    .lan-info {
+      text-align: center; margin-top: 24px; padding: 12px;
+      background: var(--bg-surface-2); border-radius: var(--r-md);
+      font-size: 0.8rem; color: var(--text-muted);
+    }
+    .lan-info .url { color: var(--accent); font-weight: 600; font-size: 0.95rem; }
+    .error-msg { color: var(--accent-red); font-size: 0.8rem; margin-top: 6px; }
+    .btn { width: 100%; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div class="lobby-container">
+    <div class="logo">
+      <h1>⚔️ Combat Companion</h1>
+      <p>TTRPG Session Management Platform</p>
+    </div>
+
+    <!-- CREATE SESSION -->
+    <div class="section card">
+      <h2>Create New Session</h2>
+      <div class="form-group">
+        <label>Session Name</label>
+        <input type="text" id="session-name" value="New Session" placeholder="Enter session name...">
+      </div>
+      <button class="btn btn-primary" id="btn-create">Create Session (GM)</button>
+      <div class="error-msg hidden" id="create-error"></div>
+    </div>
+
+    <div class="divider">or</div>
+
+    <!-- JOIN SESSION -->
+    <div class="section card">
+      <h2>Join Existing Session</h2>
+      <div class="form-group">
+        <label>Session Code</label>
+        <input type="text" id="join-code" placeholder="WOLF-1234" style="text-transform:uppercase">
+      </div>
+      <div class="form-group">
+        <label>Your Character Name</label>
+        <input type="text" id="join-name" placeholder="Enter your name...">
+      </div>
+      <button class="btn btn-secondary" id="btn-join">Join as Player</button>
+      <div class="error-msg hidden" id="join-error"></div>
+    </div>
+
+    <div class="lan-info" id="lan-info">
+      Other players connect at: <span class="url" id="lan-url">loading...</span>
+    </div>
+  </div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+
+    // Load LAN info
+    fetch('/api/server-info').then(r => r.json()).then(info => {
+      $('#lan-url').textContent = info.url;
+    }).catch(() => {
+      $('#lan-url').textContent = window.location.origin;
+    });
+
+    // Create session
+    $('#btn-create').addEventListener('click', async () => {
+      const name = $('#session-name').value.trim() || 'New Session';
+      $('#create-error').classList.add('hidden');
+      $('#btn-create').disabled = true;
+
+      try {
+        const res = await fetch('/api/sessions/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
+        const data = await res.json();
+
+        sessionStorage.setItem('gm_token', data.gm_token);
+        sessionStorage.setItem('session_code', data.session_code);
+        sessionStorage.setItem('session_id', data.session_id);
+        window.location.href = `/gm?code=${data.session_code}`;
+      } catch (e) {
+        $('#create-error').textContent = e.message;
+        $('#create-error').classList.remove('hidden');
+      } finally {
+        $('#btn-create').disabled = false;
+      }
+    });
+
+    // Join session
+    $('#btn-join').addEventListener('click', async () => {
+      const code = $('#join-code').value.trim().toUpperCase();
+      const name = $('#join-name').value.trim();
+      $('#join-error').classList.add('hidden');
+
+      if (!code || !name) {
+        $('#join-error').textContent = 'Code and name are required';
+        $('#join-error').classList.remove('hidden');
+        return;
+      }
+
+      $('#btn-join').disabled = true;
+      try {
+        const res = await fetch('/api/sessions/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_code: code, player_name: name }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
+        const data = await res.json();
+
+        sessionStorage.setItem('player_token', data.player_token);
+        sessionStorage.setItem('character_id', data.character_id);
+        sessionStorage.setItem('session_code', data.session_code);
+        window.location.href = `/player?code=${data.session_code}`;
+      } catch (e) {
+        $('#join-error').textContent = e.message;
+        $('#join-error').classList.remove('hidden');
+      } finally {
+        $('#btn-join').disabled = false;
+      }
+    });
+
+    // Enter key on inputs
+    $('#join-code').addEventListener('keydown', e => { if (e.key === 'Enter') $('#join-name').focus(); });
+    $('#join-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-join').click(); });
+    $('#session-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-create').click(); });
+  </script>
+</body>
+</html>

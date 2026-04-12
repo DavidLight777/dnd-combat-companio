@@ -1,0 +1,184 @@
+/* ══════════════════════════════════════════════════════════════
+   COMBAT COMPANION — Base Theme
+   ══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300..600&display=swap');
+
+:root {
+  --bg-base:        #0a0908;
+  --bg-surface:     #131110;
+  --bg-surface-2:   #1a1815;
+  --bg-surface-3:   #221f1b;
+  --bg-input:       #1e1b17;
+
+  --border:         rgba(220, 180, 100, 0.10);
+  --border-active:  rgba(220, 180, 100, 0.30);
+
+  --text-primary:   #e2d5c0;
+  --text-muted:     #8a7d6e;
+  --text-faint:     #4a4338;
+
+  --accent:         #c08a2a;
+  --accent-hover:   #d4a040;
+  --accent-glow:    rgba(192, 138, 42, 0.20);
+  --accent-red:     #b84040;
+  --accent-green:   #4a9c5d;
+  --accent-blue:    #4a7fc0;
+  --accent-purple:  #8a4abf;
+
+  --hp-high:   #4a9c5d;
+  --hp-mid:    #c09a2a;
+  --hp-low:    #b84040;
+
+  --rarity-common:    #9ca3af;
+  --rarity-uncommon:  #4a9c5d;
+  --rarity-rare:      #4a7fc0;
+  --rarity-epic:      #8a4abf;
+  --rarity-legendary: #c08a2a;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --t-fast: 120ms ease;
+  --t-normal: 200ms ease;
+
+  --font-display: 'Cinzel', serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+h1 { font-size: 1.8rem; letter-spacing: 0.04em; }
+h2 { font-size: 1rem; letter-spacing: 0.03em; text-transform: uppercase; }
+h3 { font-size: 0.9rem; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  border: none; border-radius: var(--r-md); cursor: pointer;
+  padding: 10px 20px; transition: all var(--t-normal);
+}
+.btn-primary {
+  background: var(--accent); color: #0a0908;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary {
+  background: var(--bg-surface-3); color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { border-color: var(--border-active); }
+.btn-danger { background: var(--accent-red); color: white; }
+.btn-danger:hover { opacity: 0.85; }
+.btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+.btn-ghost {
+  background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+}
+.btn-ghost:hover { color: var(--text-primary); border-color: var(--border-active); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Inputs ────────────────────────────────────────────────── */
+input, select, textarea {
+  font-family: var(--font-body); font-size: 0.85rem;
+  background: var(--bg-input); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 8px 12px; outline: none;
+  transition: border-color var(--t-fast);
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+input[type="number"] { width: 70px; font-variant-numeric: tabular-nums; }
+textarea { resize: vertical; width: 100%; }
+
+/* ── Cards / Panels ────────────────────────────────────────── */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px;
+}
+
+/* ── Status dot ────────────────────────────────────────────── */
+.status-dot {
+  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+}
+.status-dot.connected { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+.status-dot.disconnected { background: var(--accent-red); }
+
+/* ── HP Bar ────────────────────────────────────────────────── */
+.hp-bar-container {
+  width: 100%; height: 8px; background: var(--bg-surface-3);
+  border-radius: 4px; overflow: hidden;
+}
+.hp-bar {
+  height: 100%; border-radius: 4px;
+  transition: width 300ms ease, background 300ms ease;
+}
+
+/* ── Toast ──────────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--bg-surface-2); border: 1px solid var(--border-active);
+  color: var(--text-primary); padding: 12px 20px;
+  border-radius: var(--r-md); font-size: 0.85rem;
+  animation: slideUp 0.3s ease-out;
+  z-index: 9999;
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── WS Status ─────────────────────────────────────────────── */
+.ws-status {
+  display: flex; align-items: center; gap: 6px; font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── Event Log ─────────────────────────────────────────────── */
+.event-log {
+  max-height: 300px; overflow-y: auto;
+  font-size: 0.8rem; font-family: var(--font-body);
+}
+.event-log .entry {
+  padding: 4px 8px; border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.event-log .entry .time { color: var(--text-faint); margin-right: 6px; }
+.event-log .entry .event-name { color: var(--accent); font-weight: 500; }
+
+/* ── Layout Helpers ────────────────────────────────────────── */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.gap-sm { gap: 8px; }
+.gap-md { gap: 16px; }
+.gap-lg { gap: 24px; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.text-accent { color: var(--accent); }
+.mt-sm { margin-top: 8px; }
+.mt-md { margin-top: 16px; }
+.mb-md { margin-bottom: 16px; }
+.hidden { display: none !important; }

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Combat Companion — Player</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .player-topbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 12px 20px; background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .player-topbar h1 { font-size: 1.1rem; flex: 1; }
+    .char-name { color: var(--accent); font-weight: 700; }
+    .player-body { max-width: 700px; margin: 24px auto; padding: 0 20px; }
+
+    .hp-display {
+      text-align: center; padding: 24px; margin-bottom: 24px;
+    }
+    .hp-big {
+      font-size: 3rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .hp-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+    .hp-bar-container { height: 12px; margin-top: 12px; border-radius: 6px; }
+    .hp-bar { border-radius: 6px; }
+
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 8px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-surface-2); border: 1px solid var(--border);
+      border-radius: var(--r-md); padding: 10px; text-align: center;
+    }
+    .stat-card .stat-name { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+    .stat-card .stat-val { font-size: 1.3rem; font-weight: 700; color: var(--text-primary); }
+
+    .section-title {
+      font-family: var(--font-display); font-size: 0.9rem;
+      margin-bottom: 8px; margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="player-topbar">
+    <h1>🛡️ <span class="char-name" id="char-name">Player</span></h1>
+    <div class="ws-status">
+      <span class="status-dot" id="ws-dot"></span>
+      <span id="ws-label">connecting...</span>
+    </div>
+    <span class="text-muted" style="font-size:0.8rem">Session: <strong id="session-code">—</strong></span>
+  </div>
+
+  <div class="player-body">
+    <!-- HP Display -->
+    <div class="card hp-display">
+      <div class="hp-big" id="hp-display">20 / 20</div>
+      <div class="hp-label">Hit Points</div>
+      <div class="hp-bar-container">
+        <div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card"><div class="stat-name">STR</div><div class="stat-val" id="stat-str">10</div></div>
+      <div class="stat-card"><div class="stat-name">DEX</div><div class="stat-val" id="stat-dex">10</div></div>
+      <div class="stat-card"><div class="stat-name">CON</div><div class="stat-val" id="stat-con">10</div></div>
+      <div class="stat-card"><div class="stat-name">INT</div><div class="stat-val" id="stat-int">10</div></div>
+      <div class="stat-card"><div class="stat-name">WIS</div><div class="stat-val" id="stat-wis">10</div></div>
+      <div class="stat-card"><div class="stat-name">CHA</div><div class="stat-val" id="stat-cha">10</div></div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="section-title">Event Log</div>
+    <div class="card">
+      <div class="event-log" id="event-log"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/websocket-client.js"></script>
+  <script>
+    const $ = s => document.querySelector(s);
+    const params = new URLSearchParams(window.location.search);
+    const sessionCode = params.get('code') || sessionStorage.getItem('session_code');
+    const playerToken = sessionStorage.getItem('player_token');
+    const characterId = sessionStorage.getItem('character_id');
+
+    if (!sessionCode || !playerToken) {
+      window.location.href = '/';
+    }
+
+    $('#session-code').textContent = sessionCode;
+
+    // ── Load character data ──────────────────────────────────
+    async function loadCharacter() {
+      try {
+        const res = await fetch(`/api/characters/${characterId}`);
+        if (!res.ok) return;
+        const c = await res.json();
+        renderCharacter(c);
+      } catch (e) { /* silent */ }
+    }
+
+    function renderCharacter(c) {
+      $('#char-name').textContent = c.name;
+      document.title = `${c.name} — Combat Companion`;
+
+      // HP
+      $('#hp-display').textContent = `${c.current_hp} / ${c.max_hp}`;
+      const pct = c.max_hp > 0 ? (c.current_hp / c.max_hp * 100) : 0;
+      const color = pct > 50 ? 'var(--hp-high)' : pct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
+      $('#hp-bar').style.width = pct + '%';
+      $('#hp-bar').style.background = color;
+      $('#hp-display').style.color = color;
+
+      // Stats
+      $('#stat-str').textContent = c.strength;
+      $('#stat-dex').textContent = c.dexterity;
+      $('#stat-con').textContent = c.constitution;
+      $('#stat-int').textContent = c.intelligence;
+      $('#stat-wis').textContent = c.wisdom;
+      $('#stat-cha').textContent = c.charisma;
+    }
+
+    function addLogEntry(event, text) {
+      const log = $('#event-log');
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = 'entry';
+      div.innerHTML = `<span class="time">[${time}]</span> <span class="event-name">${event}</span> ${text}`;
+      log.prepend(div);
+      while (log.children.length > 50) log.removeChild(log.lastChild);
+    }
+
+    // ── WS Connection ────────────────────────────────────────
+    const ws = new WsClient(sessionCode, playerToken);
+
+    ws.on('_connected', () => {
+      $('#ws-dot').className = 'status-dot connected';
+      $('#ws-label').textContent = 'connected';
+      addLogEntry('system', 'Connected to session');
+    });
+
+    ws.on('_disconnected', () => {
+      $('#ws-dot').className = 'status-dot disconnected';
+      $('#ws-label').textContent = 'disconnected';
+      addLogEntry('system', 'Disconnected');
+    });
+
+    ws.on('_reconnecting', (data) => {
+      $('#ws-label').textContent = `reconnecting (${data.attempt})...`;
+    });
+
+    ws.on('session.state', (data) => {
+      addLogEntry('session.state', `Joined session: ${data.session.name}`);
+    });
+
+    ws.on('session.player_joined', (data) => {
+      addLogEntry('session.player_joined', `${data.role} joined`);
+    });
+
+    ws.on('session.player_disconnected', (data) => {
+      addLogEntry('session.player_disconnected', `${data.role} left`);
+    });
+
+    ws.on('character.hp_update', (data) => {
+      if (data.character_id == characterId) {
+        loadCharacter();
+      }
+    });
+
+    ws.on('session.status_change', (data) => {
+      if (data.status === 'ended') {
+        addLogEntry('session', 'Session ended by GM');
+      }
+    });
+
+    // Catch-all
+    ws.on('*', (event, data) => {
+      if (event.startsWith('_') || event === 'session.state') return;
+      if (event !== 'session.player_joined' && event !== 'session.player_disconnected') {
+        addLogEntry(event, JSON.stringify(data).substring(0, 80));
+      }
+    });
+
+    // Init
+    loadCharacter();
+    ws.connect();
+  </script>
+</body>
+</html>
