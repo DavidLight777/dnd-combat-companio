@@ -186,3 +186,21 @@ class CombatLog(Base):
     value: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description: Mapped[str] = mapped_column(Text, default="")
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP DATA
+# ══════════════════════════════════════════════════════════════
+class MapData(Base):
+    __tablename__ = "map_data"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), unique=True)
+    image_path: Mapped[str] = mapped_column(Text, nullable=False)
+    image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    grid_size: Mapped[int] = mapped_column(Integer, default=50)
+    grid_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    fog_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    revealed_cells: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [[col,row],...]
+    image_width: Mapped[int] = mapped_column(Integer, default=0)
+    image_height: Mapped[int] = mapped_column(Integer, default=0)

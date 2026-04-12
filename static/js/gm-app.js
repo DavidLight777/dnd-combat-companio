@@ -51,11 +51,21 @@ function addLog(event, text) {
 $$('.gm-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     $$('.gm-tab').forEach(t => t.classList.remove('active'));
-    $$('.tab-content').forEach(c => c.classList.remove('active'));
+    $$('.tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
     tab.classList.add('active');
-    $(`#tab-${tab.dataset.tab}`).classList.add('active');
+    const panel = $(`#tab-${tab.dataset.tab}`);
+    panel.classList.add('active');
+    if (tab.dataset.tab === 'map') {
+      panel.style.display = 'flex';
+      initMapCanvas();
+      if (mapCanvas) { mapCanvas._resize(); mapCanvas.render(); }
+    } else {
+      panel.style.display = 'block';
+    }
   });
 });
+// Show default tab
+$('#tab-detail').style.display = 'block';
 
 // ══════════════════════════════════════════════════════════════
 // COPY SESSION CODE
@@ -344,6 +354,121 @@ $('#btn-aoe-damage').addEventListener('click', async () => {
   const lines = results.map(r => `${r.name}: ${r.tier} → ${r.damage} dmg`).join('<br>');
   $('#aoe-result').innerHTML = lines || '<span class="text-muted">No living players</span>';
   addLog('gm.aoe', `AoE ${er}/${dmg} → ${results.map(r=>r.name+':'+r.damage).join(', ')}`);
+});
+
+// ══════════════════════════════════════════════════════════════
+// MAP
+// ══════════════════════════════════════════════════════════════
+let mapCanvas = null;
+let mapGridEnabled = true;
+let mapFogEnabled = false;
+let mapFogPaintActive = false;
+
+function initMapCanvas() {
+  const canvasEl = $('#map-canvas');
+  if (!canvasEl || mapCanvas) return;
+  mapCanvas = new MapCanvas(canvasEl, {
+    role: 'gm',
+    sessionCode: SESSION_CODE,
+    onTokenMove: async (charId, x, y) => {
+      await api.patch(`/api/map/token/${charId}`, { x, y });
+      addLog('map', `Moved token ${charId} to (${x.toFixed(2)}, ${y.toFixed(2)})`);
+    },
+    onFogReveal: async (col, row) => {
+      await api.post(`/api/map/${SESSION_CODE}/fog/reveal`, { cells: [[col, row]] });
+    },
+  });
+  loadMapState();
+}
+
+async function loadMapState() {
+  try {
+    const state = await api.get(`/api/map/${SESSION_CODE}`);
+    if (state.has_map) {
+      await mapCanvas.loadImage(state.image_url);
+      mapCanvas.setGrid(state.grid_size, state.grid_enabled);
+      mapCanvas.setFog(state.fog_enabled, state.revealed_cells);
+      mapCanvas.setTokens(state.tokens);
+      mapGridEnabled = state.grid_enabled;
+      mapFogEnabled = state.fog_enabled;
+      $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
+      $('#btn-toggle-fog').textContent = `Fog: ${mapFogEnabled ? 'ON' : 'OFF'}`;
+      $('#grid-size-slider').value = state.grid_size;
+      $('#grid-size-label').textContent = state.grid_size;
+    }
+  } catch { /* no map yet */ }
+}
+
+// Map upload
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'map-upload') return;
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/map/${SESSION_CODE}/upload`, { method: 'POST', body: fd });
+  if (!res.ok) { showToast('Upload failed'); return; }
+  const data = await res.json();
+  await mapCanvas.loadImage(data.image_url);
+  addLog('map', `Map uploaded: ${file.name}`);
+});
+
+// Grid toggle
+$('#btn-toggle-grid').addEventListener('click', async () => {
+  mapGridEnabled = !mapGridEnabled;
+  $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
+  mapCanvas.setGrid(mapCanvas.gridSize, mapGridEnabled);
+  await api.patch(`/api/map/${SESSION_CODE}/settings`, { grid_enabled: mapGridEnabled });
+});
+
+// Grid size slider
+$('#grid-size-slider').addEventListener('input', e => {
+  const v = parseInt(e.target.value);
+  $('#grid-size-label').textContent = v;
+  if (mapCanvas) mapCanvas.setGrid(v, mapGridEnabled);
+});
+$('#grid-size-slider').addEventListener('change', async e => {
+  await api.patch(`/api/map/${SESSION_CODE}/settings`, { grid_size: parseInt(e.target.value) });
+});
+
+// Fog toggle
+$('#btn-toggle-fog').addEventListener('click', async () => {
+  mapFogEnabled = !mapFogEnabled;
+  $('#btn-toggle-fog').textContent = `Fog: ${mapFogEnabled ? 'ON' : 'OFF'}`;
+  await api.patch(`/api/map/${SESSION_CODE}/settings`, { fog_enabled: mapFogEnabled });
+  mapCanvas.fogEnabled = mapFogEnabled;
+  mapCanvas.render();
+});
+
+// Fog paint
+$('#btn-fog-paint').addEventListener('click', () => {
+  mapFogPaintActive = !mapFogPaintActive;
+  $('#btn-fog-paint').style.background = mapFogPaintActive ? 'var(--accent)' : '';
+  $('#btn-fog-paint').style.color = mapFogPaintActive ? '#0a0908' : '';
+  if (mapCanvas) mapCanvas.setFogPaintMode(mapFogPaintActive);
+});
+
+// Reveal all
+$('#btn-fog-reveal-all').addEventListener('click', async () => {
+  await api.post(`/api/map/${SESSION_CODE}/fog/reveal-all`, {});
+  mapFogEnabled = false;
+  $('#btn-toggle-fog').textContent = 'Fog: OFF';
+  if (mapCanvas) { mapCanvas.fogEnabled = false; mapCanvas.revealedCells.clear(); mapCanvas.render(); }
+  addLog('map', 'Fog of war revealed all');
+});
+
+// Reset fog
+$('#btn-fog-reset').addEventListener('click', async () => {
+  await api.post(`/api/map/${SESSION_CODE}/fog/reset`, {});
+  mapFogEnabled = true;
+  $('#btn-toggle-fog').textContent = 'Fog: ON';
+  if (mapCanvas) { mapCanvas.fogEnabled = true; mapCanvas.revealedCells.clear(); mapCanvas.render(); }
+  addLog('map', 'Fog of war reset');
+});
+
+// Center
+$('#btn-center-map').addEventListener('click', () => {
+  if (mapCanvas) mapCanvas.centerView();
 });
 
 // ══════════════════════════════════════════════════════════════

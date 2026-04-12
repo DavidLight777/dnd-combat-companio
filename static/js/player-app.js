@@ -637,6 +637,37 @@ document.addEventListener('click', e => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// MAP MODAL
+// ══════════════════════════════════════════════════════════════
+let playerMapCanvas = null;
+
+$('#btn-open-map').addEventListener('click', async () => {
+  const modal = $('#map-modal');
+  modal.style.display = 'flex';
+  if (!playerMapCanvas) {
+    playerMapCanvas = new MapCanvas($('#player-map-canvas'), {
+      role: 'player',
+      sessionCode: SESSION_CODE,
+    });
+  }
+  playerMapCanvas._resize();
+  // Load map state
+  try {
+    const state = await api.get(`/api/map/${SESSION_CODE}`);
+    if (state.has_map) {
+      await playerMapCanvas.loadImage(state.image_url);
+      playerMapCanvas.setGrid(state.grid_size, state.grid_enabled);
+      playerMapCanvas.setFog(state.fog_enabled, state.revealed_cells);
+      playerMapCanvas.setTokens(state.tokens);
+    }
+  } catch { /* no map */ }
+});
+
+$('#btn-close-map').addEventListener('click', () => {
+  $('#map-modal').style.display = 'none';
+});
+
+// ══════════════════════════════════════════════════════════════
 // WEBSOCKET
 // ══════════════════════════════════════════════════════════════
 const ws = new WsClient(SESSION_CODE, PLAYER_TOKEN);

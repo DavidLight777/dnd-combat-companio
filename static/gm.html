@@ -48,6 +48,7 @@
       <div class="gm-tabs">
         <button class="gm-tab active" data-tab="detail">Character Detail</button>
         <button class="gm-tab" data-tab="initiative">Initiative</button>
+        <button class="gm-tab" data-tab="map">Map</button>
         <button class="gm-tab" data-tab="actions">Quick Actions</button>
         <button class="gm-tab" data-tab="log">Event Log</button>
       </div>
@@ -74,6 +75,29 @@
           <div class="detail-body">
             <div id="initiative-order"><p class="text-muted">Roll initiative to begin.</p></div>
           </div>
+        </div>
+      </div>
+
+      <!-- TAB: Map -->
+      <div class="tab-content" id="tab-map" style="padding:0;display:none;flex-direction:column;height:calc(100vh - 160px)">
+        <div style="display:flex;gap:6px;padding:8px 12px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+          <label class="btn btn-primary btn-sm" style="cursor:pointer">
+            📁 Upload Map <input type="file" id="map-upload" accept="image/*" style="display:none">
+          </label>
+          <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
+          <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
+          <input type="range" id="grid-size-slider" min="20" max="100" value="50" style="width:80px">
+          <span id="grid-size-label" style="font-size:0.72rem;min-width:28px">50</span>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button class="btn btn-ghost btn-xs" id="btn-toggle-fog">Fog: OFF</button>
+          <button class="btn btn-ghost btn-xs" id="btn-fog-paint">🖌️ Reveal</button>
+          <button class="btn btn-ghost btn-xs" id="btn-fog-reveal-all">Reveal All</button>
+          <button class="btn btn-ghost btn-xs" id="btn-fog-reset">Reset Fog</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button class="btn btn-ghost btn-xs" id="btn-center-map">🎯 Center</button>
+        </div>
+        <div style="flex:1;position:relative;overflow:hidden;background:#111">
+          <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
         </div>
       </div>
 
@@ -107,6 +131,7 @@
   </div>
 
   <script src="/static/js/websocket-client.js"></script>
+  <script src="/static/js/map-canvas.js"></script>
   <script src="/static/js/gm-app.js"></script>
 </body>
 </html>
