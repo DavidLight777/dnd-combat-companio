@@ -19,7 +19,32 @@ All messages are JSON:
 | `session.player_disconnected` | Server→All | A player disconnected |
 | `session.status_change` | Server→All | Session status changed |
 
-## Events — Stage 2+ (planned)
+## Events — Stage 2 (Inventory System)
+
+| Event | Direction | Description | Payload |
+|---|---|---|---|
+| `inventory.item_added` | Server→All | Item added to character inventory | `{character_id, item_name}` |
+| `inventory.item_equipped` | Server→All | Item equipped/unequipped | `{character_id, item_name, slot, equipped}` |
+| `inventory.item_removed` | Server→All | Item removed from inventory | `{character_id, item_name}` |
+| `combat.bonuses_updated` | Server→All | Equipped bonuses changed (auto after equip/unequip) | `{character_id}` |
+
+## Events — Stage 3 (Economy & Trading)
+
+| Event | Direction | Description | Payload |
+|---|---|---|---|
+| `trade.initiated` | GM→Player | GM initiates trade, opens trade modal on player side | `{trade_id, npc_id, npc_name, player_id}` |
+| `trade.closed` | Server→All | Trade session closed | `{trade_id}` |
+| `currency.updated` | Server→All | Character currency changed (give/transfer/buy) | `{character_id}` |
+
+## Events — Stage 4 (Status Effects)
+
+| Event | Direction | Description | Payload |
+|---|---|---|---|
+| `status_effect.applied` | Server→All | Status effect applied to character | `{character_id, effect_name}` |
+| `status_effect.removed` | Server→All | Status effect removed from character | `{character_id, effect_name}` |
+| `status_effect.expired` | Server→All | Status effect expired (duration ended) | `{character_id, effect_name}` |
+
+## Events — Stage 5+ (planned)
 
 | Event | Direction | Description |
 |---|---|---|
@@ -32,8 +57,6 @@ All messages are JSON:
 | `map.token_move` | Server→All | Token moved |
 | `map.fog_update` | Server→All | Fog of war updated |
 | `map.image_loaded` | Server→All | New map uploaded |
-| `inventory.item_granted` | Server→Target | GM gave item |
-| `inventory.item_removed` | Server→Target | Item removed |
 | `shop.updated` | Server→All | Shop changed |
 | `log.new_entry` | Server→All/GM | New log entry |
 | `ai.response` | Server→GM | AI response |

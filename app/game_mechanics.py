@@ -20,6 +20,7 @@ Flat reductions subtracted after percent.
 import math
 import random
 from dataclasses import dataclass, field
+from typing import Any
 
 
 # ══════════════════════════════════════════════════════════════
@@ -72,6 +73,137 @@ class HealResult:
 
 
 # ══════════════════════════════════════════════════════════════
+# EQUIPPED ITEM BONUS AGGREGATION
+# ══════════════════════════════════════════════════════════════
+def get_all_active_bonuses(equipped_items: list[Any]) -> dict:
+    """
+    Aggregates bonuses from all equipped inventory items.
+    equipped_items: list of InventoryItem ORM objects with .item.bonuses loaded.
+    Returns dict: {
+      "percent_damage_reduction": float,
+      "flat_damage_reduction": float,
+      "attack_bonus": float,
+      "damage_bonus": float,
+      "damage_dice_count": float,
+      "damage_dice_type": float,
+      "hp_bonus": float,
+      "initiative_bonus": float,
+      "speed_bonus": float,
+      "stat_bonus_strength": float, ...
+      "breakdown": [{"source": str, "bonus_type": str, "stat_name": str|None, "value": float}]
+    }
+    """
+    result = {
+        "percent_damage_reduction": 0,
+        "flat_damage_reduction": 0,
+        "attack_bonus": 0,
+        "damage_bonus": 0,
+        "damage_dice_count": 0,
+        "damage_dice_type": 0,
+        "hp_bonus": 0,
+        "initiative_bonus": 0,
+        "speed_bonus": 0,
+        "breakdown": [],
+    }
+    for inv in equipped_items:
+        if not inv.is_equipped or not inv.item:
+            continue
+        item = inv.item
+        for bonus in (item.bonuses or []):
+            if bonus.is_conditional:
+                continue  # skip conditional bonuses (only applied manually)
+            bt = bonus.bonus_type
+            val = bonus.value or 0
+            entry = {"source": item.name, "bonus_type": bt, "stat_name": bonus.stat_name, "value": val}
+            result["breakdown"].append(entry)
+            if bt == "stat_bonus" and bonus.stat_name:
+                key = f"stat_bonus_{bonus.stat_name}"
+                result[key] = result.get(key, 0) + val
+            elif bt in result and bt != "breakdown":
+                result[bt] += val
+    return result
+
+
+# ══════════════════════════════════════════════════════════════
+# CURRENCY HELPERS
+# ══════════════════════════════════════════════════════════════
+DEFAULT_RATES = {"platinum": 1000, "gold": 100, "silver": 10, "copper": 1}
+
+
+def copper_to_display(copper: int, rates: dict | None = None) -> dict:
+    """Convert a total copper value into multi-currency breakdown."""
+    r = rates or DEFAULT_RATES
+    remainder = max(0, copper)
+    platinum = remainder // r["platinum"]
+    remainder %= r["platinum"]
+    gold = remainder // r["gold"]
+    remainder %= r["gold"]
+    silver = remainder // r["silver"]
+    remainder %= r["silver"]
+    return {"platinum": platinum, "gold": gold, "silver": silver, "copper": remainder}
+
+
+def display_to_copper(platinum: int = 0, gold: int = 0, silver: int = 0, copper: int = 0,
+                      rates: dict | None = None) -> int:
+    """Convert multi-currency amounts to total copper."""
+    r = rates or DEFAULT_RATES
+    return platinum * r["platinum"] + gold * r["gold"] + silver * r["silver"] + copper * r["copper"]
+
+
+def calculate_item_price(base_price_copper: int, reputation: int = 0,
+                         price_override: int | None = None) -> int:
+    """
+    Calculate item price adjusted by NPC reputation.
+    reputation: -100 = prices doubled, 0 = normal, +100 = 50% discount
+    """
+    base = price_override if price_override is not None else base_price_copper
+    multiplier = 1.0 - (reputation / 200.0)  # range: 1.5x to 0.5x
+    return max(1, int(base * multiplier))
+
+
+# ══════════════════════════════════════════════════════════════
+# STATUS EFFECT PENALTIES (Stage 4)
+# ══════════════════════════════════════════════════════════════
+def aggregate_status_penalties(active_effects_json_list: list[list[dict]]) -> dict:
+    """
+    Aggregates mechanical penalties from all active status effects on a character.
+    active_effects_json_list: list of parsed effects JSON arrays (one per CharacterStatusEffect).
+    Returns dict of aggregated penalties.
+    """
+    result = {
+        "attack_penalty": 0,
+        "damage_penalty": 0,
+        "stat_penalties": {},  # {stat_name: total_penalty}
+        "damage_reduction_penalty": 0.0,
+        "skip_turn": False,
+        "hp_change_per_turn": 0,
+        "custom_notes": [],
+    }
+    for effects in active_effects_json_list:
+        for eff in effects:
+            etype = eff.get("type", "")
+            val = eff.get("value", 0)
+            if etype == "attack_penalty":
+                result["attack_penalty"] += val
+            elif etype == "damage_penalty":
+                result["damage_penalty"] += val
+            elif etype == "stat_penalty":
+                stat = eff.get("stat", "")
+                if stat:
+                    result["stat_penalties"][stat] = result["stat_penalties"].get(stat, 0) + val
+            elif etype == "skip_turn":
+                if val:
+                    result["skip_turn"] = True
+            elif etype == "hp_change_per_turn":
+                result["hp_change_per_turn"] += val
+            elif etype == "damage_reduction_penalty":
+                result["damage_reduction_penalty"] += val
+            elif etype == "custom_note":
+                result["custom_notes"].append(eff.get("text", ""))
+    return result
+
+
+# ══════════════════════════════════════════════════════════════
 # DAMAGE MULTIPLIER TABLE
 # ══════════════════════════════════════════════════════════════
 def _get_damage_multiplier(hit_diff: int) -> float:
@@ -116,6 +248,8 @@ def calculate_damage_intake(
     character_kd: int,
     raw_damage: int,
     active_effects: list,  # list of dicts: {"name", "effect_type", "value"}
+    item_bonuses: dict | None = None,  # from get_all_active_bonuses()
+    status_penalties: dict | None = None,  # from aggregate_status_penalties()
 ) -> DamageResult:
     hit_diff = enemy_roll - character_kd
     multiplier = _get_damage_multiplier(hit_diff)
@@ -142,6 +276,28 @@ def calculate_damage_intake(
         elif etype == "flat_reduction":
             flat_sum += e["value"]
             effect_breakdown.append({"name": e["name"], "type": "flat_reduction", "value": e["value"]})
+
+    # Apply status effect damage reduction penalty (makes character MORE vulnerable)
+    if status_penalties and status_penalties.get("damage_reduction_penalty"):
+        drp = status_penalties["damage_reduction_penalty"]
+        total_percent_reduction += drp  # negative value = less protection
+        effect_breakdown.append({"name": "Status effects", "type": "percent_reduction", "value": drp})
+
+    # Apply equipped item bonuses
+    if item_bonuses:
+        ib_pdr = item_bonuses.get("percent_damage_reduction", 0)
+        ib_fdr = item_bonuses.get("flat_damage_reduction", 0)
+        if ib_pdr:
+            total_percent_reduction += ib_pdr
+            # Build breakdown entries from item sources
+            for bd in item_bonuses.get("breakdown", []):
+                if bd["bonus_type"] == "percent_damage_reduction":
+                    effect_breakdown.append({"name": bd["source"], "type": "percent_reduction", "value": bd["value"]})
+        if ib_fdr:
+            flat_sum += ib_fdr
+            for bd in item_bonuses.get("breakdown", []):
+                if bd["bonus_type"] == "flat_damage_reduction":
+                    effect_breakdown.append({"name": bd["source"], "type": "flat_reduction", "value": bd["value"]})
 
     total_percent_reduction = min(total_percent_reduction, 100.0)
     combined_multiplier = 1.0 - total_percent_reduction / 100.0
@@ -184,8 +340,12 @@ def calculate_attack_roll(
     d20: int,
     base_modifier: int,
     active_modifier_values: list[int],
+    item_bonuses: dict | None = None,
+    status_penalties: dict | None = None,  # from aggregate_status_penalties()
 ) -> AttackResult:
-    total = d20 + base_modifier + sum(active_modifier_values)
+    item_atk = int(item_bonuses.get("attack_bonus", 0)) if item_bonuses else 0
+    status_atk = status_penalties.get("attack_penalty", 0) if status_penalties else 0
+    total = d20 + base_modifier + sum(active_modifier_values) + item_atk + status_atk
     attack_bonus = (total // 5) * 2
     return AttackResult(
         d20=d20, base_mod=base_modifier,
@@ -202,7 +362,11 @@ def calculate_damage_roll(
     weapon_bonus: int,
     attack_bonus: int,
     active_modifier_values: list[int],
+    item_bonuses: dict | None = None,
+    status_penalties: dict | None = None,  # from aggregate_status_penalties()
 ) -> DamageRollResult:
+    item_dmg = int(item_bonuses.get("damage_bonus", 0)) if item_bonuses else 0
+    status_dmg = status_penalties.get("damage_penalty", 0) if status_penalties else 0
     group_results = []
     all_rolls = []
     for g in dice_groups:
@@ -215,7 +379,7 @@ def calculate_damage_roll(
         group_results.append({"count": cnt, "die": die, "rolls": rolls, "subtotal": sum(rolls)})
 
     mod_total = sum(active_modifier_values)
-    total = sum(all_rolls) + weapon_bonus + attack_bonus + mod_total
+    total = max(0, sum(all_rolls) + weapon_bonus + attack_bonus + mod_total + item_dmg + status_dmg)
 
     return DamageRollResult(
         rolls=all_rolls, group_results=group_results,
@@ -233,9 +397,11 @@ def calculate_hp_recovery(
     dice_count: int,
     die_type: int,
     modifier: int,
+    item_bonuses: dict | None = None,
 ) -> HealResult:
+    item_hp = int(item_bonuses.get("hp_bonus", 0)) if item_bonuses else 0
     rolls = [random.randint(1, die_type) for _ in range(dice_count)]
-    heal_amount = max(0, sum(rolls) + modifier)
+    heal_amount = max(0, sum(rolls) + modifier + item_hp)
     new_hp = min(max_hp, current_hp + heal_amount)
     return HealResult(
         rolls=rolls, modifier=modifier,

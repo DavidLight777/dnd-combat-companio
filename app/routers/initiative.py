@@ -1,12 +1,13 @@
 """Initiative tracker — roll, order, advance turn, start/end combat."""
 
+import json
 import random
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, Character, InitiativeOrder
+from app.models import Session, Character, InitiativeOrder, CharacterStatusEffect
 
 router = APIRouter(prefix="/api/initiative", tags=["initiative"])
 
@@ -139,13 +140,27 @@ async def next_turn(session_code: str, db: AsyncSession = Depends(get_session)):
             current_idx = i
             break
 
-    # Move to next alive character
+    # ── Stage 4: Process turn-end effects for the character whose turn just ended ──
+    turn_end_events = []
+    ending_char_id = session.current_turn_character_id
+    if ending_char_id:
+        turn_end_events = await _process_turn_end_effects(ending_char_id, db)
+
+    # Move to next alive character (skip dead and skip_turn)
     tried = 0
     next_idx = current_idx
+    skipped = []
     while tried < len(entries):
         next_idx = (next_idx + 1) % len(entries)
         char = await db.get(Character, entries[next_idx].character_id)
         if char and char.is_alive:
+            # Check for skip_turn status effect
+            if await _has_skip_turn(entries[next_idx].character_id, db):
+                skipped.append({"character_id": char.id, "name": char.name, "reason": "skip_turn"})
+                # Still process their turn-end effects
+                await _process_turn_end_effects(char.id, db)
+                tried += 1
+                continue
             break
         tried += 1
 
@@ -160,6 +175,8 @@ async def next_turn(session_code: str, db: AsyncSession = Depends(get_session)):
         "current_turn_character_id": session.current_turn_character_id,
         "character_name": char.name if char else "?",
         "turn_number": session.turn_number,
+        "turn_end_events": turn_end_events,
+        "skipped": skipped,
     }
 
 
@@ -177,3 +194,74 @@ async def end_combat(session_code: str, db: AsyncSession = Depends(get_session))
     await db.execute(delete(InitiativeOrder).where(InitiativeOrder.session_id == session.id))
     await db.commit()
     return {"status": "waiting"}
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 4 — TURN-END STATUS EFFECT PROCESSING
+# ══════════════════════════════════════════════════════════════
+async def _process_turn_end_effects(character_id: int, db: AsyncSession) -> list[dict]:
+    """Process end-of-turn effects: hp_change_per_turn, decrement durations, expire effects."""
+    char = await db.get(Character, character_id)
+    if not char:
+        return []
+
+    result = await db.execute(
+        select(CharacterStatusEffect).where(CharacterStatusEffect.character_id == character_id)
+    )
+    effects = result.scalars().all()
+    if not effects:
+        return []
+
+    events = []
+    hp_changes = []
+
+    for eff in effects:
+        eff_data = json.loads(eff.effects) if eff.effects else []
+
+        # Collect hp_change_per_turn
+        for e in eff_data:
+            if e.get("type") == "hp_change_per_turn":
+                hp_changes.append({"name": eff.name, "value": e["value"]})
+
+        # Decrement remaining turns
+        if eff.remaining_turns is not None:
+            eff.remaining_turns -= 1
+            if eff.remaining_turns <= 0:
+                events.append({
+                    "type": "status_effect.expired",
+                    "character_id": character_id,
+                    "character_name": char.name,
+                    "effect_name": eff.name,
+                    "effect_id": eff.id,
+                })
+                await db.delete(eff)
+
+    # Apply HP changes
+    total_hp_change = sum(h["value"] for h in hp_changes)
+    if total_hp_change != 0 and char.is_alive:
+        char.current_hp = max(0, char.current_hp + total_hp_change)
+        if char.current_hp <= 0:
+            char.is_alive = False
+        events.append({
+            "type": "hp_change",
+            "character_id": character_id,
+            "character_name": char.name,
+            "hp_change": total_hp_change,
+            "new_hp": char.current_hp,
+            "sources": hp_changes,
+        })
+
+    return events
+
+
+async def _has_skip_turn(character_id: int, db: AsyncSession) -> bool:
+    """Check if character has any active skip_turn status effects."""
+    result = await db.execute(
+        select(CharacterStatusEffect).where(CharacterStatusEffect.character_id == character_id)
+    )
+    for eff in result.scalars().all():
+        eff_data = json.loads(eff.effects) if eff.effects else []
+        for e in eff_data:
+            if e.get("type") == "skip_turn" and e.get("value"):
+                return True
+    return False

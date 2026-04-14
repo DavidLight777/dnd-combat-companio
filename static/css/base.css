@@ -35,6 +35,8 @@
   --rarity-rare:      #4a7fc0;
   --rarity-epic:      #8a4abf;
   --rarity-legendary: #c08a2a;
+  --rarity-mythic:    #e04080;
+  --rarity-divine:    #f0e060;
 
   --r-sm: 4px;
   --r-md: 8px;
@@ -225,3 +227,39 @@ textarea { resize: vertical; width: 100%; }
 /* ── Settings link in lobby ──────────────────────────────────── */
 .settings-link { color: var(--text-muted); text-decoration: none; font-size: 0.8rem; }
 .settings-link:hover { color: var(--accent); }
+
+/* ── Rarity Badges & Colors ────────────────────────────────── */
+.rarity-common    { color: var(--rarity-common); }
+.rarity-uncommon  { color: var(--rarity-uncommon); }
+.rarity-rare      { color: var(--rarity-rare); }
+.rarity-epic      { color: var(--rarity-epic); }
+.rarity-legendary { color: var(--rarity-legendary); }
+.rarity-mythic    { color: var(--rarity-mythic); }
+.rarity-divine    { color: var(--rarity-divine); }
+
+.rarity-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 3px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rarity-badge.common    { background: rgba(156,163,175,0.15); color: var(--rarity-common); }
+.rarity-badge.uncommon  { background: rgba(74,156,93,0.15); color: var(--rarity-uncommon); }
+.rarity-badge.rare      { background: rgba(74,127,192,0.15); color: var(--rarity-rare); }
+.rarity-badge.epic      { background: rgba(138,74,191,0.15); color: var(--rarity-epic); }
+.rarity-badge.legendary { background: rgba(192,138,42,0.15); color: var(--rarity-legendary); }
+.rarity-badge.mythic    { background: rgba(224,64,128,0.15); color: var(--rarity-mythic); }
+.rarity-badge.divine    {
+  background: linear-gradient(135deg, rgba(240,224,96,0.20), rgba(255,200,60,0.30));
+  color: var(--rarity-divine);
+  animation: divineShimmer 2s ease-in-out infinite;
+}
+
+@keyframes divineShimmer {
+  0%, 100% { box-shadow: 0 0 4px rgba(240,224,96,0.3); }
+  50% { box-shadow: 0 0 12px rgba(240,224,96,0.6), 0 0 24px rgba(255,200,60,0.2); }
+}
+
+.item-card-divine {
+  animation: divineShimmer 2s ease-in-out infinite;
+  border-color: rgba(240,224,96,0.3);
+}

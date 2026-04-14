@@ -4,13 +4,28 @@ import random
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.database import get_session
-from app.models import Character
+from app.models import Character, InventoryItem
 from app.schemas import DamageIntakeRequest, HpRecoveryRequest
 from app.game_mechanics import (
     calculate_damage_intake, calculate_attack_roll,
     calculate_damage_roll, calculate_hp_recovery, calculate_enemy_damage,
+    get_all_active_bonuses,
 )
+
+
+async def _load_item_bonuses(character_id: int, db: AsyncSession) -> dict:
+    """Load equipped items for a character and aggregate their bonuses."""
+    result = await db.execute(
+        select(InventoryItem).where(
+            InventoryItem.character_id == character_id,
+            InventoryItem.is_equipped == True,
+        )
+    )
+    equipped = result.scalars().all()
+    return get_all_active_bonuses(equipped)
 
 router = APIRouter(prefix="/api/calc", tags=["combat"])
 
@@ -27,11 +42,14 @@ async def calc_damage_intake(body: DamageIntakeRequest, db: AsyncSession = Depen
         for e in c.effects if e.is_active
     ]
 
+    item_bonuses = await _load_item_bonuses(c.id, db)
+
     result = calculate_damage_intake(
         enemy_roll=body.enemy_roll,
         character_kd=c.armor_class,
         raw_damage=body.damage_rolled,
         active_effects=active_effects,
+        item_bonuses=item_bonuses,
     )
 
     return {
@@ -53,12 +71,14 @@ async def calc_damage_intake(body: DamageIntakeRequest, db: AsyncSession = Depen
 
 # ── Attack roll ──────────────────────────────────────────────
 @router.post("/attack-roll")
-async def calc_attack_roll(body: dict):
+async def calc_attack_roll(body: dict, db: AsyncSession = Depends(get_session)):
     d20 = body.get("d20", 0)
     base_mod = body.get("base_mod", 0)
     modifier_values = body.get("modifier_values", [])
+    character_id = body.get("character_id")
 
-    result = calculate_attack_roll(d20, base_mod, modifier_values)
+    item_bonuses = await _load_item_bonuses(character_id, db) if character_id else None
+    result = calculate_attack_roll(d20, base_mod, modifier_values, item_bonuses=item_bonuses)
     return {
         "d20": result.d20, "base_mod": result.base_mod,
         "modifier_values": result.modifier_values,
@@ -68,10 +88,11 @@ async def calc_attack_roll(body: dict):
 
 # ── Damage roll ──────────────────────────────────────────────
 @router.post("/damage-roll")
-async def calc_damage_roll(body: dict):
+async def calc_damage_roll(body: dict, db: AsyncSession = Depends(get_session)):
     weapon_bonus = body.get("weapon_bonus", 0)
     attack_bonus = body.get("attack_bonus", 0)
     modifier_values = body.get("modifier_values", [])
+    character_id = body.get("character_id")
 
     dice_groups = body.get("dice_groups", None)
     if dice_groups is None:
@@ -79,7 +100,8 @@ async def calc_damage_roll(body: dict):
         die_type = body.get("die_type", 8)
         dice_groups = [{"count": dice_count, "die": die_type, "active": True}]
 
-    result = calculate_damage_roll(dice_groups, weapon_bonus, attack_bonus, modifier_values)
+    item_bonuses = await _load_item_bonuses(character_id, db) if character_id else None
+    result = calculate_damage_roll(dice_groups, weapon_bonus, attack_bonus, modifier_values, item_bonuses=item_bonuses)
     return {
         "rolls": result.rolls,
         "group_results": result.group_results,
@@ -97,10 +119,13 @@ async def calc_hp_recovery(body: HpRecoveryRequest, db: AsyncSession = Depends(g
     if not c:
         raise HTTPException(404, "Character not found")
 
+    item_bonuses = await _load_item_bonuses(c.id, db)
+
     result = calculate_hp_recovery(
         current_hp=c.current_hp, max_hp=c.max_hp,
         dice_count=body.dice_count, die_type=body.die_type,
         modifier=body.modifier,
+        item_bonuses=item_bonuses,
     )
 
     c.current_hp = result.new_hp

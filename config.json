@@ -1,9 +1,15 @@
 {
-  "openrouter_api_key": "",
-  "ai_model": "google/gemma-4-26b-a4b-it:free",
+  "openrouter_api_key": "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",
+  "ai_model": "openrouter/free",
   "ai_npc_control": false,
   "max_players": 10,
   "default_dice_type": 20,
   "server_host": "0.0.0.0",
-  "server_port": 8000
+  "server_port": 8000,
+  "currency_rates": {
+    "platinum": 1000,
+    "gold": 100,
+    "silver": 10,
+    "copper": 1
+  }
 }

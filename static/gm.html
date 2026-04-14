@@ -47,6 +47,8 @@
       <!-- Tabs -->
       <div class="gm-tabs">
         <button class="gm-tab active" data-tab="detail">Character Detail</button>
+        <button class="gm-tab" data-tab="items">Item Database</button>
+        <button class="gm-tab" data-tab="combat">⚔️ Combat</button>
         <button class="gm-tab" data-tab="initiative">Initiative</button>
         <button class="gm-tab" data-tab="map">Map</button>
         <button class="gm-tab" data-tab="actions">Quick Actions</button>
@@ -58,6 +60,153 @@
         <div id="char-detail" style="padding:16px">
           <p class="text-muted">Select a character from the sidebar to view details.</p>
         </div>
+      </div>
+
+      <!-- TAB: Item Database -->
+      <div class="tab-content" id="tab-items" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>🗄️ Item Database</h2>
+            <button class="btn btn-primary btn-sm" id="btn-new-item">+ New Item</button>
+            <button class="btn btn-ghost btn-sm" id="btn-new-category">+ Category</button>
+          </div>
+          <div class="detail-body">
+            <!-- Filters -->
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+              <input type="text" id="item-search" placeholder="Search items..." style="flex:1;min-width:150px">
+              <select id="item-filter-category" style="min-width:100px"><option value="">All Categories</option></select>
+              <select id="item-filter-rarity" style="min-width:100px">
+                <option value="">All Rarities</option>
+                <option value="common">Common</option>
+                <option value="uncommon">Uncommon</option>
+                <option value="rare">Rare</option>
+                <option value="epic">Epic</option>
+                <option value="legendary">Legendary</option>
+                <option value="mythic">Mythic</option>
+                <option value="divine">Divine</option>
+              </select>
+            </div>
+            <!-- Item Grid -->
+            <div id="item-grid" class="item-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item Editor Modal -->
+      <div id="item-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="item-modal-title">New Item</h2>
+            <button class="btn-icon" id="btn-close-item-modal">✕</button>
+          </div>
+          <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="item-ed-name" placeholder="Item name">
+              </div>
+              <div class="form-group">
+                <label>Category</label>
+                <select id="item-ed-category"></select>
+              </div>
+              <div class="form-group">
+                <label>Rarity</label>
+                <select id="item-ed-rarity">
+                  <option value="common">Common</option>
+                  <option value="uncommon">Uncommon</option>
+                  <option value="rare">Rare</option>
+                  <option value="epic">Epic</option>
+                  <option value="legendary">Legendary</option>
+                  <option value="mythic">Mythic</option>
+                  <option value="divine">Divine</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Price (copper)</label>
+                <input type="number" id="item-ed-price" value="0" min="0">
+              </div>
+              <div class="form-group">
+                <label>Weight</label>
+                <input type="number" id="item-ed-weight" value="0" min="0" step="0.1">
+              </div>
+              <div class="form-group" style="display:flex;gap:12px;align-items:center">
+                <label><input type="checkbox" id="item-ed-equippable"> Equippable</label>
+                <label><input type="checkbox" id="item-ed-consumable"> Consumable</label>
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:8px">
+              <label>Description</label>
+              <textarea id="item-ed-desc" rows="2" placeholder="Item description..."></textarea>
+            </div>
+            <div class="form-group" style="margin-top:8px">
+              <label>Tags (comma-separated)</label>
+              <input type="text" id="item-ed-tags" placeholder="magic, cursed, two-handed" style="width:100%">
+            </div>
+
+            <!-- Weapon Stats (toggled) -->
+            <div style="margin-top:12px">
+              <label><input type="checkbox" id="item-ed-is-weapon"> This is a weapon</label>
+            </div>
+            <div id="weapon-stats-section" class="hidden" style="margin-top:8px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-md)">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <label style="font-size:0.78rem">Dice:</label>
+                <input type="number" id="item-ed-wdice-count" value="1" min="1" style="width:48px">
+                <span>d</span>
+                <input type="number" id="item-ed-wdice-type" value="6" min="1" style="width:48px">
+                <label style="font-size:0.78rem">Type:</label>
+                <select id="item-ed-wdmg-type">
+                  <option value="physical">Physical</option>
+                  <option value="fire">Fire</option>
+                  <option value="ice">Ice</option>
+                  <option value="lightning">Lightning</option>
+                  <option value="poison">Poison</option>
+                  <option value="magic">Magic</option>
+                  <option value="necrotic">Necrotic</option>
+                  <option value="radiant">Radiant</option>
+                </select>
+                <label style="font-size:0.78rem">Range:</label>
+                <input type="text" id="item-ed-wrange" placeholder="melee" style="width:70px">
+              </div>
+            </div>
+
+            <!-- Bonuses -->
+            <div style="margin-top:12px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <h3 style="font-size:0.85rem;flex:1">Bonuses</h3>
+                <button class="btn btn-ghost btn-xs" id="btn-add-bonus">+ Add Bonus</button>
+              </div>
+              <div id="bonus-editor-list"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" id="btn-cancel-item">Cancel</button>
+            <button class="btn btn-danger btn-sm hidden" id="btn-delete-item">Delete Item</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-item">Save Item</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category Modal -->
+      <div id="category-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width:360px">
+          <div class="modal-header">
+            <h2>New Category</h2>
+            <button class="btn-icon" id="btn-close-cat-modal">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group"><label>Name</label><input type="text" id="cat-ed-name" placeholder="Category name"></div>
+            <div class="form-group"><label>Icon (emoji)</label><input type="text" id="cat-ed-icon" value="📦" style="width:60px"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" id="btn-cancel-cat">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-cat">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Combat (Stage 5) -->
+      <div class="tab-content" id="tab-combat" style="padding:16px">
+        <div id="combat-panel"></div>
       </div>
 
       <!-- TAB: Initiative -->

@@ -59,6 +59,9 @@ class CharacterUpdate(BaseModel):
     token_color: Optional[str] = None
     notes: Optional[str] = None
     turn_count: Optional[int] = None
+    gold: Optional[int] = None
+    gold_copper: Optional[int] = None
+    can_edit_own_items: Optional[bool] = None
 
 
 class HpPatch(BaseModel):

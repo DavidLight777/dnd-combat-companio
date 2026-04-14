@@ -57,6 +57,14 @@ function flash(el, cls) {
   el.classList.add(cls);
   setTimeout(() => el.classList.remove(cls), 300);
 }
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-surface-2);color:var(--text-primary);padding:8px 16px;border-radius:var(--r-md);border:1px solid var(--border);font-size:0.82rem;z-index:10000;opacity:0;transition:opacity 0.3s';
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.style.opacity = '1');
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
+}
 function confirmAction(msg) {
   return new Promise(resolve => {
     const ov = document.createElement('div');
@@ -76,7 +84,6 @@ async function loadChar() {
   charData = char;
   $('#char-name').textContent = char.name;
   document.title = `${char.name} — Combat Companion`;
-  if ($('#gold-display')) $('#gold-display').textContent = char.gold || 0;
   renderAll();
 }
 function renderAll() {
@@ -272,6 +279,7 @@ function renderAttack() {
     const res = await api.post('/api/calc/damage-roll', {
       dice_groups: groups, weapon_bonus: weaponBonus,
       attack_bonus: atkBonus, modifier_values: mods.map(m => m.value),
+      character_id: CHAR_ID,
     });
     flash($('#dmg-roll-btn'), 'dice-shake');
 
@@ -322,6 +330,7 @@ async function calcAttack() {
   const mods = (char.attack_modifiers||[]).filter(m => m.is_active);
   const res = await api.post('/api/calc/attack-roll', {
     d20, base_mod: baseMod, modifier_values: mods.map(m => m.value),
+    character_id: CHAR_ID,
   });
   let t = `D20(${res.d20}) + Base(${res.base_mod})`;
   mods.forEach(m => { t += ` + ${m.name}(${m.value>0?'+':''}${m.value})`; });
@@ -640,35 +649,119 @@ document.addEventListener('click', e => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// INVENTORY
+// INVENTORY — Stage 2 Enhanced
 // ══════════════════════════════════════════════════════════════
 const CATEGORY_ICONS = { weapon: '⚔️', armor: '🛡️', potion: '🧪', misc: '📦', quest: '📜' };
+const SLOT_ICONS = {
+  main_hand: '🗡️', off_hand: '🛡️', armor: '🥋', head: '⛑️',
+  ring_1: '💍', ring_2: '💍', amulet: '📿', boots: '👢', gloves: '🧤', belt: '🎗️',
+};
+const SLOT_LABELS = {
+  main_hand: 'Main Hand', off_hand: 'Off Hand', armor: 'Armor', head: 'Head',
+  ring_1: 'Ring 1', ring_2: 'Ring 2', amulet: 'Amulet', boots: 'Boots', gloves: 'Gloves', belt: 'Belt',
+};
+
+let inventoryData = null;  // cached inventory response
+let invFilter = 'all';
 
 async function loadInventory() {
   if (!CHAR_ID) return;
   try {
-    const data = await api.get(`/api/inventory/${CHAR_ID}`);
-    $('#weight-display').textContent = data.total_weight;
-    renderInventoryGrid(data.items);
-  } catch { /* silent */ }
+    inventoryData = await api.get(`/api/characters/${CHAR_ID}/inventory`);
+    $('#weight-display').textContent = inventoryData.total_weight;
+    updateCurrencyDisplay(inventoryData.currency);
+    renderEquipmentSlots(inventoryData.items);
+    renderInventoryGrid(inventoryData.items);
+  } catch(e) { console.warn('loadInventory:', e); }
+}
+
+function updateCurrencyDisplay(c) {
+  if (!c) return;
+  const pe = $('#curr-plat');
+  if (c.platinum > 0) { pe.style.display = ''; pe.querySelector('strong').textContent = c.platinum; }
+  else { pe.style.display = 'none'; }
+  $('#curr-gold').querySelector('strong').textContent = c.gold;
+  $('#curr-silver').querySelector('strong').textContent = c.silver;
+  $('#curr-copper').querySelector('strong').textContent = c.copper;
+}
+
+function renderEquipmentSlots(items) {
+  const grid = $('#equip-slots-grid');
+  const slots = inventoryData?.equipment_slots || Object.keys(SLOT_LABELS);
+  const equippedBySlot = {};
+  for (const it of items) {
+    if (it.is_equipped && it.equipped_slot) equippedBySlot[it.equipped_slot] = it;
+  }
+
+  grid.innerHTML = slots.map(slot => {
+    const item = equippedBySlot[slot];
+    const filled = item ? 'filled' : '';
+    const rClass = item ? `rarity-${item.rarity}` : '';
+    return `<div class="equip-slot ${filled}" data-slot="${slot}" title="${SLOT_LABELS[slot] || slot}">
+      <div class="slot-label">${SLOT_LABELS[slot] || slot}</div>
+      ${item
+        ? `<div class="slot-item-name ${rClass}">${item.name}</div>`
+        : `<div class="slot-empty">${SLOT_ICONS[slot] || '·'}</div>`
+      }
+    </div>`;
+  }).join('');
+
+  // Click slot → show item detail or unequip
+  grid.querySelectorAll('.equip-slot').forEach(el => {
+    el.addEventListener('click', async () => {
+      const slot = el.dataset.slot;
+      const item = equippedBySlot[slot];
+      if (item) {
+        if (await confirmAction(`Unequip ${item.name} from ${SLOT_LABELS[slot]}?`)) {
+          await api.patch(`/api/inventory/${item.inventory_id}/equip`, { equip: false });
+          loadInventory();
+        }
+      }
+    });
+  });
+}
+
+function filterItems(items) {
+  if (invFilter === 'all') return items;
+  if (invFilter === 'equipped') return items.filter(i => i.is_equipped);
+  return items.filter(i => i.category === invFilter);
 }
 
 function renderInventoryGrid(items) {
   const grid = $('#inventory-grid');
-  if (!items || !items.length) {
-    grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No items yet.</span>';
+  const filtered = filterItems(items);
+  if (!filtered || !filtered.length) {
+    grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No items.</span>';
     return;
   }
-  grid.innerHTML = items.map(i => {
+  grid.innerHTML = filtered.map(i => {
     const icon = CATEGORY_ICONS[i.category] || '📦';
     const eq = i.is_equipped ? ' equipped' : '';
-    return `<div class="inv-card${eq}" data-inv-id="${i.inventory_id}" data-item-id="${i.id}">
+    // Bonuses summary
+    let bonusText = '';
+    if (i.bonuses && i.bonuses.length) {
+      bonusText = i.bonuses.map(b => {
+        if (b.bonus_type === 'stat_bonus') return `${b.stat_name} +${b.value}`;
+        return b.bonus_type.replace(/_/g,' ') + (b.value >= 0 ? ' +' : ' ') + b.value;
+      }).join(', ');
+    }
+    // Weapon stats
+    let weaponText = '';
+    if (i.weapon_stats) {
+      const ws = i.weapon_stats;
+      weaponText = `${ws.dice_count}d${ws.dice_type} ${ws.damage_type}${ws.range ? ' · ' + ws.range : ''}`;
+    }
+
+    return `<div class="inv-card${eq}" data-inv-id="${i.inventory_id}" data-item-id="${i.id}" style="border-left:3px solid var(--rarity-${i.rarity}, var(--border))">
+      ${i.is_equipped ? `<span class="equip-badge">${i.equipped_slot ? SLOT_LABELS[i.equipped_slot] || i.equipped_slot : 'EQ'}</span>` : ''}
       <span class="inv-qty">x${i.quantity}</span>
       <div><span class="inv-icon">${icon}</span><span class="inv-name rarity-${i.rarity}">${i.name}</span></div>
-      <div class="inv-meta">${i.rarity} ${i.category} · ${i.weight}lb${i.effect_type ? ' · ' + i.effect_type.replace('_',' ') + ': ' + i.effect_value : ''}</div>
-      <div class="inv-desc">${i.description}</div>
+      <div class="inv-meta">${i.rarity} · ${i.weight}lb</div>
+      ${bonusText ? `<div class="inv-bonuses">${bonusText}</div>` : ''}
+      ${weaponText ? `<div class="inv-weapon-stats">⚔️ ${weaponText}</div>` : ''}
+      <div class="inv-desc">${i.description || ''}</div>
       <div class="inv-actions">
-        ${i.equippable ? `<button class="btn btn-ghost btn-xs" data-inv-equip="${i.inventory_id}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
+        ${i.equippable ? `<button class="btn btn-ghost btn-xs" data-inv-equip="${i.inventory_id}" data-is-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
         ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use="${i.inventory_id}">Use</button>` : ''}
         <button class="btn btn-ghost btn-xs" data-inv-drop="${i.inventory_id}" style="color:var(--accent-red)">Drop</button>
       </div>
@@ -683,11 +776,17 @@ function renderInventoryGrid(items) {
     });
   });
 
-  // Equip
+  // Equip/Unequip
   grid.querySelectorAll('[data-inv-equip]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await api.patch(`/api/inventory/${btn.dataset.invEquip}/equip`, {});
-      loadInventory();
+      const invId = btn.dataset.invEquip;
+      const isEquipped = btn.dataset.isEquipped === 'true';
+      if (isEquipped) {
+        await api.patch(`/api/inventory/${invId}/equip`, { equip: false });
+        loadInventory();
+      } else {
+        openSlotSelector(invId);
+      }
     });
   });
 
@@ -695,7 +794,7 @@ function renderInventoryGrid(items) {
   grid.querySelectorAll('[data-inv-use]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const res = await api.post(`/api/inventory/${btn.dataset.invUse}/use`, {});
-      if (res.result) addCalcLog(res.result);
+      if (res.result) addLog(res.result);
       await loadChar();
       loadInventory();
     });
@@ -704,11 +803,68 @@ function renderInventoryGrid(items) {
   // Drop
   grid.querySelectorAll('[data-inv-drop]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await api.del(`/api/inventory/${btn.dataset.invDrop}`);
+      const card = btn.closest('.inv-card');
+      const name = card?.querySelector('.inv-name')?.textContent || 'item';
+      if (await confirmAction(`Drop ${name}?`)) {
+        await api.del(`/api/inventory/${btn.dataset.invDrop}`);
+        loadInventory();
+      }
+    });
+  });
+}
+
+// ── Slot Selector ───────────────────────────────────────────
+function openSlotSelector(inventoryId) {
+  const modal = $('#slot-selector-modal');
+  const grid = $('#slot-selector-grid');
+  const slots = inventoryData?.equipment_slots || Object.keys(SLOT_LABELS);
+
+  // Find occupied slots
+  const occupiedSlots = {};
+  if (inventoryData) {
+    for (const it of inventoryData.items) {
+      if (it.is_equipped && it.equipped_slot) occupiedSlots[it.equipped_slot] = it.name;
+    }
+  }
+
+  grid.innerHTML = slots.map(slot => {
+    const occ = occupiedSlots[slot];
+    return `<button class="slot-selector-btn ${occ ? 'occupied' : ''}" data-pick-slot="${slot}">
+      <span class="slot-icon">${SLOT_ICONS[slot] || '📦'}</span>
+      <span>${SLOT_LABELS[slot] || slot}</span>
+      ${occ ? `<span style="font-size:0.65rem;color:var(--text-muted)">(${occ})</span>` : ''}
+    </button>`;
+  }).join('');
+
+  modal.style.display = 'flex';
+
+  // Wire slot picks
+  grid.querySelectorAll('[data-pick-slot]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const slot = btn.dataset.pickSlot;
+      await api.patch(`/api/inventory/${inventoryId}/equip`, { equip: true, slot });
+      modal.style.display = 'none';
       loadInventory();
     });
   });
 }
+
+$('#slot-modal-close').addEventListener('click', () => {
+  $('#slot-selector-modal').style.display = 'none';
+});
+$('#slot-selector-modal').addEventListener('click', e => {
+  if (e.target === $('#slot-selector-modal')) $('#slot-selector-modal').style.display = 'none';
+});
+
+// ── Filter Tabs ─────────────────────────────────────────────
+$$('.inv-filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.inv-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    invFilter = btn.dataset.invFilter;
+    if (inventoryData) renderInventoryGrid(inventoryData.items);
+  });
+});
 
 // ── Shop ─────────────────────────────────────────────────────
 $('#btn-open-shop').addEventListener('click', async () => {
@@ -796,6 +952,198 @@ $('#btn-close-map').addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// STATUS EFFECT BADGES (Stage 4)
+// ══════════════════════════════════════════════════════════════
+async function loadStatusEffects() {
+  const el = $('#player-status-badges');
+  if (!el) return;
+  try {
+    const effects = await api.get(`/api/characters/${CHAR_ID}/status-effects`);
+    if (!effects.length) { el.innerHTML = ''; return; }
+    el.innerHTML = effects.map(e => {
+      const turns = e.remaining_turns !== null ? ` ${e.remaining_turns}t` : '';
+      const efDesc = (e.effects||[]).map(ef => {
+        if (ef.type === 'attack_penalty') return `ATK ${ef.value}`;
+        if (ef.type === 'damage_penalty') return `DMG ${ef.value}`;
+        if (ef.type === 'hp_change_per_turn') return `HP/turn ${ef.value}`;
+        if (ef.type === 'skip_turn') return 'Skip turn';
+        if (ef.type === 'stat_penalty') return `${ef.stat} ${ef.value}`;
+        if (ef.type === 'custom_note') return ef.text;
+        return ef.type;
+      }).join(', ');
+      return `<span style="background:${e.color}20;border:1px solid ${e.color};border-radius:6px;padding:3px 8px;font-size:0.78rem;display:inline-flex;align-items:center;gap:3px;cursor:help" title="${e.name}: ${efDesc}">${e.icon} ${e.name}${turns ? `<span style='font-size:0.65rem;opacity:0.7'>${turns}</span>` : ''}</span>`;
+    }).join('');
+  } catch {}
+}
+
+// ══════════════════════════════════════════════════════════════
+// CURRENCY DISPLAY & TRANSFER
+// ══════════════════════════════════════════════════════════════
+async function loadCurrency() {
+  try {
+    const data = await api.get(`/api/characters/${CHAR_ID}/currency`);
+    const d = data.currency;
+    const parts = [];
+    if (d.platinum) parts.push(`${d.platinum}P`);
+    if (d.gold) parts.push(`${d.gold}G`);
+    if (d.silver) parts.push(`${d.silver}S`);
+    parts.push(`${d.copper}C`);
+    $('#player-currency').innerHTML = `💰 ${parts.join(' ')}`;
+    $('#player-currency').dataset.totalCopper = data.total_copper;
+  } catch {}
+}
+
+$('#player-currency').addEventListener('click', () => openTransferModal());
+
+function openTransferModal() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:85%;max-width:380px;padding:20px">
+      <h3 style="font-size:0.9rem;margin-bottom:12px">💰 Transfer Currency</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px">Balance: <strong style="color:var(--accent)">${$('#player-currency').textContent}</strong></p>
+      <div id="transfer-targets" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+        <span style="font-size:0.7rem;color:#e0c97f">P:</span><input type="number" id="tx-plat" value="0" style="width:42px;font-size:0.75rem" min="0">
+        <span style="font-size:0.7rem;color:#fbbf24">G:</span><input type="number" id="tx-gold" value="0" style="width:42px;font-size:0.75rem" min="0">
+        <span style="font-size:0.7rem;color:#94a3b8">S:</span><input type="number" id="tx-silver" value="0" style="width:42px;font-size:0.75rem" min="0">
+        <span style="font-size:0.7rem;color:#b87333">C:</span><input type="number" id="tx-copper" value="0" style="width:42px;font-size:0.75rem" min="0">
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" id="tx-send">Send</button>
+        <button class="btn btn-ghost btn-sm" id="tx-cancel">Cancel</button>
+      </div>
+      <div id="tx-result" style="margin-top:8px;font-size:0.8rem"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#tx-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  // Load other characters in session
+  let selectedTarget = null;
+  (async () => {
+    try {
+      const chars = await api.get(`/api/sessions/${SESSION_CODE}/characters`);
+      const others = chars.filter(c => c.id !== CHAR_ID && !c.is_npc);
+      const el = overlay.querySelector('#transfer-targets');
+      if (!others.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No other players.</span>'; return; }
+      el.innerHTML = `<label style="font-size:0.78rem;color:var(--text-muted)">To:</label>
+        <select id="tx-target" style="font-size:0.8rem;padding:4px;margin-left:4px">
+          ${others.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+        </select>`;
+    } catch {}
+  })();
+
+  overlay.querySelector('#tx-send').addEventListener('click', async () => {
+    const target = overlay.querySelector('#tx-target');
+    if (!target) return;
+    const toId = parseInt(target.value);
+    const p = parseInt(overlay.querySelector('#tx-plat').value) || 0;
+    const g = parseInt(overlay.querySelector('#tx-gold').value) || 0;
+    const s = parseInt(overlay.querySelector('#tx-silver').value) || 0;
+    const co = parseInt(overlay.querySelector('#tx-copper').value) || 0;
+    const totalCopper = p * 1000 + g * 100 + s * 10 + co;
+    if (totalCopper <= 0) return;
+
+    try {
+      const res = await api.post('/api/currency/transfer', { from_id: CHAR_ID, to_id: toId, copper_amount: totalCopper });
+      overlay.querySelector('#tx-result').innerHTML = `<span style="color:var(--accent-green)">Sent ${p}P ${g}G ${s}S ${co}C to ${res.to.name}!</span>`;
+      loadCurrency();
+      addLog(`[Transfer] Sent ${totalCopper}cp to ${res.to.name}`);
+      setTimeout(() => overlay.remove(), 1500);
+    } catch (e) {
+      let msg = 'Transfer failed';
+      try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
+      overlay.querySelector('#tx-result').innerHTML = `<span style="color:var(--accent-red)">${msg}</span>`;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// TRADE MODAL (opened via WS event from GM)
+// ══════════════════════════════════════════════════════════════
+let activeTradeOverlay = null;
+
+function openTradeModal(tradeId, npcId, npcName) {
+  if (activeTradeOverlay) activeTradeOverlay.remove();
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:90%;max-width:550px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg-surface-2)">
+        <h3 style="flex:1;font-size:0.95rem">🤝 Trading with ${npcName}</h3>
+        <span id="trade-balance" style="font-size:0.8rem;color:var(--accent);margin-right:12px"></span>
+      </div>
+      <div id="trade-shop-list" style="padding:12px;overflow-y:auto;flex:1;font-size:0.82rem"></div>
+      <div id="trade-result" style="padding:8px 16px;font-size:0.8rem"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  activeTradeOverlay = overlay;
+
+  async function loadTradeShop() {
+    try {
+      const cur = await api.get(`/api/characters/${CHAR_ID}/currency`);
+      const d = cur.currency;
+      const bal = [d.platinum && d.platinum+'P', d.gold && d.gold+'G', d.silver && d.silver+'S', d.copper+'C'].filter(Boolean).join(' ');
+      overlay.querySelector('#trade-balance').textContent = `💰 ${bal}`;
+
+      const shop = await api.get(`/api/npc/${npcId}/shop?player_id=${CHAR_ID}`);
+      const el = overlay.querySelector('#trade-shop-list');
+      if (!shop.items.length) { el.innerHTML = '<span class="text-muted">This merchant has nothing for sale.</span>'; return; }
+
+      el.innerHTML = shop.items.map(si => {
+        const fp = si.final_price;
+        const priceStr = [fp.platinum && fp.platinum+'P', fp.gold && fp.gold+'G', fp.silver && fp.silver+'S', fp.copper && fp.copper+'C'].filter(Boolean).join(' ') || si.final_price_copper+'cp';
+        const stockStr = si.stock === null ? '' : `(${si.stock} left)`;
+        const canBuy = si.stock === null || si.stock > 0;
+        return `<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1">
+            <div class="rarity-${si.rarity}" style="font-weight:600">${si.name}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted)">${si.description || ''}</div>
+          </div>
+          <span style="font-size:0.75rem;font-weight:600">${priceStr}</span>
+          <span style="font-size:0.65rem;color:var(--text-muted)">${stockStr}</span>
+          ${canBuy ? `<button class="btn btn-primary btn-xs" data-trade-buy="${si.shop_item_id}">Buy</button>` : '<span style="color:var(--accent-red);font-size:0.7rem">SOLD</span>'}
+        </div>`;
+      }).join('');
+
+      el.querySelectorAll('[data-trade-buy]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const sid = parseInt(btn.dataset.tradeBuy);
+          try {
+            const res = await api.post(`/api/trade/${tradeId}/buy`, { shop_item_id: sid, quantity: 1 });
+            overlay.querySelector('#trade-result').innerHTML = `<span style="color:var(--accent-green)">Bought ${res.item_name} for ${res.total_cost_copper}cp!</span>`;
+            loadCurrency();
+            loadInventory();
+            loadTradeShop();
+            addLog(`[Trade] Bought ${res.item_name}`);
+          } catch (e) {
+            let msg = 'Purchase failed';
+            try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
+            overlay.querySelector('#trade-result').innerHTML = `<span style="color:var(--accent-red)">${msg}</span>`;
+          }
+        });
+      });
+    } catch (e) {
+      overlay.querySelector('#trade-shop-list').innerHTML = '<span class="text-muted">Error loading shop.</span>';
+    }
+  }
+
+  loadTradeShop();
+}
+
+function closeTradeModal() {
+  if (activeTradeOverlay) {
+    activeTradeOverlay.remove();
+    activeTradeOverlay = null;
+    showToast('Trade ended');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // WEBSOCKET
 // ══════════════════════════════════════════════════════════════
 const ws = new WsClient(SESSION_CODE, PLAYER_TOKEN);
@@ -813,8 +1161,42 @@ ws.on('_reconnecting', d => { $('#ws-label').textContent = `reconnecting (${d.at
 ws.on('character.hp_update', d => {
   if (d.character_id == CHAR_ID) loadChar();
 });
+ws.on('inventory.item_added', d => {
+  if (d.character_id == CHAR_ID) loadInventory();
+});
+ws.on('inventory.item_equipped', d => {
+  if (d.character_id == CHAR_ID) loadInventory();
+});
+ws.on('inventory.item_removed', d => {
+  if (d.character_id == CHAR_ID) loadInventory();
+});
+ws.on('combat.bonuses_updated', d => {
+  if (d.character_id == CHAR_ID) { loadInventory(); loadChar(); }
+});
 ws.on('session.status_change', d => {
   if (d.status === 'ended') addLog('[Session] Ended by GM');
+});
+// Stage 3: Economy WS events
+ws.on('currency.updated', d => {
+  if (d.character_id == CHAR_ID) loadCurrency();
+});
+ws.on('trade.initiated', d => {
+  if (d.player_id == CHAR_ID) {
+    openTradeModal(d.trade_id, d.npc_id, d.npc_name);
+  }
+});
+ws.on('trade.closed', d => {
+  closeTradeModal();
+});
+// Stage 4: Status effect events
+ws.on('status_effect.applied', d => {
+  if (d.character_id == CHAR_ID) loadStatusEffects();
+});
+ws.on('status_effect.removed', d => {
+  if (d.character_id == CHAR_ID) loadStatusEffects();
+});
+ws.on('status_effect.expired', d => {
+  if (d.character_id == CHAR_ID) { loadStatusEffects(); showToast(`${d.effect_name} expired`); }
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -822,4 +1204,6 @@ ws.on('session.status_change', d => {
 // ══════════════════════════════════════════════════════════════
 loadChar();
 loadInventory();
+loadCurrency();
+loadStatusEffects();
 ws.connect();

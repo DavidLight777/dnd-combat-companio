@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Integer, String, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -69,6 +69,8 @@ class Character(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
     gold: Mapped[int] = mapped_column(Integer, default=0)
+    gold_copper: Mapped[int] = mapped_column(Integer, default=0)  # total wealth in copper
+    can_edit_own_items: Mapped[bool] = mapped_column(Boolean, default=False)
 
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -89,6 +91,9 @@ class Character(Base):
         back_populates="character", cascade="all, delete-orphan", lazy="selectin"
     )
     turn_timers: Mapped[list["TurnTimer"]] = relationship(
+        back_populates="character", cascade="all, delete-orphan", lazy="selectin"
+    )
+    inventory_items: Mapped[list["InventoryItem"]] = relationship(
         back_populates="character", cascade="all, delete-orphan", lazy="selectin"
     )
 
@@ -209,6 +214,20 @@ class MapData(Base):
 
 
 # ══════════════════════════════════════════════════════════════
+# ITEM CATEGORIES
+# ══════════════════════════════════════════════════════════════
+class ItemCategory(Base):
+    __tablename__ = "item_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    icon: Mapped[str] = mapped_column(Text, default="📦")
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+
+    items: Mapped[list["Item"]] = relationship(back_populates="category_rel", lazy="selectin")
+
+
+# ══════════════════════════════════════════════════════════════
 # ITEMS & INVENTORY
 # ══════════════════════════════════════════════════════════════
 class Item(Base):
@@ -218,14 +237,49 @@ class Item(Base):
     session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
-    category: Mapped[str] = mapped_column(String(20), default="misc")  # weapon/armor/potion/misc/quest
-    rarity: Mapped[str] = mapped_column(String(20), default="common")  # common/uncommon/rare/epic/legendary
-    base_price: Mapped[int] = mapped_column(Integer, default=0)
+    category: Mapped[str] = mapped_column(String(20), default="misc")  # legacy — kept for compat
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("item_categories.id", ondelete="SET NULL"), nullable=True)
+    rarity: Mapped[str] = mapped_column(String(20), default="common")  # common/uncommon/rare/epic/legendary/mythic/divine
+    base_price: Mapped[int] = mapped_column(Integer, default=0)  # legacy gold price
+    base_price_copper: Mapped[int] = mapped_column(Integer, default=0)
     weight: Mapped[float] = mapped_column(Float, default=0.0)
-    effect_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # percent_reduction/flat_reduction/stat_bonus/hp_bonus
+    effect_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # legacy single effect
     effect_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     equippable: Mapped[bool] = mapped_column(Boolean, default=False)
     consumable: Mapped[bool] = mapped_column(Boolean, default=False)
+    tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
+    created_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    category_rel: Mapped["ItemCategory | None"] = relationship(back_populates="items", lazy="selectin")
+    bonuses: Mapped[list["ItemBonus"]] = relationship(back_populates="item", cascade="all, delete-orphan", lazy="selectin")
+    weapon_stats: Mapped["ItemWeaponStats | None"] = relationship(back_populates="item", uselist=False, cascade="all, delete-orphan", lazy="selectin")
+
+
+class ItemBonus(Base):
+    __tablename__ = "item_bonuses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
+    bonus_type: Mapped[str] = mapped_column(String(40), nullable=False)  # percent_damage_reduction, flat_damage_reduction, stat_bonus, attack_bonus, damage_bonus, damage_dice_count, damage_dice_type, hp_bonus, initiative_bonus, speed_bonus, custom
+    stat_name: Mapped[str | None] = mapped_column(String(20), nullable=True)  # for stat_bonus
+    value: Mapped[float] = mapped_column(Float, default=0)
+    is_conditional: Mapped[bool] = mapped_column(Boolean, default=False)
+    condition_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    item: Mapped["Item"] = relationship(back_populates="bonuses")
+
+
+class ItemWeaponStats(Base):
+    __tablename__ = "item_weapon_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), unique=True)
+    dice_count: Mapped[int] = mapped_column(Integer, default=1)
+    dice_type: Mapped[int] = mapped_column(Integer, default=6)
+    damage_type: Mapped[str] = mapped_column(String(20), default="physical")
+    range: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    item: Mapped["Item"] = relationship(back_populates="weapon_stats")
 
 
 class InventoryItem(Base):
@@ -236,6 +290,12 @@ class InventoryItem(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     is_equipped: Mapped[bool] = mapped_column(Boolean, default=False)
+    equipped_slot: Mapped[str | None] = mapped_column(String(20), nullable=True)  # main_hand, off_hand, armor, head, ring_1, ring_2, amulet, boots, gloves, belt
+    custom_notes: Mapped[str] = mapped_column(Text, default="")
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    character: Mapped["Character"] = relationship(back_populates="inventory_items")
+    item: Mapped["Item"] = relationship(lazy="selectin")
 
 
 class ShopItem(Base):
@@ -246,6 +306,140 @@ class ShopItem(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     price_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stock: Mapped[int] = mapped_column(Integer, default=-1)  # -1 = unlimited
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 3 — ECONOMY & TRADING
+# ══════════════════════════════════════════════════════════════
+class CurrencyTransaction(Base):
+    __tablename__ = "currency_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    from_character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)  # NULL = GM grant
+    to_character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    amount_copper: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str] = mapped_column(Text, default="")
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class NpcReputation(Base):
+    __tablename__ = "npc_reputation"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    npc_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    reputation_value: Mapped[int] = mapped_column(Integer, default=0)  # -100 to 100
+
+    __table_args__ = (
+        UniqueConstraint("npc_id", "character_id", name="uq_npc_character_reputation"),
+    )
+
+
+class NpcShopInventory(Base):
+    __tablename__ = "npc_shop_inventory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    npc_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
+    stock: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL = unlimited
+    price_override_copper: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL = use item base_price
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    item: Mapped["Item"] = relationship(lazy="selectin")
+
+
+class TradeSession(Base):
+    __tablename__ = "trade_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    npc_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    player_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(20), default="open")  # open, closed
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 4 — STATUS EFFECTS
+# ══════════════════════════════════════════════════════════════
+class StatusEffectTemplate(Base):
+    __tablename__ = "status_effect_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str] = mapped_column(String(10), default="⚡")
+    color: Mapped[str] = mapped_column(String(10), default="#ff6b6b")
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    effects: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of effect objects
+    default_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)  # turns, NULL=permanent
+
+
+class CharacterStatusEffect(Base):
+    __tablename__ = "character_status_effects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("status_effect_templates.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    icon: Mapped[str] = mapped_column(String(10), default="⚡")
+    color: Mapped[str] = mapped_column(String(10), default="#ff6b6b")
+    effects: Mapped[str] = mapped_column(Text, default="[]")  # JSON
+    remaining_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL=permanent
+    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    applied_by_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+
+    template: Mapped["StatusEffectTemplate | None"] = relationship(lazy="selectin")
+
+
+class EquipmentTemplate(Base):
+    __tablename__ = "equipment_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    item_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 5 — COMBAT EVENTS
+# ══════════════════════════════════════════════════════════════
+class CombatEvent(Base):
+    __tablename__ = "combat_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, default="Combat")
+    status: Mapped[str] = mapped_column(String(20), default="preparing")  # preparing, active, ended
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    round_number: Mapped[int] = mapped_column(Integer, default=0)
+    current_participant_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # combat_participants.id
+
+    participants: Mapped[list["CombatParticipant"]] = relationship(
+        back_populates="combat_event", cascade="all, delete-orphan", lazy="selectin",
+        order_by="CombatParticipant.turn_order"
+    )
+
+
+class CombatParticipant(Base):
+    __tablename__ = "combat_participants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    combat_event_id: Mapped[int] = mapped_column(ForeignKey("combat_events.id", ondelete="CASCADE"))
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    initiative_roll: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    initiative_bonus: Mapped[int] = mapped_column(Integer, default=0)
+    final_initiative: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    turn_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    show_hp_to_players: Mapped[bool] = mapped_column(Boolean, default=False)
+    show_ac_to_players: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    combat_event: Mapped["CombatEvent"] = relationship(back_populates="participants")
+    character: Mapped["Character"] = relationship(lazy="selectin")
 
 
 # ══════════════════════════════════════════════════════════════

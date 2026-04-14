@@ -20,6 +20,9 @@ from app.routers.initiative import router as initiative_router
 from app.routers.map import router as map_router
 from app.routers.inventory import router as inventory_router
 from app.routers.ai import router as ai_router
+from app.routers.economy import router as economy_router
+from app.routers.status_effects import router as status_effects_router
+from app.routers.combat_events import router as combat_events_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -56,6 +59,9 @@ app.include_router(initiative_router)
 app.include_router(map_router)
 app.include_router(inventory_router)
 app.include_router(ai_router)
+app.include_router(economy_router)
+app.include_router(status_effects_router)
+app.include_router(combat_events_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

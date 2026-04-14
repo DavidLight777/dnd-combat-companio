@@ -16,6 +16,7 @@
       <span class="status-dot" id="ws-dot"></span>
       <span id="ws-label">connecting...</span>
     </div>
+    <span id="player-currency" class="session-badge" style="cursor:pointer;color:var(--accent)" title="Click to transfer">💰 —</span>
     <span class="session-badge">Session: <strong id="session-code">—</strong></span>
     <button class="btn btn-ghost btn-sm" id="btn-open-map">🗺️ Map</button>
   </div>
@@ -39,6 +40,9 @@
         <div class="hp-label">Hit Points · KD: <span id="kd-display">10</span></div>
         <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div></div>
       </div>
+
+      <!-- ── STATUS EFFECTS ────────────────────────────────── -->
+      <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
 
       <!-- ── STATS ────────────────────────────────────────── -->
       <div class="stats-grid" id="stats-grid"></div>
@@ -80,14 +84,44 @@
         <section class="panel panel-full">
           <div class="panel-header" style="display:flex;align-items:center;gap:12px">
             <h2 style="flex:1">🎒 Inventory</h2>
-            <span style="font-size:0.78rem;color:var(--text-muted)">Gold: <strong id="gold-display" style="color:var(--accent)">0</strong></span>
+            <span class="currency-display" id="currency-display">
+              <span class="curr-plat" id="curr-plat" style="display:none">💎 <strong>0</strong>P</span>
+              <span class="curr-gold" id="curr-gold">🪙 <strong>0</strong>G</span>
+              <span class="curr-silver" id="curr-silver">🥈 <strong>0</strong>S</span>
+              <span class="curr-copper" id="curr-copper">🟤 <strong>0</strong>C</span>
+            </span>
             <span style="font-size:0.78rem;color:var(--text-muted)">Weight: <strong id="weight-display">0</strong></span>
             <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>
           </div>
           <div class="panel-body">
+            <!-- Equipment Slots -->
+            <div class="equipment-panel" id="equipment-panel">
+              <h3 style="font-size:0.82rem;margin-bottom:8px">⚔️ Equipment</h3>
+              <div class="equip-slots-grid" id="equip-slots-grid"></div>
+            </div>
+            <hr class="section-divider">
+            <!-- Inventory Filter Tabs -->
+            <div class="inv-filter-tabs" id="inv-filter-tabs">
+              <button class="btn btn-ghost btn-xs inv-filter active" data-inv-filter="all">All</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="equipped">Equipped</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="weapon">Weapons</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="armor">Armor</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="potion">Potions</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="misc">Misc</button>
+            </div>
             <div id="inventory-grid" class="inventory-grid"></div>
           </div>
         </section>
+      </div>
+
+      <!-- Slot selector modal -->
+      <div id="slot-selector-modal" class="modal-overlay" style="display:none">
+        <div class="modal-panel" style="max-width:340px">
+          <div class="modal-header"><h3>Select Equipment Slot</h3><button class="btn-icon" id="slot-modal-close">✕</button></div>
+          <div class="modal-body">
+            <div class="slot-selector-grid" id="slot-selector-grid"></div>
+          </div>
+        </div>
       </div>
 
       <!-- ── LOG ──────────────────────────────────────────── -->

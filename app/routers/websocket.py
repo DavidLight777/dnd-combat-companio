@@ -90,11 +90,92 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
     try:
         while True:
             data = await websocket.receive_text()
-            # For now, just echo or log. Future stages add message handling.
             try:
                 msg = json.loads(data)
-                event = msg.get("event", "")
-                # Route messages based on event type (Stage 2+)
+                msg_type = msg.get("type", "")
+
+                # Stage 3: GM broadcasts trade events to target player
+                if msg_type == "trade.initiated" and role == "gm":
+                    player_id = msg.get("player_id")
+                    # Find player token and forward
+                    async with async_session() as db:
+                        char_result = await db.execute(
+                            select(Character).where(Character.id == player_id)
+                        )
+                        target_char = char_result.scalar_one_or_none()
+                        if target_char and target_char.player_token:
+                            await manager.send_to_token(session_code, target_char.player_token, "trade.initiated", {
+                                "trade_id": msg.get("trade_id"),
+                                "npc_id": msg.get("npc_id"),
+                                "npc_name": msg.get("npc_name"),
+                                "player_id": player_id,
+                            })
+
+                elif msg_type == "trade.closed" and role == "gm":
+                    await manager.broadcast_to_session(session_code, "trade.closed", {
+                        "trade_id": msg.get("trade_id"),
+                    })
+
+                elif msg_type == "currency.updated":
+                    await manager.broadcast_to_session(session_code, "currency.updated", {
+                        "character_id": msg.get("character_id"),
+                    })
+
+                # Stage 4: Status effect events
+                elif msg_type in ("status_effect.applied", "status_effect.removed", "status_effect.expired"):
+                    await manager.broadcast_to_session(session_code, msg_type, {
+                        "character_id": msg.get("character_id"),
+                        "effect_name": msg.get("effect_name", ""),
+                    })
+
+                # Stage 5: Combat events
+                elif msg_type == "combat.roll_initiative_request":
+                    # Send initiative roll request to specific player tokens
+                    player_ids = msg.get("player_ids", [])
+                    combat_id = msg.get("combat_id")
+                    async with async_session() as db:
+                        for pid in player_ids:
+                            char_result = await db.execute(
+                                select(Character).where(Character.id == pid)
+                            )
+                            target_char = char_result.scalar_one_or_none()
+                            if target_char and target_char.player_token:
+                                await manager.send_to_token(session_code, target_char.player_token, "combat.roll_initiative_request", {
+                                    "combat_id": combat_id,
+                                    "character_id": pid,
+                                    "initiative_bonus": msg.get("bonuses", {}).get(str(pid), 0),
+                                })
+
+                elif msg_type == "combat.initiative_submitted":
+                    # Forward to GM
+                    await manager.send_to_gm(session_code, "combat.initiative_submitted", {
+                        "combat_id": msg.get("combat_id"),
+                        "character_id": msg.get("character_id"),
+                        "roll": msg.get("roll"),
+                        "final": msg.get("final"),
+                    })
+
+                elif msg_type in ("combat.created", "combat.started", "combat.turn_changed", "combat.ended"):
+                    await manager.broadcast_to_session(session_code, msg_type, msg.get("data", {}))
+
+                elif msg_type == "combat.timer_started":
+                    target_pid = msg.get("player_id")
+                    async with async_session() as db:
+                        char_result = await db.execute(
+                            select(Character).where(Character.id == target_pid)
+                        )
+                        target_char = char_result.scalar_one_or_none()
+                        if target_char and target_char.player_token:
+                            await manager.send_to_token(session_code, target_char.player_token, "combat.timer_started", {
+                                "duration_seconds": msg.get("duration_seconds"),
+                                "combat_id": msg.get("combat_id"),
+                            })
+                    # Also send to GM
+                    await manager.send_to_gm(session_code, "combat.timer_started", {
+                        "player_id": target_pid,
+                        "duration_seconds": msg.get("duration_seconds"),
+                    })
+
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:

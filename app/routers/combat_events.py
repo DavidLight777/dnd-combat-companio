@@ -1,0 +1,505 @@
+"""Stage 5 — Combat Events & Initiative System."""
+
+import json
+import random
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_session
+from app.models import (
+    CombatEvent, CombatParticipant, Character, CharacterStatusEffect,
+    Session,
+)
+
+router = APIRouter(prefix="/api/combat", tags=["combat"])
+
+
+# ── Schemas ───────────────────────────────────────────────────
+class CreateCombatBody(BaseModel):
+    session_id: int
+    name: str = "Combat"
+
+
+class AddParticipantBody(BaseModel):
+    character_id: int
+
+
+class AddParticipantsBody(BaseModel):
+    character_ids: list[int]
+
+
+class SetInitiativeBody(BaseModel):
+    character_id: int
+    roll: int
+
+
+class ManualInitiativeBody(BaseModel):
+    participant_id: int
+    final_initiative: int
+
+
+class TimerBody(BaseModel):
+    participant_id: int
+    duration_seconds: int
+
+
+# ── Helpers ───────────────────────────────────────────────────
+async def _serialize_combat(ce: CombatEvent, db: AsyncSession) -> dict:
+    result = await db.execute(
+        select(CombatParticipant).where(
+            CombatParticipant.combat_event_id == ce.id
+        ).order_by(CombatParticipant.turn_order)
+    )
+    parts = result.scalars().all()
+    serialized = []
+    for p in parts:
+        char = await db.get(Character, p.character_id)
+        serialized.append(_serialize_participant(p, char))
+    return {
+        "id": ce.id,
+        "session_id": ce.session_id,
+        "name": ce.name,
+        "status": ce.status,
+        "round_number": ce.round_number,
+        "current_participant_id": ce.current_participant_id,
+        "started_at": ce.started_at.isoformat() if ce.started_at else None,
+        "ended_at": ce.ended_at.isoformat() if ce.ended_at else None,
+        "participants": serialized,
+    }
+
+
+def _serialize_participant(p: CombatParticipant, ch: Character | None = None) -> dict:
+    if ch is None:
+        ch = p.character
+    return {
+        "id": p.id,
+        "combat_event_id": p.combat_event_id,
+        "character_id": p.character_id,
+        "name": ch.name if ch else "?",
+        "is_npc": ch.is_npc if ch else False,
+        "current_hp": ch.current_hp if ch else 0,
+        "max_hp": ch.max_hp if ch else 0,
+        "armor_class": ch.armor_class if ch else 10,
+        "is_alive": ch.is_alive if ch else False,
+        "initiative_roll": p.initiative_roll,
+        "initiative_bonus": p.initiative_bonus,
+        "final_initiative": p.final_initiative,
+        "turn_order": p.turn_order,
+        "is_active": p.is_active,
+        "show_hp_to_players": p.show_hp_to_players,
+        "show_ac_to_players": p.show_ac_to_players,
+    }
+
+
+def _calc_initiative_bonus(char: Character) -> int:
+    """Base initiative_bonus + equipped item initiative bonuses."""
+    bonus = char.initiative_bonus or 0
+    # Add bonuses from equipped items (inventory_items loaded via selectin)
+    try:
+        for inv in char.inventory_items:
+            if inv.is_equipped and inv.item and inv.item.bonuses:
+                for b in inv.item.bonuses:
+                    if b.stat == "initiative_bonus":
+                        bonus += b.value
+    except Exception:
+        pass  # If inventory not loaded, just use base bonus
+    return bonus
+
+
+async def _get_combat(combat_id: int, db: AsyncSession) -> CombatEvent:
+    ce = await db.get(CombatEvent, combat_id)
+    if not ce:
+        raise HTTPException(404, "Combat event not found")
+    return ce
+
+
+# ══════════════════════════════════════════════════════════════
+# COMBAT CRUD
+# ══════════════════════════════════════════════════════════════
+@router.post("/create")
+async def create_combat(body: CreateCombatBody, db: AsyncSession = Depends(get_session)):
+    # Verify session exists
+    sess = await db.get(Session, body.session_id)
+    if not sess:
+        raise HTTPException(404, "Session not found")
+
+    ce = CombatEvent(session_id=body.session_id, name=body.name)
+    db.add(ce)
+    await db.commit()
+    await db.refresh(ce)
+    return await _serialize_combat(ce, db)
+
+
+@router.get("/{combat_id}/state")
+async def get_combat_state(combat_id: int, db: AsyncSession = Depends(get_session)):
+    ce = await _get_combat(combat_id, db)
+    return await _serialize_combat(ce, db)
+
+
+@router.get("/session/{session_code}/active")
+async def get_active_combat(session_code: str, db: AsyncSession = Depends(get_session)):
+    """Get the currently active or preparing combat for a session."""
+    result = await db.execute(select(Session).where(Session.code == session_code))
+    sess = result.scalar_one_or_none()
+    if not sess:
+        raise HTTPException(404, "Session not found")
+
+    result = await db.execute(
+        select(CombatEvent).where(
+            CombatEvent.session_id == sess.id,
+            CombatEvent.status.in_(["preparing", "active"]),
+        ).order_by(CombatEvent.id.desc()).limit(1)
+    )
+    ce = result.scalar_one_or_none()
+    if not ce:
+        return {"active": False}
+    return {"active": True, "combat": await _serialize_combat(ce, db)}
+
+
+# ══════════════════════════════════════════════════════════════
+# PARTICIPANTS
+# ══════════════════════════════════════════════════════════════
+@router.post("/{combat_id}/add-participant")
+async def add_participant(combat_id: int, body: AddParticipantBody, db: AsyncSession = Depends(get_session)):
+    ce = await _get_combat(combat_id, db)
+    if ce.status == "ended":
+        raise HTTPException(400, "Combat already ended")
+
+    char = await db.get(Character, body.character_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+
+    # Check duplicate
+    existing = await db.execute(
+        select(CombatParticipant).where(
+            CombatParticipant.combat_event_id == combat_id,
+            CombatParticipant.character_id == body.character_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Character already in combat")
+
+    bonus = _calc_initiative_bonus(char)
+    p = CombatParticipant(
+        combat_event_id=combat_id,
+        character_id=body.character_id,
+        initiative_bonus=bonus,
+    )
+    db.add(p)
+    await db.commit()
+    await db.refresh(p)
+    return _serialize_participant(p)
+
+
+@router.post("/{combat_id}/add-participants")
+async def add_participants(combat_id: int, body: AddParticipantsBody, db: AsyncSession = Depends(get_session)):
+    ce = await _get_combat(combat_id, db)
+    if ce.status == "ended":
+        raise HTTPException(400, "Combat already ended")
+
+    added = []
+    for cid in body.character_ids:
+        char = await db.get(Character, cid)
+        if not char:
+            continue
+        # Skip duplicates
+        existing = await db.execute(
+            select(CombatParticipant).where(
+                CombatParticipant.combat_event_id == combat_id,
+                CombatParticipant.character_id == cid,
+            )
+        )
+        if existing.scalar_one_or_none():
+            continue
+
+        bonus = _calc_initiative_bonus(char)
+        p = CombatParticipant(
+            combat_event_id=combat_id,
+            character_id=cid,
+            initiative_bonus=bonus,
+        )
+        db.add(p)
+        added.append(cid)
+
+    await db.commit()
+    await db.refresh(ce)
+    return {"ok": True, "added": added, "combat": await _serialize_combat(ce, db)}
+
+
+@router.delete("/{combat_id}/participants/{char_id}")
+async def remove_participant(combat_id: int, char_id: int, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(
+        select(CombatParticipant).where(
+            CombatParticipant.combat_event_id == combat_id,
+            CombatParticipant.character_id == char_id,
+        )
+    )
+    p = result.scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Participant not found")
+    await db.delete(p)
+    await db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════
+# INITIATIVE
+# ══════════════════════════════════════════════════════════════
+@router.post("/{combat_id}/roll-npc-initiative")
+async def roll_npc_initiative(combat_id: int, db: AsyncSession = Depends(get_session)):
+    """Roll initiative for ALL NPC participants at once."""
+    ce = await _get_combat(combat_id, db)
+
+    result = await db.execute(
+        select(CombatParticipant).where(CombatParticipant.combat_event_id == combat_id)
+    )
+    participants = result.scalars().all()
+
+    rolls = []
+    for p in participants:
+        char = await db.get(Character, p.character_id)
+        if not char or not char.is_npc:
+            continue
+        d20 = random.randint(1, 20)
+        p.initiative_roll = d20
+        p.initiative_bonus = _calc_initiative_bonus(char)
+        p.final_initiative = d20 + p.initiative_bonus
+        rolls.append({
+            "participant_id": p.id,
+            "character_id": p.character_id,
+            "name": char.name,
+            "d20": d20,
+            "bonus": p.initiative_bonus,
+            "final": p.final_initiative,
+        })
+
+    await db.commit()
+    await db.refresh(ce)
+    return {"ok": True, "rolls": rolls, "combat": await _serialize_combat(ce, db)}
+
+
+@router.post("/{combat_id}/set-player-initiative")
+async def set_player_initiative(combat_id: int, body: SetInitiativeBody, db: AsyncSession = Depends(get_session)):
+    """Player submits their d20 roll."""
+    result = await db.execute(
+        select(CombatParticipant).where(
+            CombatParticipant.combat_event_id == combat_id,
+            CombatParticipant.character_id == body.character_id,
+        )
+    )
+    p = result.scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Participant not found")
+
+    char = await db.get(Character, p.character_id)
+    p.initiative_roll = body.roll
+    p.initiative_bonus = _calc_initiative_bonus(char) if char else 0
+    p.final_initiative = body.roll + p.initiative_bonus
+    await db.commit()
+    return {
+        "ok": True,
+        "participant_id": p.id,
+        "character_id": p.character_id,
+        "d20": body.roll,
+        "bonus": p.initiative_bonus,
+        "final": p.final_initiative,
+    }
+
+
+@router.post("/{combat_id}/set-manual-initiative")
+async def set_manual_initiative(combat_id: int, body: ManualInitiativeBody, db: AsyncSession = Depends(get_session)):
+    """GM manually sets final initiative for any participant."""
+    p = await db.get(CombatParticipant, body.participant_id)
+    if not p or p.combat_event_id != combat_id:
+        raise HTTPException(404, "Participant not found")
+    p.final_initiative = body.final_initiative
+    await db.commit()
+    return {"ok": True, "participant_id": p.id, "final_initiative": p.final_initiative}
+
+
+# ══════════════════════════════════════════════════════════════
+# COMBAT FLOW
+# ══════════════════════════════════════════════════════════════
+@router.post("/{combat_id}/start")
+async def start_combat(combat_id: int, db: AsyncSession = Depends(get_session)):
+    ce = await _get_combat(combat_id, db)
+    if ce.status != "preparing":
+        raise HTTPException(400, f"Combat is already {ce.status}")
+
+    result = await db.execute(
+        select(CombatParticipant).where(CombatParticipant.combat_event_id == combat_id)
+    )
+    participants = result.scalars().all()
+
+    if not participants:
+        raise HTTPException(400, "No participants in combat")
+
+    # Load characters for sorting
+    char_map = {}
+    for p in participants:
+        char_map[p.id] = await db.get(Character, p.character_id)
+
+    # Sort by final_initiative DESC, tiebreak by dexterity
+    def sort_key(p):
+        fi = p.final_initiative if p.final_initiative is not None else 0
+        ch = char_map.get(p.id)
+        dex = ch.dexterity if ch else 0
+        return (-fi, -dex)
+
+    sorted_parts = sorted(participants, key=sort_key)
+    for i, p in enumerate(sorted_parts):
+        p.turn_order = i
+
+    # Set first active participant as current
+    first_active = next((p for p in sorted_parts if p.is_active and char_map.get(p.id) and char_map[p.id].is_alive), None)
+    ce.status = "active"
+    ce.round_number = 1
+    ce.started_at = datetime.now(timezone.utc)
+    ce.current_participant_id = first_active.id if first_active else None
+
+    await db.commit()
+    await db.refresh(ce)
+    return await _serialize_combat(ce, db)
+
+
+@router.post("/{combat_id}/next-turn")
+async def next_turn(combat_id: int, db: AsyncSession = Depends(get_session)):
+    ce = await _get_combat(combat_id, db)
+    if ce.status != "active":
+        raise HTTPException(400, "Combat is not active")
+
+    result = await db.execute(
+        select(CombatParticipant).where(
+            CombatParticipant.combat_event_id == combat_id
+        ).order_by(CombatParticipant.turn_order)
+    )
+    participants = result.scalars().all()
+    if not participants:
+        raise HTTPException(400, "No participants")
+
+    # Process turn-end effects for current participant
+    turn_end_events = []
+    current_p = next((p for p in participants if p.id == ce.current_participant_id), None)
+    if current_p:
+        turn_end_events = await _process_participant_turn_end(current_p.character_id, db)
+
+    # Find current index
+    current_idx = 0
+    for i, p in enumerate(participants):
+        if p.id == ce.current_participant_id:
+            current_idx = i
+            break
+
+    # Advance to next active+alive participant (skip dead, skip_turn)
+    tried = 0
+    next_idx = current_idx
+    skipped = []
+    new_round = False
+    while tried < len(participants):
+        next_idx = (next_idx + 1) % len(participants)
+        if next_idx == 0:
+            new_round = True
+
+        p = participants[next_idx]
+        char = await db.get(Character, p.character_id)
+        if p.is_active and char and char.is_alive:
+            # Check skip_turn
+            if await _has_skip_turn(char.id, db):
+                skipped.append({"character_id": char.id, "name": char.name, "reason": "skip_turn"})
+                await _process_participant_turn_end(char.id, db)
+                tried += 1
+                continue
+            break
+        tried += 1
+
+    if new_round:
+        ce.round_number += 1
+
+    ce.current_participant_id = participants[next_idx].id
+    await db.commit()
+    await db.refresh(ce)
+
+    next_char = await db.get(Character, participants[next_idx].character_id)
+    return {
+        "combat": await _serialize_combat(ce, db),
+        "turn_end_events": turn_end_events,
+        "skipped": skipped,
+        "current_character_id": next_char.id if next_char else None,
+        "current_character_name": next_char.name if next_char else "?",
+    }
+
+
+@router.post("/{combat_id}/end")
+async def end_combat(combat_id: int, db: AsyncSession = Depends(get_session)):
+    ce = await _get_combat(combat_id, db)
+    ce.status = "ended"
+    ce.ended_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"ok": True, "status": "ended"}
+
+
+# ══════════════════════════════════════════════════════════════
+# TURN-END HELPERS (reuse Stage 4 logic)
+# ══════════════════════════════════════════════════════════════
+async def _process_participant_turn_end(character_id: int, db: AsyncSession) -> list[dict]:
+    char = await db.get(Character, character_id)
+    if not char:
+        return []
+
+    result = await db.execute(
+        select(CharacterStatusEffect).where(CharacterStatusEffect.character_id == character_id)
+    )
+    effects = result.scalars().all()
+    if not effects:
+        return []
+
+    events = []
+    hp_changes = []
+
+    for eff in effects:
+        eff_data = json.loads(eff.effects) if eff.effects else []
+        for e in eff_data:
+            if e.get("type") == "hp_change_per_turn":
+                hp_changes.append({"name": eff.name, "value": e["value"]})
+
+        if eff.remaining_turns is not None:
+            eff.remaining_turns -= 1
+            if eff.remaining_turns <= 0:
+                events.append({
+                    "type": "status_effect.expired",
+                    "character_id": character_id,
+                    "character_name": char.name,
+                    "effect_name": eff.name,
+                    "effect_id": eff.id,
+                })
+                await db.delete(eff)
+
+    total_hp_change = sum(h["value"] for h in hp_changes)
+    if total_hp_change != 0 and char.is_alive:
+        char.current_hp = max(0, char.current_hp + total_hp_change)
+        if char.current_hp <= 0:
+            char.is_alive = False
+        events.append({
+            "type": "hp_change",
+            "character_id": character_id,
+            "character_name": char.name,
+            "hp_change": total_hp_change,
+            "new_hp": char.current_hp,
+            "sources": hp_changes,
+        })
+    return events
+
+
+async def _has_skip_turn(character_id: int, db: AsyncSession) -> bool:
+    result = await db.execute(
+        select(CharacterStatusEffect).where(CharacterStatusEffect.character_id == character_id)
+    )
+    for eff in result.scalars().all():
+        eff_data = json.loads(eff.effects) if eff.effects else []
+        for e in eff_data:
+            if e.get("type") == "skip_turn" and e.get("value"):
+                return True
+    return False
