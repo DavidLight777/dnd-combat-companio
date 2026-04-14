@@ -17,6 +17,10 @@
       <span id="ws-label">connecting...</span>
     </div>
     <span style="font-size:0.82rem">Players: <strong id="player-count">0</strong></span>
+    <span style="font-size:0.82rem;display:flex;align-items:center;gap:4px" id="session-timer-area">
+      <span>⏱</span><span id="session-timer-display">0:00:00</span>
+      <button class="btn btn-ghost btn-xs" id="btn-timer-toggle" title="Start/Pause Timer">▶</button>
+    </span>
     <span class="session-code-badge" id="session-code" title="Click to copy code">----</span>
     <button class="btn btn-ghost btn-sm" id="btn-end-session">End Session</button>
   </div>
@@ -55,6 +59,8 @@
         <button class="gm-tab" data-tab="log">Event Log</button>
         <button class="gm-tab" data-tab="races-classes">Races & Classes</button>
         <button class="gm-tab" data-tab="npc-library">NPC Library</button>
+        <button class="gm-tab" data-tab="quests">📜 Quests</button>
+        <button class="gm-tab" data-tab="announcements">📢 Board</button>
       </div>
 
       <!-- TAB: Character Detail -->
@@ -247,6 +253,25 @@
           <span style="width:1px;height:18px;background:var(--border)"></span>
           <button class="btn btn-ghost btn-xs" id="btn-center-map">🎯 Center</button>
         </div>
+        <!-- Drawing Toolbar (Stage 9) -->
+        <div id="map-draw-toolbar" style="display:flex;gap:4px;padding:4px 12px;background:var(--bg-surface);border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-xs map-mode-btn active" data-mode="" title="Select/Pan">🖱️</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="freehand" title="Freehand Draw">✏️</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="rectangle" title="Rectangle">▭</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="circle" title="Circle">○</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="line" title="Line">╱</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="arrow" title="Arrow">→</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="marker" title="Place Marker">📌</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="erase" title="Erase">🗑️</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="measure" title="Measure Distance">📏</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <input type="color" id="draw-color" value="#ff0000" style="width:28px;height:22px;border:none;background:none;cursor:pointer" title="Draw Color">
+          <input type="range" id="draw-width" min="1" max="8" value="2" style="width:60px" title="Line Width">
+          <label style="font-size:0.68rem;color:var(--text-muted);display:flex;align-items:center;gap:3px">
+            <input type="checkbox" id="draw-visible" checked> Visible
+          </label>
+          <button class="btn btn-ghost btn-xs" id="btn-clear-drawings" title="Clear All Drawings">🧹 Clear</button>
+        </div>
         <div style="flex:1;position:relative;overflow:hidden;background:#111">
           <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
         </div>
@@ -269,12 +294,47 @@
         </div>
       </div>
 
-      <!-- TAB: Event Log -->
+      <!-- TAB: Event Log (enhanced Stage 10) -->
       <div class="tab-content" id="tab-log" style="padding:16px">
         <div class="detail-panel">
-          <div class="detail-header"><h2>📜 Event Log</h2></div>
+          <div class="detail-header">
+            <h2>📜 Event Log</h2>
+            <button class="btn btn-ghost btn-xs" id="btn-export-log" title="Export as .txt">📥 Export</button>
+          </div>
           <div class="detail-body">
+            <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-xs log-filter-btn active" data-log-filter="all">All</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="combat">⚔️ Combat</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="economy">💰 Economy</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="inventory">🎒 Inventory</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="quest">📜 Quests</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="map">🗺️ Map</button>
+              <span style="flex:1"></span>
+              <input type="text" id="log-search" placeholder="Search log..." style="width:140px;font-size:0.75rem;padding:3px 6px">
+            </div>
             <div class="event-log" id="event-log"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Quests (Stage 8) -->
+      <div class="tab-content" id="tab-quests" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📜 Quests</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-xs" id="btn-quest-assign-quick">📤 Assign Quest</button>
+              <button class="btn btn-primary btn-xs" id="btn-quest-create">+ Quest Template</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <!-- Sub-tabs -->
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn-sm quest-sub active" data-qsub="active" style="font-size:0.78rem">Active Quests</button>
+              <button class="btn btn-sm btn-ghost quest-sub" data-qsub="templates" style="font-size:0.78rem">Quest Templates</button>
+            </div>
+            <div id="quest-active-panel"></div>
+            <div id="quest-templates-panel" style="display:none"></div>
           </div>
         </div>
       </div>
@@ -341,6 +401,25 @@
           </div>
         </div>
       </div>
+      <!-- TAB: Announcements (Stage 10) -->
+      <div class="tab-content" id="tab-announcements" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📢 Announcement Board</h2>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:6px;margin-bottom:12px">
+              <textarea id="announce-input" rows="2" placeholder="Write an announcement..." style="flex:1;font-size:0.82rem;resize:vertical"></textarea>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <button class="btn btn-primary btn-sm" id="btn-post-announce">📤 Post</button>
+                <label style="font-size:0.7rem;display:flex;align-items:center;gap:3px"><input type="checkbox" id="announce-pin"> 📌 Pin</label>
+              </div>
+            </div>
+            <div id="announcements-list"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ── AI SIDEBAR ─────────────────────────────────────── -->
@@ -361,6 +440,32 @@
           <input type="text" id="ai-input" placeholder="Ask ARIA..." style="flex:1;font-size:0.8rem">
           <button class="btn btn-primary btn-sm" id="btn-ai-send">Send</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FLOATING DICE ROLL LOG ─────────────────────────────── -->
+  <div id="roll-log-panel" style="
+    position:fixed; bottom:12px; right:12px; width:340px; max-height:320px;
+    background:var(--bg-surface); border:1px solid var(--border);
+    border-radius:var(--r-lg); box-shadow:0 4px 24px rgba(0,0,0,.35);
+    z-index:900; display:flex; flex-direction:column; overflow:hidden;
+  ">
+    <div id="roll-log-header" style="
+      padding:8px 12px; background:var(--bg-surface-2); border-bottom:1px solid var(--border);
+      display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+    ">
+      <span style="font-size:1rem">🎲</span>
+      <span style="font-weight:700; font-size:0.82rem; flex:1">Dice Roll Log</span>
+      <span id="roll-log-count" style="
+        font-size:0.65rem; padding:1px 6px; border-radius:10px;
+        background:var(--accent); color:#fff; font-weight:700; display:none;
+      ">0</span>
+      <button class="btn btn-ghost btn-xs" id="roll-log-toggle" style="font-size:0.7rem">▼</button>
+    </div>
+    <div id="roll-log-body" style="flex:1; overflow-y:auto; padding:6px 10px; font-size:0.78rem; max-height:260px">
+      <div style="color:var(--text-muted); font-size:0.75rem; text-align:center; padding:12px 0">
+        Rolls from players will appear here...
       </div>
     </div>
   </div>

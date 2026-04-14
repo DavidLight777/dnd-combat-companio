@@ -25,6 +25,10 @@ from app.routers.status_effects import router as status_effects_router
 from app.routers.combat_events import router as combat_events_router
 from app.routers.races_classes import router as races_classes_router
 from app.routers.npc_library import router as npc_library_router
+from app.routers.quests import router as quests_router
+from app.routers.announcements import router as announcements_router
+from app.routers.notes import router as notes_router
+from app.routers.session_timer import router as session_timer_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -66,6 +70,10 @@ app.include_router(status_effects_router)
 app.include_router(combat_events_router)
 app.include_router(races_classes_router)
 app.include_router(npc_library_router)
+app.include_router(quests_router)
+app.include_router(announcements_router)
+app.include_router(notes_router)
+app.include_router(session_timer_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

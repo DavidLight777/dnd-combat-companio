@@ -11,6 +11,13 @@ class MapCanvas {
     this.sessionCode = options.sessionCode || '';
     this.onTokenMove = options.onTokenMove || null; // callback(charId, x, y)
     this.onFogReveal = options.onFogReveal || null; // callback(col, row)
+    this.onDrawingSaved = options.onDrawingSaved || null; // callback(drawingData)
+    this.onMarkerCreate = options.onMarkerCreate || null; // callback(x, y) normalized
+    this.onMarkerClick = options.onMarkerClick || null;
+    this.onTokenClick = options.onTokenClick || null;
+    this.onTokenRightClick = options.onTokenRightClick || null;
+    this.onEraseMarker = options.onEraseMarker || null;
+    this.onEraseDrawing = options.onEraseDrawing || null;
 
     // State
     this.mapImage = null;
@@ -21,6 +28,10 @@ class MapCanvas {
     this.gridEnabled = true;
     this.fogEnabled = false;
     this.revealedCells = new Set();
+
+    // Overlays (Stage 9)
+    this.drawings = [];
+    this.markers = [];
 
     // Transform
     this.offsetX = 0;
@@ -33,6 +44,19 @@ class MapCanvas {
     this.dragToken = null; // token being dragged
     this.lastMouse = { x: 0, y: 0 };
     this.fogPaintMode = false; // GM fog reveal mode
+
+    // Drawing mode (Stage 9)
+    this.drawMode = null; // null, 'freehand', 'rectangle', 'circle', 'line', 'arrow', 'marker', 'erase', 'measure'
+    this.drawColor = '#ff0000';
+    this.drawLineWidth = 2;
+    this.drawFillOpacity = 0.2;
+    this.drawVisibleToPlayers = true;
+    this._drawingPath = []; // current freehand points
+    this._isDrawing = false; // mouse is pressed during draw
+    this._shapeStart = null; // shape drag start
+    this._shapePreview = null; // live preview
+    this._measureStart = null;
+    this._measureEnd = null;
 
     this._bindEvents();
     this._resize();
@@ -75,7 +99,24 @@ class MapCanvas {
 
   setFogPaintMode(on) {
     this.fogPaintMode = on;
+    if (on) this.drawMode = null;
     this.canvas.style.cursor = on ? 'crosshair' : 'default';
+  }
+
+  setDrawings(drawings) { this.drawings = drawings || []; this.render(); }
+  setMarkers(markers) { this.markers = markers || []; this.render(); }
+
+  setDrawMode(mode) {
+    this.drawMode = mode;
+    this.fogPaintMode = false;
+    this._drawingPath = [];
+    this._isDrawing = false;
+    this._shapeStart = null;
+    this._shapePreview = null;
+    this._measureStart = null;
+    this._measureEnd = null;
+    const cursors = { freehand: 'crosshair', rectangle: 'crosshair', circle: 'crosshair', line: 'crosshair', arrow: 'crosshair', marker: 'cell', erase: 'pointer', measure: 'crosshair' };
+    this.canvas.style.cursor = cursors[mode] || 'default';
   }
 
   // ── Rendering ─────────────────────────────────────────────
@@ -104,6 +145,57 @@ class MapCanvas {
       for (let y = 0; y <= this.mapHeight; y += gs) {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.mapWidth, y); ctx.stroke();
       }
+    }
+
+    // Drawings (Stage 9)
+    for (const d of this.drawings) {
+      if (!d.visible_to_players && this.role !== 'gm') continue;
+      this._renderDrawing(ctx, d);
+    }
+
+    // Markers (Stage 9)
+    for (const m of this.markers) {
+      if (!m.visible_to_players && this.role !== 'gm') continue;
+      this._renderMarker(ctx, m);
+    }
+
+    // Shape preview
+    if (this._shapePreview) {
+      this._renderDrawing(ctx, this._shapePreview);
+    }
+
+    // Freehand preview
+    if (this._drawingPath.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this._drawingPath[0][0] * this._mw, this._drawingPath[0][1] * this._mh);
+      for (let i = 1; i < this._drawingPath.length; i++) {
+        ctx.lineTo(this._drawingPath[i][0] * this._mw, this._drawingPath[i][1] * this._mh);
+      }
+      ctx.strokeStyle = this.drawColor;
+      ctx.lineWidth = this.drawLineWidth / this.scale;
+      ctx.stroke();
+    }
+
+    // Measure preview
+    if (this._measureStart && this._measureEnd) {
+      const sx = this._measureStart[0] * this._mw, sy = this._measureStart[1] * this._mh;
+      const ex = this._measureEnd[0] * this._mw, ey = this._measureEnd[1] * this._mh;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 2 / this.scale;
+      ctx.setLineDash([6 / this.scale, 4 / this.scale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Distance label
+      const dx = ex - sx, dy = ey - sy;
+      const distPx = Math.sqrt(dx * dx + dy * dy);
+      const distCells = (this.gridSize > 0) ? (distPx / this.gridSize).toFixed(1) : distPx.toFixed(0);
+      const midX = (sx + ex) / 2, midY = (sy + ey) / 2;
+      ctx.fillStyle = '#00ff88';
+      ctx.font = `bold ${14 / this.scale}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`${distCells} cells`, midX, midY - 8 / this.scale);
     }
 
     // Fog of war
@@ -175,6 +267,9 @@ class MapCanvas {
     ctx.restore();
   }
 
+  get _mw() { return this.mapWidth || this.canvas.width; }
+  get _mh() { return this.mapHeight || this.canvas.height; }
+
   // ── Coordinate conversion ─────────────────────────────────
   _screenToMap(sx, sy) {
     return {
@@ -184,9 +279,11 @@ class MapCanvas {
   }
 
   _mapToNormalized(mx, my) {
+    const w = this.mapWidth || this.canvas.width;
+    const h = this.mapHeight || this.canvas.height;
     return {
-      x: this.mapWidth > 0 ? mx / this.mapWidth : 0,
-      y: this.mapHeight > 0 ? my / this.mapHeight : 0,
+      x: w > 0 ? mx / w : 0,
+      y: h > 0 ? my / h : 0,
     };
   }
 
@@ -228,6 +325,33 @@ class MapCanvas {
       const rect = c.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       const m = this._screenToMap(sx, sy);
+      const n = this._mapToNormalized(m.x, m.y);
+
+      // Drawing modes (Stage 9)
+      if (this.drawMode && this.role === 'gm') {
+        e.preventDefault();
+        if (this.drawMode === 'freehand') {
+          this._drawingPath = [[n.x, n.y]];
+          this._isDrawing = true;
+          return;
+        } else if (['rectangle', 'circle', 'line', 'arrow'].includes(this.drawMode)) {
+          this._shapeStart = [n.x, n.y];
+          return;
+        } else if (this.drawMode === 'marker') {
+          if (this.onMarkerCreate) this.onMarkerCreate(n.x, n.y);
+          return;
+        } else if (this.drawMode === 'erase') {
+          const marker = this._hitMarker(m.x, m.y);
+          if (marker) { if (this.onEraseMarker) this.onEraseMarker(marker); return; }
+          const drawing = this._hitDrawing(m.x, m.y);
+          if (drawing) { if (this.onEraseDrawing) this.onEraseDrawing(drawing); return; }
+          return;
+        } else if (this.drawMode === 'measure') {
+          this._measureStart = [n.x, n.y];
+          this._measureEnd = null;
+          return;
+        }
+      }
 
       // Fog paint mode (GM only)
       if (this.fogPaintMode && this.role === 'gm') {
@@ -240,7 +364,7 @@ class MapCanvas {
       }
 
       // Token drag (GM only)
-      if (this.role === 'gm') {
+      if (this.role === 'gm' && !this.drawMode) {
         const token = this._hitToken(m.x, m.y);
         if (token) {
           this.dragToken = token;
@@ -259,10 +383,33 @@ class MapCanvas {
       const rect = c.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       this.lastMouse = { x: sx, y: sy };
+      const m = this._screenToMap(sx, sy);
+      const n = this._mapToNormalized(m.x, m.y);
+
+      // Drawing modes
+      if (this.drawMode === 'freehand' && this._isDrawing && this._drawingPath.length > 0) {
+        this._drawingPath.push([n.x, n.y]);
+        this.render();
+        return;
+      }
+      if (['rectangle', 'circle', 'line', 'arrow'].includes(this.drawMode) && this._shapeStart) {
+        this._shapePreview = {
+          drawing_type: this.drawMode,
+          points: [this._shapeStart, [n.x, n.y]],
+          color: this.drawColor,
+          line_width: this.drawLineWidth,
+          fill_opacity: this.drawFillOpacity,
+        };
+        this.render();
+        return;
+      }
+      if (this.drawMode === 'measure' && this._measureStart) {
+        this._measureEnd = [n.x, n.y];
+        this.render();
+        return;
+      }
 
       if (this.dragToken) {
-        const m = this._screenToMap(sx, sy);
-        const n = this._mapToNormalized(m.x, m.y);
         this.dragToken.x = Math.max(0, Math.min(1, n.x));
         this.dragToken.y = Math.max(0, Math.min(1, n.y));
         this.render();
@@ -276,6 +423,45 @@ class MapCanvas {
     });
 
     c.addEventListener('mouseup', e => {
+      // Finish freehand
+      if (this.drawMode === 'freehand' && this._isDrawing) {
+        this._isDrawing = false;
+        if (this._drawingPath.length > 1 && this.onDrawingSaved) {
+          this.onDrawingSaved({
+            drawing_type: 'freehand', points: this._drawingPath,
+            color: this.drawColor, line_width: this.drawLineWidth,
+            fill_opacity: this.drawFillOpacity, visible_to_players: this.drawVisibleToPlayers,
+          });
+        }
+        this._drawingPath = [];
+        this.render();
+        return;
+      }
+      // Finish shape
+      if (['rectangle', 'circle', 'line', 'arrow'].includes(this.drawMode) && this._shapeStart) {
+        const rect2 = c.getBoundingClientRect();
+        const sx2 = e.clientX - rect2.left, sy2 = e.clientY - rect2.top;
+        const m2 = this._screenToMap(sx2, sy2);
+        const n2 = this._mapToNormalized(m2.x, m2.y);
+        if (this.onDrawingSaved) {
+          this.onDrawingSaved({
+            drawing_type: this.drawMode, points: [this._shapeStart, [n2.x, n2.y]],
+            color: this.drawColor, line_width: this.drawLineWidth,
+            fill_opacity: this.drawFillOpacity, visible_to_players: this.drawVisibleToPlayers,
+          });
+        }
+        this._shapeStart = null;
+        this._shapePreview = null;
+        return;
+      }
+      // Finish measure
+      if (this.drawMode === 'measure') {
+        this._measureStart = null;
+        this._measureEnd = null;
+        this.render();
+        return;
+      }
+
       if (this.dragToken) {
         if (this.onTokenMove) {
           this.onTokenMove(this.dragToken.character_id, this.dragToken.x, this.dragToken.y);
@@ -291,6 +477,10 @@ class MapCanvas {
         this.dragToken = null;
       }
       this.isDragging = false;
+      this._isDrawing = false;
+      this._drawingPath = [];
+      this._shapeStart = null;
+      this._shapePreview = null;
     });
 
     // Zoom
@@ -349,18 +539,143 @@ class MapCanvas {
       lastTouchDist = 0;
     });
 
-    // Click for token info
+    // Click for token/marker info
     c.addEventListener('click', e => {
-      if (this.fogPaintMode) return;
+      if (this.fogPaintMode || this.drawMode) return;
       const rect = c.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       const m = this._screenToMap(sx, sy);
+      // Check marker click
+      const marker = this._hitMarker(m.x, m.y);
+      if (marker && this.onMarkerClick) { this.onMarkerClick(marker); return; }
       const token = this._hitToken(m.x, m.y);
       if (token && this.onTokenClick) this.onTokenClick(token);
     });
 
+    // Right-click for token context menu (GM only)
+    c.addEventListener('contextmenu', e => {
+      if (this.role !== 'gm') return;
+      e.preventDefault();
+      const rect = c.getBoundingClientRect();
+      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const m = this._screenToMap(sx, sy);
+      const token = this._hitToken(m.x, m.y);
+      if (token && this.onTokenRightClick) {
+        this.onTokenRightClick(token, e.clientX, e.clientY);
+      }
+    });
+
     // Resize
     window.addEventListener('resize', () => this._resize());
+  }
+
+  // ── Render a saved/preview drawing ──────────────────────────
+  _renderDrawing(ctx, d) {
+    const pts = d.points || [];
+    if (!pts.length) return;
+    const mw = this._mw, mh = this._mh;
+    ctx.save();
+    ctx.strokeStyle = d.color || '#ff0000';
+    ctx.lineWidth = (d.line_width || 2) / this.scale;
+    ctx.globalAlpha = 1;
+
+    if (d.drawing_type === 'freehand' && pts.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0] * mw, pts[0][1] * mh);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * mw, pts[i][1] * mh);
+      ctx.stroke();
+    } else if (d.drawing_type === 'rectangle' && pts.length >= 2) {
+      const x1 = pts[0][0] * mw, y1 = pts[0][1] * mh;
+      const x2 = pts[1][0] * mw, y2 = pts[1][1] * mh;
+      ctx.beginPath();
+      ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+      ctx.globalAlpha = d.fill_opacity || 0.2;
+      ctx.fillStyle = d.color || '#ff0000';
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+    } else if (d.drawing_type === 'circle' && pts.length >= 2) {
+      const cx = pts[0][0] * mw, cy = pts[0][1] * mh;
+      const ex = pts[1][0] * mw, ey = pts[1][1] * mh;
+      const r = Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.globalAlpha = d.fill_opacity || 0.2;
+      ctx.fillStyle = d.color || '#ff0000';
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+    } else if ((d.drawing_type === 'line' || d.drawing_type === 'arrow') && pts.length >= 2) {
+      const x1 = pts[0][0] * mw, y1 = pts[0][1] * mh;
+      const x2 = pts[1][0] * mw, y2 = pts[1][1] * mh;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.stroke();
+      if (d.drawing_type === 'arrow') {
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const hl = 12 / this.scale;
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - hl * Math.cos(angle - 0.4), y2 - hl * Math.sin(angle - 0.4));
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - hl * Math.cos(angle + 0.4), y2 - hl * Math.sin(angle + 0.4));
+        ctx.stroke();
+      }
+    }
+
+    // Label
+    if (d.label && pts.length >= 1) {
+      const lx = pts[0][0] * mw, ly = pts[0][1] * mh - 6 / this.scale;
+      ctx.fillStyle = d.color || '#ff0000';
+      ctx.font = `${11 / this.scale}px Inter, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillText(d.label, lx, ly);
+    }
+    ctx.restore();
+  }
+
+  // ── Render a marker ───────────────────────────────────────────
+  _renderMarker(ctx, m) {
+    const px = m.x * this._mw, py = m.y * this._mh;
+    const size = 20 / this.scale;
+    ctx.save();
+    // GM sees hidden markers as semi-transparent
+    if (!m.visible_to_players && this.role === 'gm') ctx.globalAlpha = 0.5;
+    ctx.font = `${size}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(m.icon || '📌', px, py);
+    if (m.label) {
+      ctx.fillStyle = m.color || '#ff0000';
+      ctx.font = `bold ${10 / this.scale}px Inter, sans-serif`;
+      ctx.fillText(m.label, px, py + size * 0.7);
+    }
+    ctx.restore();
+  }
+
+  // ── Hit test marker ─────────────────────────────────────────
+  _hitMarker(mx, my) {
+    const hitR = 15 / this.scale;
+    for (let i = this.markers.length - 1; i >= 0; i--) {
+      const m = this.markers[i];
+      const px = m.x * this._mw, py = m.y * this._mh;
+      if (Math.abs(mx - px) < hitR && Math.abs(my - py) < hitR) return m;
+    }
+    return null;
+  }
+
+  // ── Hit test drawing ────────────────────────────────────────
+  _hitDrawing(mx, my) {
+    const hitR = 10 / this.scale;
+    for (let i = this.drawings.length - 1; i >= 0; i--) {
+      const d = this.drawings[i];
+      const pts = d.points || [];
+      for (const p of pts) {
+        const px = p[0] * this._mw, py = p[1] * this._mh;
+        if (Math.abs(mx - px) < hitR && Math.abs(my - py) < hitR) return d;
+      }
+    }
+    return null;
   }
 
   _resize() {

@@ -955,6 +955,12 @@ $('#btn-open-map').addEventListener('click', async () => {
       playerMapCanvas.setGrid(state.grid_size, state.grid_enabled);
       playerMapCanvas.setFog(state.fog_enabled, state.revealed_cells);
       playerMapCanvas.setTokens(state.tokens);
+      // Load overlays (Stage 9)
+      try {
+        const overlays = await api.get(`/api/map/${SESSION_CODE}/overlays`);
+        playerMapCanvas.setDrawings(overlays.drawings);
+        playerMapCanvas.setMarkers(overlays.markers);
+      } catch {}
     }
   } catch { /* no map */ }
 });
@@ -1489,10 +1495,303 @@ $('#btn-player-roll')?.addEventListener('click', async () => {
     const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, { stat, roll_type: rollType });
     $('#player-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>`;
     // Broadcast to GM
-    ws.send({ type: 'roll.characteristic', ...res, session_code: SESSION_CODE });
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'roll.characteristic', ...res }));
+    }
   } catch {
     $('#player-roll-result').textContent = 'Roll failed';
   }
+});
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 8 — PLAYER QUESTS
+// ══════════════════════════════════════════════════════════════
+let playerQuests = [];
+
+async function loadPlayerQuests() {
+  try {
+    playerQuests = await api.get(`/api/characters/${CHAR_ID}/quests`);
+    renderPlayerQuests();
+  } catch (e) { console.error('loadPlayerQuests error', e); }
+}
+
+function renderPlayerQuests() {
+  const activePanel = $('#player-quests-active');
+  const completedPanel = $('#player-quests-completed');
+  if (!activePanel) return;
+
+  const active = playerQuests.filter(q => q.status === 'active');
+  const done = playerQuests.filter(q => q.status === 'completed' || q.status === 'failed');
+
+  if (!active.length) {
+    activePanel.innerHTML = '<div style="color:var(--text-muted);font-size:0.78rem;padding:8px">No active quests.</div>';
+  } else {
+    activePanel.innerHTML = active.map(q => renderPlayerQuestCard(q)).join('');
+  }
+
+  if (!done.length) {
+    completedPanel.innerHTML = '<div style="color:var(--text-muted);font-size:0.78rem;padding:8px">No completed quests yet.</div>';
+  } else {
+    completedPanel.innerHTML = done.map(q => renderPlayerQuestCard(q)).join('');
+  }
+}
+
+function renderPlayerQuestCard(q) {
+  const stagesCompleted = q.stages_completed || [];
+  const statusColors = { active: 'var(--accent)', completed: '#4caf50', failed: '#f44336' };
+  const statusIcons = { active: '📜', completed: '✅', failed: '❌' };
+
+  // Build stage chain from enriched stages data
+  const stages = q.stages || [];
+  let stageChain = '';
+  if (stages.length > 0) {
+    stageChain = stages.map((s, i) => {
+      const done = stagesCompleted.includes(i);
+      const current = i === q.current_stage && q.status === 'active';
+      const style = done ? 'background:#4caf5030;color:#4caf50;border:1px solid #4caf50'
+                   : current ? 'background:var(--accent)20;color:var(--accent);border:1px solid var(--accent)'
+                   : 'background:var(--bg-surface-2);color:var(--text-muted);border:1px solid var(--border)';
+      const label = s.title || `Stage ${i + 1}`;
+      return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.65rem;${style}" title="${s.description || ''}">${done ? '✓' : current ? '●' : '○'} ${label}</span>`;
+    }).join(' → ');
+  }
+
+  // Rewards
+  let rewardHtml = '';
+  if (q.reward_is_hidden && !q.reward_revealed) {
+    rewardHtml = '<div style="font-size:0.72rem;color:var(--accent-orange);margin-top:4px">🔒 Reward: ???</div>';
+  } else if (q.reward_description) {
+    rewardHtml = `<div style="font-size:0.72rem;color:var(--accent);margin-top:4px">🎁 ${q.reward_description}</div>`;
+  }
+
+  return `
+    <div style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:8px;background:var(--bg-surface);border-left:3px solid ${statusColors[q.status] || 'var(--border)'}">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:1rem">${statusIcons[q.status] || '📜'}</span>
+        <span style="font-weight:700;font-size:0.88rem">${q.title}</span>
+      </div>
+      ${q.source_npc_name ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">From: ${q.source_npc_name}</div>` : ''}
+      ${q.description ? `<div style="font-size:0.75rem;margin-top:4px">${q.description}</div>` : ''}
+      ${stageChain ? `<div style="margin-top:6px;display:flex;gap:3px;align-items:center;flex-wrap:wrap">${stageChain}</div>` : ''}
+      ${rewardHtml}
+      ${q.status !== 'active' && q.completed_at ? `<div style="font-size:0.6rem;color:var(--text-muted);margin-top:4px">${q.status === 'completed' ? 'Completed' : 'Failed'}: ${new Date(q.completed_at).toLocaleString()}</div>` : ''}
+    </div>
+  `;
+}
+
+// Quest sub-tabs
+document.querySelectorAll('.player-quest-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.player-quest-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.pqtab;
+    $('#player-quests-active').style.display = tab === 'active' ? 'block' : 'none';
+    $('#player-quests-completed').style.display = tab === 'completed' ? 'block' : 'none';
+  });
+});
+
+// WS listeners for quest events
+ws.on('quest.assigned', d => {
+  if (d.character_id == CHAR_ID) {
+    showToast(`New quest: ${d.quest_title || 'A quest has been assigned!'}`);
+    loadPlayerQuests();
+  }
+});
+ws.on('quest.stage_completed', d => {
+  showToast('Quest stage completed!');
+  loadPlayerQuests();
+});
+ws.on('quest.completed', d => {
+  showToast('Quest completed! Rewards granted!');
+  loadPlayerQuests();
+  loadCurrency();
+  loadInventory();
+});
+ws.on('quest.failed', d => {
+  showToast('A quest has been failed...');
+  loadPlayerQuests();
+});
+
+// Stage 9: Map overlay WS events
+ws.on('map.drawing_added', d => {
+  if (playerMapCanvas && d.drawing) {
+    if (d.drawing.visible_to_players) {
+      playerMapCanvas.drawings.push(d.drawing);
+      playerMapCanvas.render();
+    }
+  }
+});
+ws.on('map.drawing_deleted', d => {
+  if (playerMapCanvas) {
+    if (d.all) { playerMapCanvas.drawings = []; }
+    else { playerMapCanvas.drawings = playerMapCanvas.drawings.filter(dr => dr.id !== d.drawing_id); }
+    playerMapCanvas.render();
+  }
+});
+ws.on('map.marker_added', d => {
+  if (playerMapCanvas && d.marker && d.marker.visible_to_players) {
+    playerMapCanvas.markers.push(d.marker);
+    playerMapCanvas.render();
+  }
+});
+ws.on('map.marker_updated', d => {
+  if (playerMapCanvas && d.marker) {
+    playerMapCanvas.markers = playerMapCanvas.markers.filter(m => m.id !== d.marker.id);
+    if (d.marker.visible_to_players) playerMapCanvas.markers.push(d.marker);
+    playerMapCanvas.render();
+  }
+});
+ws.on('map.marker_deleted', d => {
+  if (playerMapCanvas) {
+    playerMapCanvas.markers = playerMapCanvas.markers.filter(m => m.id !== d.marker_id);
+    playerMapCanvas.render();
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — PLAYER ANNOUNCEMENTS
+// ══════════════════════════════════════════════════════════════
+async function loadPlayerAnnouncements() {
+  try {
+    const list = await api.get(`/api/announcements/${SESSION_CODE}`);
+    const el = $('#player-announcements');
+    if (!el) return;
+    if (!list.length) { el.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>'; return; }
+    el.innerHTML = list.map(a => `
+      <div style="padding:8px 10px;margin-bottom:6px;border-radius:8px;border:1px solid ${a.is_pinned ? 'var(--accent)' : 'var(--border)'};background:${a.is_pinned ? 'rgba(212,175,55,0.06)' : 'var(--bg-surface-2)'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-weight:600;font-size:0.78rem">${a.is_pinned ? '📌 ' : ''}${a.author_name || 'GM'}</span>
+          <span style="font-size:0.68rem;color:var(--text-muted)">${a.posted_at ? new Date(a.posted_at).toLocaleString() : ''}</span>
+        </div>
+        <div style="font-size:0.82rem;white-space:pre-wrap">${a.content}</div>
+      </div>
+    `).join('');
+  } catch (e) { console.error('loadPlayerAnnouncements', e); }
+}
+
+ws.on('announcement.posted', () => loadPlayerAnnouncements());
+ws.on('announcement.pinned', () => loadPlayerAnnouncements());
+ws.on('announcement.deleted', () => loadPlayerAnnouncements());
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — PLAYER NOTES
+// ══════════════════════════════════════════════════════════════
+async function loadPlayerNotes() {
+  try {
+    const notes = await api.get(`/api/notes/character/${CHAR_ID}`);
+    const el = $('#player-notes-list');
+    if (!el) return;
+    if (!notes.length) { el.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No notes yet. Click "+ New Note" to add one.</p>'; return; }
+    el.innerHTML = notes.map(n => `
+      <div style="padding:8px 10px;margin-bottom:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface-2)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <strong style="font-size:0.82rem">${n.title || 'Untitled'}</strong>
+          <div style="display:flex;gap:3px">
+            <button class="btn btn-ghost btn-xs" data-edit-pnote="${n.id}">✏️</button>
+            <button class="btn btn-ghost btn-xs" data-del-pnote="${n.id}" style="color:var(--danger)">🗑️</button>
+          </div>
+        </div>
+        <div style="font-size:0.8rem;white-space:pre-wrap">${n.content}</div>
+        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:4px">${n.updated_at ? new Date(n.updated_at).toLocaleString() : ''}</div>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-edit-pnote]').forEach(btn => {
+      const note = notes.find(no => no.id === parseInt(btn.dataset.editPnote));
+      btn.addEventListener('click', () => openPlayerNoteModal(note));
+    });
+    el.querySelectorAll('[data-del-pnote]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api.del(`/api/notes/${btn.dataset.delPnote}`);
+        loadPlayerNotes();
+      });
+    });
+  } catch (e) { console.error('loadPlayerNotes', e); }
+}
+
+function openPlayerNoteModal(existing) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="width:400px">
+      <div class="modal-header"><h3>${existing ? 'Edit' : 'New'} Note</h3></div>
+      <div class="modal-body">
+        <label style="font-size:0.78rem;font-weight:600">Title</label>
+        <input type="text" id="pnote-title" value="${existing?.title || ''}" style="width:100%;margin-bottom:8px">
+        <label style="font-size:0.78rem;font-weight:600">Content</label>
+        <textarea id="pnote-content" rows="6" style="width:100%;resize:vertical">${existing?.content || ''}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="pnote-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="pnote-save">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#pnote-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#pnote-save').addEventListener('click', async () => {
+    const body = { title: overlay.querySelector('#pnote-title').value, content: overlay.querySelector('#pnote-content').value };
+    if (existing) await api.put(`/api/notes/${existing.id}`, body);
+    else await api.post(`/api/notes/character/${CHAR_ID}`, body);
+    overlay.remove();
+    loadPlayerNotes();
+  });
+}
+
+$('#btn-player-add-note')?.addEventListener('click', () => openPlayerNoteModal(null));
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — SESSION TIMER (player side)
+// ══════════════════════════════════════════════════════════════
+let pTimerRunning = false;
+let pTimerBase = 0;
+let pTimerStartedAt = null;
+let pTimerInterval = null;
+
+function pFormatTimer(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function pUpdateTimer() {
+  let total = pTimerBase;
+  if (pTimerRunning && pTimerStartedAt) total += Math.floor((Date.now() - pTimerStartedAt) / 1000);
+  const el = $('#player-timer-display');
+  if (el) el.textContent = pFormatTimer(total);
+}
+
+async function loadPlayerTimer() {
+  try {
+    const t = await api.get(`/api/sessions/${SESSION_CODE}/timer`);
+    pTimerBase = t.total_seconds || 0;
+    pTimerRunning = t.running;
+    if (t.running && t.started_at) {
+      pTimerStartedAt = new Date(t.started_at).getTime();
+      pTimerBase = (t.total_seconds || 0) - Math.floor((Date.now() - pTimerStartedAt) / 1000);
+      if (pTimerBase < 0) pTimerBase = 0;
+    } else {
+      pTimerStartedAt = null;
+    }
+    if (pTimerInterval) clearInterval(pTimerInterval);
+    pTimerInterval = setInterval(pUpdateTimer, 1000);
+    pUpdateTimer();
+  } catch (e) { console.error('loadPlayerTimer', e); }
+}
+
+ws.on('session.timer_started', d => {
+  pTimerRunning = true;
+  pTimerStartedAt = Date.now();
+  pTimerBase = (d.total_seconds || 0) - Math.floor((Date.now() - pTimerStartedAt) / 1000);
+  if (pTimerInterval) clearInterval(pTimerInterval);
+  pTimerInterval = setInterval(pUpdateTimer, 1000);
+  pUpdateTimer();
+});
+ws.on('session.timer_paused', d => {
+  pTimerRunning = false;
+  pTimerBase = d.total_seconds || 0;
+  pTimerStartedAt = null;
+  pUpdateTimer();
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -1503,5 +1802,9 @@ loadInventory();
 loadCurrency();
 loadStatusEffects();
 loadCombatBanner();
+loadPlayerQuests();
+loadPlayerAnnouncements();
+loadPlayerNotes();
+loadPlayerTimer();
 restoreGmTimer();
 ws.connect();

@@ -179,6 +179,25 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                         "character_id": msg.get("character_id"),
                     })
 
+                # Stage 10: Announcements & timer events
+                elif msg_type in ("announcement.posted", "announcement.pinned", "announcement.deleted",
+                                  "session.timer_started", "session.timer_paused"):
+                    await manager.broadcast_to_session(session_code, msg_type, {
+                        k: v for k, v in msg.items() if k != "type"
+                    })
+
+                # Stage 9: Map drawing/marker events
+                elif msg_type in ("map.drawing_added", "map.drawing_deleted", "map.marker_added", "map.marker_updated", "map.marker_deleted"):
+                    await manager.broadcast_to_session(session_code, msg_type, {
+                        k: v for k, v in msg.items() if k != "type"
+                    })
+
+                # Stage 8: Quest events
+                elif msg_type in ("quest.assigned", "quest.stage_completed", "quest.completed", "quest.failed"):
+                    await manager.broadcast_to_session(session_code, msg_type, {
+                        k: v for k, v in msg.items() if k != "type"
+                    })
+
                 # Stage 7: Characteristic roll broadcast
                 elif msg_type == "roll.characteristic":
                     await manager.broadcast_to_session(session_code, "roll.characteristic", {
@@ -186,6 +205,7 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                         "character_name": msg.get("character_name"),
                         "stat": msg.get("stat"),
                         "d20": msg.get("d20"),
+                        "modifier": msg.get("modifier"),
                         "total": msg.get("total"),
                         "roll_type": msg.get("roll_type"),
                         "description": msg.get("description"),

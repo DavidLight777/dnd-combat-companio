@@ -17,6 +17,7 @@
       <span id="ws-label">connecting...</span>
     </div>
     <span id="player-currency" class="session-badge" style="cursor:pointer;color:var(--accent)" title="Click to transfer">💰 —</span>
+    <span style="font-size:0.78rem;display:flex;align-items:center;gap:3px" id="player-timer-area">⏱ <span id="player-timer-display">0:00:00</span></span>
     <span class="session-badge">Session: <strong id="session-code">—</strong></span>
     <button class="btn btn-ghost btn-sm" id="btn-open-map">🗺️ Map</button>
   </div>
@@ -151,6 +152,42 @@
             <div class="slot-selector-grid" id="slot-selector-grid"></div>
           </div>
         </div>
+      </div>
+
+      <!-- ── QUESTS (Stage 8) ────────────────────────────────── -->
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+            <h2 style="flex:1">📜 Quests</h2>
+            <button class="btn btn-ghost btn-xs player-quest-tab active" data-pqtab="active">Active</button>
+            <button class="btn btn-ghost btn-xs player-quest-tab" data-pqtab="completed">Completed</button>
+          </div>
+          <div class="panel-body">
+            <div id="player-quests-active"></div>
+            <div id="player-quests-completed" style="display:none"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── ANNOUNCEMENTS (Stage 10) ─────────────────────── -->
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header"><h2>📢 Announcements</h2></div>
+          <div class="panel-body" id="player-announcements">
+            <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── NOTES (Stage 10) ─────────────────────────────── -->
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:8px">
+            <h2 style="flex:1">📝 My Notes</h2>
+            <button class="btn btn-primary btn-xs" id="btn-player-add-note">+ New Note</button>
+          </div>
+          <div class="panel-body" id="player-notes-list"></div>
+        </section>
       </div>
 
       <!-- ── LOG ──────────────────────────────────────────── -->

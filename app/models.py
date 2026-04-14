@@ -20,6 +20,10 @@ class Session(Base):
     shop_open: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    # Stage 10: Session timer
+    play_timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    total_play_seconds: Mapped[int] = mapped_column(Integer, default=0)
+
     characters: Mapped[list["Character"]] = relationship(
         back_populates="session", cascade="all, delete-orphan",
         foreign_keys="Character.session_id", lazy="selectin"
@@ -64,6 +68,7 @@ class Character(Base):
     map_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     token_color: Mapped[str] = mapped_column(Text, default="#c08a2a")
     is_visible_on_map: Mapped[bool] = mapped_column(Boolean, default=True)
+    vision_radius: Mapped[int] = mapped_column(Integer, default=5)
 
     status_effects: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -218,6 +223,39 @@ class MapData(Base):
     revealed_cells: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [[col,row],...]
     image_width: Mapped[int] = mapped_column(Integer, default=0)
     image_height: Mapped[int] = mapped_column(Integer, default=0)
+    remember_explored: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MapMarker(Base):
+    __tablename__ = "map_markers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    map_id: Mapped[int] = mapped_column(ForeignKey("map_data.id", ondelete="CASCADE"))
+    marker_type: Mapped[str] = mapped_column(Text, default="pin")  # pin, danger, secret, location, custom
+    x: Mapped[float] = mapped_column(Float, nullable=False)
+    y: Mapped[float] = mapped_column(Float, nullable=False)
+    label: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str] = mapped_column(Text, default="📌")
+    color: Mapped[str] = mapped_column(Text, default="#ff0000")
+    visible_to_players: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+
+
+class MapDrawing(Base):
+    __tablename__ = "map_drawings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    map_id: Mapped[int] = mapped_column(ForeignKey("map_data.id", ondelete="CASCADE"))
+    drawing_type: Mapped[str] = mapped_column(Text, default="freehand")  # freehand, rectangle, circle, triangle, line, arrow
+    points: Mapped[str] = mapped_column(Text, default="[]")  # JSON
+    color: Mapped[str] = mapped_column(Text, default="#ff0000")
+    line_width: Mapped[int] = mapped_column(Integer, default=2)
+    fill_opacity: Mapped[float] = mapped_column(Float, default=0.2)
+    visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
+    label: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -539,6 +577,46 @@ class EventTemplate(Base):
 
 
 # ══════════════════════════════════════════════════════════════
+# STAGE 8 — QUEST SYSTEM
+# ══════════════════════════════════════════════════════════════
+class QuestTemplate(Base):
+    __tablename__ = "quest_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    source_npc_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+    reward_gold_copper: Mapped[int] = mapped_column(Integer, default=0)
+    reward_item_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
+    reward_description: Mapped[str] = mapped_column(Text, default="")
+    reward_is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    stages: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [{order, title, description}]
+    is_multi_stage: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CharacterQuest(Base):
+    __tablename__ = "character_quests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    quest_template_id: Mapped[int | None] = mapped_column(ForeignKey("quest_templates.id", ondelete="SET NULL"), nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    source_npc_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, default="active")  # active, completed, failed
+    current_stage: Mapped[int] = mapped_column(Integer, default=0)
+    stages_completed: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of completed stage indices
+    reward_gold_copper: Mapped[int] = mapped_column(Integer, default=0)
+    reward_item_ids: Mapped[str] = mapped_column(Text, default="[]")
+    reward_description: Mapped[str] = mapped_column(Text, default="")
+    reward_is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ══════════════════════════════════════════════════════════════
 # AI CONVERSATION
 # ══════════════════════════════════════════════════════════════
 class AIConversation(Base):
@@ -549,3 +627,32 @@ class AIConversation(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # user / assistant
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# SESSION ANNOUNCEMENTS (Stage 10)
+# ══════════════════════════════════════════════════════════════
+class SessionAnnouncement(Base):
+    __tablename__ = "session_announcements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    posted_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# CHARACTER NOTES (Stage 10)
+# ══════════════════════════════════════════════════════════════
+class CharacterNote(Base):
+    __tablename__ = "character_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(Text, default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    is_gm_note: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

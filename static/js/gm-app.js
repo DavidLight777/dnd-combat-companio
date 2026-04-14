@@ -39,10 +39,24 @@ function addLog(event, text) {
   const log = $('#event-log');
   const time = new Date().toLocaleTimeString();
   const div = document.createElement('div');
-  div.className = 'entry';
-  div.innerHTML = `<span class="time">[${time}]</span> <span class="event-name">${event}</span> ${text}`;
+  div.className = 'log-entry';
+  // Determine category for filtering
+  const catMap = {
+    'combat': 'combat', 'initiative': 'combat', 'turn': 'combat', 'damage': 'combat', 'heal': 'combat', 'hp': 'combat',
+    'gold': 'economy', 'currency': 'economy', 'trade': 'economy', 'buy': 'economy', 'sell': 'economy', 'economy': 'economy',
+    'inventory': 'inventory', 'item': 'inventory', 'equip': 'inventory', 'unequip': 'inventory',
+    'quest': 'quest',
+    'map': 'map', 'marker': 'map', 'drawing': 'map', 'fog': 'map',
+  };
+  let cat = '';
+  const evLower = event.toLowerCase();
+  for (const [key, val] of Object.entries(catMap)) { if (evLower.includes(key)) { cat = val; break; } }
+  div.dataset.logCat = cat;
+  const icons = { combat: '⚔️', economy: '💰', inventory: '🎒', quest: '📜', map: '🗺️' };
+  const icon = icons[cat] || '📋';
+  div.innerHTML = `<span class="time">[${time}]</span> ${icon} <span class="event-name">${event}</span> ${text}`;
   log.prepend(div);
-  while (log.children.length > 80) log.removeChild(log.lastChild);
+  while (log.children.length > 200) log.removeChild(log.lastChild);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -369,6 +383,10 @@ async function renderCharDetail() {
         </div>
         <div id="gm-merchant-preview" style="font-size:0.8rem"></div>
         ` : ''}
+
+        <!-- Notes (Stage 10) -->
+        <hr class="section-divider">
+        <div id="char-notes-section"></div>
       </div>
     </div>
   `;
@@ -428,8 +446,12 @@ async function renderCharDetail() {
       const res = await api.post(`/api/characters/${c.id}/roll-characteristic`, { stat, roll_type: rollType });
       $('#gm-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>`;
       addLog('gm.roll', res.description);
+      addRollLogEntry(res);
+      lastGmRollTime = Date.now();
       // Broadcast via WS
-      ws.send({ type: 'roll.characteristic', ...res, session_code: SESSION_CODE });
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({ type: 'roll.characteristic', ...res }));
+      }
     } catch (e) {
       $('#gm-roll-result').textContent = 'Roll failed';
     }
@@ -582,6 +604,9 @@ async function renderCharDetail() {
 
   // Load inventory
   loadGmCharInventory(c.id);
+
+  // Load notes (Stage 10)
+  loadCharNotes(c.id);
 }
 
 // ── GM Character Inventory Loading ──────────────────────────
@@ -1256,6 +1281,38 @@ function initMapCanvas() {
     onFogReveal: async (col, row) => {
       await api.post(`/api/map/${SESSION_CODE}/fog/reveal`, { cells: [[col, row]] });
     },
+    onDrawingSaved: async (data) => {
+      try {
+        const res = await api.post(`/api/map/${SESSION_CODE}/drawings`, data);
+        mapCanvas.drawings.push(res);
+        mapCanvas.render();
+        addLog('map', `Drawing added: ${data.drawing_type}`);
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'map.drawing_added', drawing: res }));
+        }
+      } catch { showToast('Failed to save drawing'); }
+    },
+    onMarkerCreate: (nx, ny) => openMarkerModal(nx, ny),
+    onMarkerClick: (marker) => openMarkerModal(marker.x, marker.y, marker),
+    onEraseMarker: async (marker) => {
+      await api.del(`/api/map/markers/${marker.id}`);
+      mapCanvas.markers = mapCanvas.markers.filter(m => m.id !== marker.id);
+      mapCanvas.render();
+      addLog('map', `Marker deleted: ${marker.label || marker.icon}`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({ type: 'map.marker_deleted', marker_id: marker.id }));
+      }
+    },
+    onEraseDrawing: async (drawing) => {
+      await api.del(`/api/map/drawings/${drawing.id}`);
+      mapCanvas.drawings = mapCanvas.drawings.filter(d => d.id !== drawing.id);
+      mapCanvas.render();
+      addLog('map', 'Drawing erased');
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({ type: 'map.drawing_deleted', drawing_id: drawing.id }));
+      }
+    },
+    onTokenRightClick: (token, cx, cy) => openTokenContextMenu(token, cx, cy),
   });
   loadMapState();
 }
@@ -1268,6 +1325,12 @@ async function loadMapState() {
       mapCanvas.setGrid(state.grid_size, state.grid_enabled);
       mapCanvas.setFog(state.fog_enabled, state.revealed_cells);
       mapCanvas.setTokens(state.tokens);
+      // Load overlays
+      try {
+        const overlays = await api.get(`/api/map/${SESSION_CODE}/overlays`);
+        mapCanvas.setDrawings(overlays.drawings);
+        mapCanvas.setMarkers(overlays.markers);
+      } catch {}
       mapGridEnabled = state.grid_enabled;
       mapFogEnabled = state.fog_enabled;
       $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
@@ -1349,6 +1412,192 @@ $('#btn-fog-reset').addEventListener('click', async () => {
 $('#btn-center-map').addEventListener('click', () => {
   if (mapCanvas) mapCanvas.centerView();
 });
+
+// ── Stage 9: Drawing Toolbar ──────────────────────────────────
+document.querySelectorAll('.map-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.map-mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const mode = btn.dataset.mode || null;
+    if (mapCanvas) mapCanvas.setDrawMode(mode);
+    // If switching to draw mode, turn off fog paint
+    if (mode) {
+      mapFogPaintActive = false;
+      $('#btn-fog-paint').style.background = '';
+      $('#btn-fog-paint').style.color = '';
+    }
+  });
+});
+
+$('#draw-color')?.addEventListener('input', e => {
+  if (mapCanvas) mapCanvas.drawColor = e.target.value;
+});
+$('#draw-width')?.addEventListener('input', e => {
+  if (mapCanvas) mapCanvas.drawLineWidth = parseInt(e.target.value);
+});
+$('#draw-visible')?.addEventListener('change', e => {
+  if (mapCanvas) mapCanvas.drawVisibleToPlayers = e.target.checked;
+});
+$('#btn-clear-drawings')?.addEventListener('click', async () => {
+  if (!confirm('Clear all drawings from the map?')) return;
+  await api.del(`/api/map/${SESSION_CODE}/drawings/all`);
+  if (mapCanvas) { mapCanvas.drawings = []; mapCanvas.render(); }
+  addLog('map', 'All drawings cleared');
+  if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+    ws.ws.send(JSON.stringify({ type: 'map.drawing_deleted', all: true }));
+  }
+});
+
+// ── Marker Create/Edit Modal ──────────────────────────────────
+function openMarkerModal(nx, ny, existing = null) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  const icons = ['📌', '⚠️', '🔒', '🏠', '⚔️', '💀', '🏰', '⭐', '🔥', '🌊', '🌲', '💎'];
+  modal.innerHTML = `
+    <div class="modal" style="width:340px">
+      <h2 style="margin-bottom:10px">${existing ? 'Edit Marker' : 'Place Marker'}</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${icons.map(ic => `<button class="btn btn-ghost btn-xs marker-icon-pick" data-icon="${ic}" style="font-size:1.2rem;${(existing?.icon || '📌') === ic ? 'background:var(--accent);color:#0a0908' : ''}">${ic}</button>`).join('')}
+      </div>
+      <input type="text" id="marker-label" value="${existing?.label || ''}" placeholder="Label" style="width:100%;font-size:0.82rem;margin-bottom:6px">
+      <textarea id="marker-desc" placeholder="Description" rows="2" style="width:100%;font-size:0.78rem;margin-bottom:6px">${existing?.description || ''}</textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <input type="color" id="marker-color" value="${existing?.color || '#ff0000'}" style="width:30px;height:24px;border:none;cursor:pointer">
+        <label style="font-size:0.72rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="marker-visible" ${existing?.visible_to_players ? 'checked' : ''}> Visible to players
+        </label>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" id="btn-marker-save" style="flex:1">${existing ? 'Update' : 'Place'}</button>
+        ${existing ? '<button class="btn btn-danger btn-sm" id="btn-marker-del">Delete</button>' : ''}
+        <button class="btn btn-ghost btn-sm" id="btn-marker-close">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  let selectedIcon = existing?.icon || '📌';
+  modal.querySelectorAll('.marker-icon-pick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modal.querySelectorAll('.marker-icon-pick').forEach(b => { b.style.background = ''; b.style.color = ''; });
+      btn.style.background = 'var(--accent)'; btn.style.color = '#0a0908';
+      selectedIcon = btn.dataset.icon;
+    });
+  });
+
+  modal.querySelector('#btn-marker-close').addEventListener('click', () => modal.remove());
+  modal.querySelector('#btn-marker-del')?.addEventListener('click', async () => {
+    await api.del(`/api/map/markers/${existing.id}`);
+    mapCanvas.markers = mapCanvas.markers.filter(m => m.id !== existing.id);
+    mapCanvas.render();
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'map.marker_deleted', marker_id: existing.id }));
+    }
+    modal.remove();
+  });
+
+  modal.querySelector('#btn-marker-save').addEventListener('click', async () => {
+    const payload = {
+      x: nx, y: ny,
+      label: modal.querySelector('#marker-label').value.trim(),
+      description: modal.querySelector('#marker-desc').value.trim(),
+      icon: selectedIcon,
+      color: modal.querySelector('#marker-color').value,
+      visible_to_players: modal.querySelector('#marker-visible').checked,
+      marker_type: 'custom',
+    };
+    try {
+      let res;
+      if (existing) {
+        res = await api.put(`/api/map/markers/${existing.id}`, payload);
+        const idx = mapCanvas.markers.findIndex(m => m.id === existing.id);
+        if (idx >= 0) mapCanvas.markers[idx] = res;
+      } else {
+        res = await api.post(`/api/map/${SESSION_CODE}/markers`, payload);
+        mapCanvas.markers.push(res);
+      }
+      mapCanvas.render();
+      addLog('map', `Marker ${existing ? 'updated' : 'placed'}: ${res.label || res.icon}`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({ type: existing ? 'map.marker_updated' : 'map.marker_added', marker: res }));
+      }
+      modal.remove();
+    } catch { showToast('Failed to save marker'); }
+  });
+}
+
+// ── Token Right-Click Context Menu ────────────────────────────
+function openTokenContextMenu(token, cx, cy) {
+  // Remove any existing context menu
+  document.querySelectorAll('.token-ctx-menu').forEach(el => el.remove());
+  const menu = document.createElement('div');
+  menu.className = 'token-ctx-menu';
+  menu.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:8px;padding:4px 0;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);min-width:160px`;
+  menu.innerHTML = `
+    <div class="ctx-item" data-action="edit" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">🎨 Edit Token</div>
+    <div class="ctx-item" data-action="hide" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">${token.visible ? '👁️‍🗨️ Hide' : '👁️ Show'} on Map</div>
+    <div class="ctx-item" data-action="remove" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">❌ Remove from Map</div>
+    <div style="height:1px;background:var(--border);margin:2px 0"></div>
+    <div class="ctx-item" data-action="select" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">📋 Select Character</div>
+  `;
+  document.body.appendChild(menu);
+
+  // Hover styling
+  menu.querySelectorAll('.ctx-item').forEach(item => {
+    item.addEventListener('mouseenter', () => item.style.background = 'var(--accent)20');
+    item.addEventListener('mouseleave', () => item.style.background = '');
+  });
+
+  const close = () => menu.remove();
+  setTimeout(() => document.addEventListener('click', close, { once: true }), 10);
+
+  menu.querySelectorAll('.ctx-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const action = item.dataset.action;
+      if (action === 'edit') {
+        openTokenEditModal(token);
+      } else if (action === 'hide') {
+        await api.patch(`/api/characters/${token.character_id}`, { is_visible_on_map: !token.visible });
+        token.visible = !token.visible;
+        mapCanvas.render();
+      } else if (action === 'remove') {
+        await api.patch(`/api/map/token/${token.character_id}`, { x: null, y: null });
+        token.x = null; token.y = null;
+        mapCanvas.render();
+      } else if (action === 'select') {
+        selectCharacter(token.character_id);
+      }
+      close();
+    });
+  });
+}
+
+function openTokenEditModal(token) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="width:300px">
+      <h2 style="margin-bottom:10px">Edit Token: ${token.name}</h2>
+      <div style="margin-bottom:8px">
+        <label style="font-size:0.72rem;color:var(--text-muted)">Color:</label>
+        <input type="color" id="token-edit-color" value="${token.color || '#c08a2a'}" style="width:50px;height:28px;border:none;cursor:pointer">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" id="btn-token-save" style="flex:1">Save</button>
+        <button class="btn btn-ghost btn-sm" id="btn-token-cancel" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('#btn-token-cancel').addEventListener('click', () => modal.remove());
+  modal.querySelector('#btn-token-save').addEventListener('click', async () => {
+    const color = modal.querySelector('#token-edit-color').value;
+    await api.patch(`/api/characters/${token.character_id}`, { token_color: color });
+    token.color = color;
+    mapCanvas.render();
+    modal.remove();
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 // INITIATIVE
@@ -2518,11 +2767,94 @@ function restoreDetailTimer() {
   }
 }
 
-// WS listener for characteristic rolls
+// ══════════════════════════════════════════════════════════════
+// FLOATING DICE ROLL LOG
+// ══════════════════════════════════════════════════════════════
+let rollLogEntries = [];
+let rollLogCollapsed = false;
+let rollLogUnread = 0;
+
+function addRollLogEntry(data) {
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  rollLogEntries.unshift({ ...data, time });
+  if (rollLogEntries.length > 50) rollLogEntries.pop();
+  if (rollLogCollapsed) {
+    rollLogUnread++;
+    const badge = document.querySelector('#roll-log-count');
+    if (badge) { badge.textContent = rollLogUnread; badge.style.display = 'inline'; }
+  }
+  renderRollLog();
+}
+
+function renderRollLog() {
+  const body = document.querySelector('#roll-log-body');
+  if (!body) return;
+  if (!rollLogEntries.length) {
+    body.innerHTML = '<div style="color:var(--text-muted);font-size:0.75rem;text-align:center;padding:12px 0">Rolls from players will appear here...</div>';
+    return;
+  }
+  body.innerHTML = rollLogEntries.map(e => {
+    const statColors = {
+      strength: '#e53935', dexterity: '#43a047', constitution: '#fb8c00',
+      intelligence: '#1e88e5', wisdom: '#8e24aa', charisma: '#e91e63',
+    };
+    const color = statColors[e.stat] || 'var(--accent)';
+    const rollTypeLabel = (e.roll_type || '').replace(/_/g, ' ');
+    const isNat20 = e.d20 === 20;
+    const isNat1 = e.d20 === 1;
+    const highlight = isNat20 ? 'background:#4caf5030;border-left:3px solid #4caf50' :
+                      isNat1 ? 'background:#f4433630;border-left:3px solid #f44336' :
+                      'border-left:3px solid var(--border)';
+    return `
+      <div style="padding:6px 8px;margin-bottom:4px;border-radius:var(--r-md);${highlight}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:700;font-size:0.82rem">${e.character_name || '?'}</span>
+          <span style="font-size:0.6rem;color:var(--text-muted)">${e.time}</span>
+        </div>
+        <div style="font-size:0.75rem;margin-top:2px">
+          <span style="color:${color};font-weight:600">${(e.stat || '').charAt(0).toUpperCase() + (e.stat || '').slice(1)}</span>
+          <span style="color:var(--text-muted)"> ${rollTypeLabel}</span>
+        </div>
+        <div style="font-size:0.9rem;font-weight:700;margin-top:2px">
+          D20(<span style="color:${isNat20 ? '#4caf50' : isNat1 ? '#f44336' : 'var(--text-primary)'}">${e.d20}</span>)
+          ${e.modifier >= 0 ? '+' : ''}${e.modifier}
+          = <span style="font-size:1rem;color:${color}">${e.total}</span>
+          ${isNat20 ? ' <span style="color:#4caf50;font-size:0.7rem">NAT 20!</span>' : ''}
+          ${isNat1 ? ' <span style="color:#f44336;font-size:0.7rem">NAT 1!</span>' : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Toggle collapse
+document.querySelector('#roll-log-header')?.addEventListener('click', () => {
+  rollLogCollapsed = !rollLogCollapsed;
+  const body = document.querySelector('#roll-log-body');
+  const btn = document.querySelector('#roll-log-toggle');
+  if (body) body.style.display = rollLogCollapsed ? 'none' : 'block';
+  if (btn) btn.textContent = rollLogCollapsed ? '▲' : '▼';
+  if (!rollLogCollapsed) {
+    rollLogUnread = 0;
+    const badge = document.querySelector('#roll-log-count');
+    if (badge) badge.style.display = 'none';
+  }
+});
+
+// WS listener for characteristic rolls (only from players, not GM's own)
+let lastGmRollTime = 0;
 ws.on('roll.characteristic', d => {
   if (d.description) {
-    addLog('roll', d.description);
-    showToast(d.description);
+    // Avoid duplicating GM's own rolls already added locally
+    const isDuplicate = rollLogEntries.length > 0
+      && rollLogEntries[0].character_id === d.character_id
+      && rollLogEntries[0].d20 === d.d20
+      && rollLogEntries[0].total === d.total
+      && (Date.now() - lastGmRollTime) < 2000;
+    if (!isDuplicate) {
+      addLog('roll', d.description);
+      addRollLogEntry(d);
+    }
   }
 });
 
@@ -2753,6 +3085,488 @@ function openRCEditorModal(kind, existing) {
     loadRacesClasses();
   });
 }
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 8 — QUEST SYSTEM
+// ══════════════════════════════════════════════════════════════
+let questTemplates = [];
+let activeQuests = [];
+
+async function loadQuests() {
+  try {
+    const sess = await api.get(`/api/sessions/${SESSION_CODE}`);
+    const [tpls, quests] = await Promise.all([
+      api.get(`/api/quest-templates?session_id=${sess.id}`),
+      api.get(`/api/quests/session/${SESSION_CODE}`),
+    ]);
+    questTemplates = tpls;
+    activeQuests = quests;
+    renderQuestTemplates();
+    renderActiveQuests();
+  } catch (e) { console.error('loadQuests error', e); }
+}
+
+function renderQuestTemplates() {
+  const panel = $('#quest-templates-panel');
+  if (!panel) return;
+  if (!questTemplates.length) {
+    panel.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No quest templates yet. Click "+ Quest Template" to create one.</p>';
+    return;
+  }
+  panel.innerHTML = questTemplates.map(t => {
+    const stages = t.stages || [];
+    const stageLabel = stages.length ? `${stages.length} stage${stages.length > 1 ? 's' : ''}` : 'No stages';
+    return `
+      <div style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span style="font-weight:700;font-size:0.85rem">📜 ${t.title}</span>
+            <span style="font-size:0.65rem;color:var(--text-muted);margin-left:6px">${stageLabel}</span>
+            ${t.reward_is_hidden ? '<span style="font-size:0.6rem;color:var(--accent-orange);margin-left:4px">🔒 Hidden Reward</span>' : ''}
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-primary btn-xs" onclick="openQuestAssignModal(${t.id})">📤 Assign</button>
+            <button class="btn btn-ghost btn-xs" onclick="openQuestEditorModal(${t.id})">✏️</button>
+            <button class="btn btn-danger btn-xs" onclick="deleteQuestTemplate(${t.id})">🗑️</button>
+          </div>
+        </div>
+        ${t.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">${t.description.substring(0, 100)}${t.description.length > 100 ? '...' : ''}</div>` : ''}
+        ${t.reward_description ? `<div style="font-size:0.7rem;margin-top:3px;color:var(--accent)">Reward: ${t.reward_is_hidden ? '???' : t.reward_description}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderActiveQuests() {
+  const panel = $('#quest-active-panel');
+  if (!panel) return;
+  const active = activeQuests.filter(q => q.status === 'active');
+  const completed = activeQuests.filter(q => q.status === 'completed');
+  const failed = activeQuests.filter(q => q.status === 'failed');
+
+  if (!activeQuests.length) {
+    panel.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No quests assigned yet.</p>';
+    return;
+  }
+
+  let html = '';
+
+  if (active.length) {
+    html += '<div style="font-size:0.8rem;font-weight:700;margin-bottom:6px">Active Quests</div>';
+    html += active.map(q => renderQuestRow(q)).join('');
+  }
+
+  if (completed.length) {
+    html += `<details style="margin-top:10px"><summary style="font-size:0.8rem;font-weight:700;cursor:pointer;color:var(--accent)">✅ Completed (${completed.length})</summary>`;
+    html += completed.map(q => renderQuestRow(q)).join('');
+    html += '</details>';
+  }
+
+  if (failed.length) {
+    html += `<details style="margin-top:10px"><summary style="font-size:0.8rem;font-weight:700;cursor:pointer;color:#f44336">❌ Failed (${failed.length})</summary>`;
+    html += failed.map(q => renderQuestRow(q)).join('');
+    html += '</details>';
+  }
+
+  panel.innerHTML = html;
+}
+
+function renderQuestRow(q) {
+  const stagesCompleted = q.stages_completed || [];
+  const statusColors = { active: 'var(--accent)', completed: '#4caf50', failed: '#f44336' };
+  const statusIcons = { active: '🔵', completed: '✅', failed: '❌' };
+
+  // Build stage chain if quest has stages (look up from template)
+  const tpl = questTemplates.find(t => t.id === q.quest_template_id);
+  const stages = tpl ? (tpl.stages || []) : [];
+
+  let stageChain = '';
+  if (stages.length > 0) {
+    stageChain = stages.map((s, i) => {
+      const done = stagesCompleted.includes(i);
+      const current = i === q.current_stage && q.status === 'active';
+      const style = done ? 'background:#4caf5030;color:#4caf50;border:1px solid #4caf50'
+                   : current ? 'background:var(--accent)20;color:var(--accent);border:1px solid var(--accent)'
+                   : 'background:var(--bg-surface-2);color:var(--text-muted);border:1px solid var(--border)';
+      return `<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:0.6rem;${style}" title="${s.title || ''}">${done ? '✓' : current ? '●' : '○'} ${i + 1}</span>`;
+    }).join(' → ');
+  }
+
+  const buttons = q.status === 'active' ? `
+    <div style="display:flex;gap:3px;margin-top:4px">
+      ${stages.length > 0 ? `<button class="btn btn-ghost btn-xs" onclick="completeQuestStage(${q.id}, ${q.current_stage})">✅ Complete Stage ${q.current_stage + 1}</button>` : ''}
+      <button class="btn btn-primary btn-xs" onclick="completeQuest(${q.id})">🏆 Complete Quest</button>
+      <button class="btn btn-danger btn-xs" onclick="failQuest(${q.id})">❌ Fail</button>
+    </div>
+  ` : '';
+
+  return `
+    <div style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface);border-left:3px solid ${statusColors[q.status] || 'var(--border)'}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="font-size:0.7rem;font-weight:700;color:var(--text-muted)">${q.character_name || ''}</span>
+          <span style="font-weight:700;font-size:0.82rem;margin-left:6px">${statusIcons[q.status] || ''} ${q.title}</span>
+        </div>
+      </div>
+      ${q.source_npc_name ? `<div style="font-size:0.7rem;color:var(--text-muted)">From: ${q.source_npc_name}</div>` : ''}
+      ${stageChain ? `<div style="margin-top:4px;display:flex;gap:2px;align-items:center;flex-wrap:wrap">${stageChain}</div>` : ''}
+      ${buttons}
+    </div>
+  `;
+}
+
+async function completeQuestStage(questId, stageIndex) {
+  try {
+    await api.patch(`/api/character-quests/${questId}/complete-stage`, { stage_index: stageIndex });
+    addLog('gm.quest', `Completed stage ${stageIndex + 1} of quest #${questId}`);
+    // WS broadcast
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'quest.stage_completed', quest_id: questId, stage_index: stageIndex }));
+    }
+    loadQuests();
+  } catch (e) { showToast('Failed to complete stage'); }
+}
+
+async function completeQuest(questId) {
+  if (!confirm('Complete this quest and grant rewards?')) return;
+  try {
+    await api.patch(`/api/character-quests/${questId}/complete`, {});
+    addLog('gm.quest', `Quest #${questId} completed!`);
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'quest.completed', quest_id: questId }));
+    }
+    loadQuests();
+  } catch (e) { showToast('Failed to complete quest'); }
+}
+
+async function failQuest(questId) {
+  if (!confirm('Mark this quest as failed?')) return;
+  try {
+    await api.patch(`/api/character-quests/${questId}/fail`, {});
+    addLog('gm.quest', `Quest #${questId} failed`);
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'quest.failed', quest_id: questId }));
+    }
+    loadQuests();
+  } catch (e) { showToast('Failed to mark quest as failed'); }
+}
+
+async function deleteQuestTemplate(tplId) {
+  if (!confirm('Delete this quest template?')) return;
+  try {
+    await api.del(`/api/quest-templates/${tplId}`);
+    loadQuests();
+  } catch (e) { showToast('Failed to delete template'); }
+}
+
+function openQuestEditorModal(tplId = null) {
+  const existing = tplId ? questTemplates.find(t => t.id === tplId) : null;
+  const npcs = characters.filter(c => c.is_npc);
+
+  let stages = existing ? (existing.stages || []) : [];
+
+  function renderStageRows() {
+    return stages.map((s, i) => `
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+        <span style="font-size:0.7rem;font-weight:700;width:20px">${i + 1}.</span>
+        <input type="text" class="quest-stage-title" data-idx="${i}" value="${s.title || ''}" placeholder="Stage title" style="flex:1;font-size:0.78rem">
+        <input type="text" class="quest-stage-desc" data-idx="${i}" value="${s.description || ''}" placeholder="Description" style="flex:2;font-size:0.78rem">
+        <button class="btn btn-danger btn-xs" onclick="this.closest('div').remove(); document.querySelector('#quest-stage-list').querySelectorAll('.quest-stage-title').forEach((el,j) => el.closest('div').querySelector('span').textContent = (j+1)+'.')">×</button>
+      </div>
+    `).join('');
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="width:520px;max-height:90vh;overflow-y:auto">
+      <h2 style="margin-bottom:12px">${existing ? 'Edit' : 'Create'} Quest Template</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input type="text" id="qt-title" value="${existing ? existing.title : ''}" placeholder="Quest title" style="font-size:0.85rem;font-weight:700">
+        <textarea id="qt-desc" placeholder="Description" rows="3" style="font-size:0.78rem">${existing ? existing.description : ''}</textarea>
+
+        <label style="font-size:0.75rem;font-weight:600">Source NPC</label>
+        <select id="qt-npc" style="font-size:0.78rem">
+          <option value="">— None —</option>
+          ${npcs.map(n => `<option value="${n.id}" ${existing && existing.source_npc_id === n.id ? 'selected' : ''}>${n.name}</option>`).join('')}
+        </select>
+
+        <label style="font-size:0.75rem;font-weight:600">Stages</label>
+        <div id="quest-stage-list">${renderStageRows()}</div>
+        <button class="btn btn-ghost btn-xs" id="btn-qt-add-stage" style="align-self:flex-start">+ Add Stage</button>
+
+        <hr style="border-color:var(--border)">
+        <label style="font-size:0.75rem;font-weight:600">Rewards</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="font-size:0.72rem">Gold (copper):</label>
+          <input type="number" id="qt-gold" value="${existing ? existing.reward_gold_copper : 0}" style="width:80px;font-size:0.78rem">
+        </div>
+        <input type="text" id="qt-reward-desc" value="${existing ? existing.reward_description : ''}" placeholder="Reward description (shown to player)" style="font-size:0.78rem">
+        <label style="font-size:0.72rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="qt-hidden" ${existing && existing.reward_is_hidden ? 'checked' : ''}>
+          Hidden reward (player sees "???")
+        </label>
+
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary btn-sm" id="btn-qt-save" style="flex:1">${existing ? 'Save' : 'Create'}</button>
+          <button class="btn btn-ghost btn-sm" id="btn-qt-cancel" style="flex:1">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#btn-qt-add-stage').addEventListener('click', () => {
+    const list = modal.querySelector('#quest-stage-list');
+    const idx = list.querySelectorAll('.quest-stage-title').length;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:4px';
+    row.innerHTML = `
+      <span style="font-size:0.7rem;font-weight:700;width:20px">${idx + 1}.</span>
+      <input type="text" class="quest-stage-title" data-idx="${idx}" placeholder="Stage title" style="flex:1;font-size:0.78rem">
+      <input type="text" class="quest-stage-desc" data-idx="${idx}" placeholder="Description" style="flex:2;font-size:0.78rem">
+      <button class="btn btn-danger btn-xs" onclick="this.closest('div').remove()">×</button>
+    `;
+    list.appendChild(row);
+  });
+
+  modal.querySelector('#btn-qt-cancel').addEventListener('click', () => modal.remove());
+  modal.querySelector('#btn-qt-save').addEventListener('click', async () => {
+    const title = modal.querySelector('#qt-title').value.trim();
+    if (!title) { showToast('Title required'); return; }
+    const stageEls = modal.querySelectorAll('.quest-stage-title');
+    const descEls = modal.querySelectorAll('.quest-stage-desc');
+    const stagesData = [];
+    stageEls.forEach((el, i) => {
+      stagesData.push({ order: i + 1, title: el.value.trim(), description: descEls[i]?.value.trim() || '' });
+    });
+
+    const sess = await api.get(`/api/sessions/${SESSION_CODE}`);
+    const payload = {
+      session_id: sess.id,
+      title,
+      description: modal.querySelector('#qt-desc').value.trim(),
+      source_npc_id: parseInt(modal.querySelector('#qt-npc').value) || null,
+      reward_gold_copper: parseInt(modal.querySelector('#qt-gold').value) || 0,
+      reward_item_ids: [],
+      reward_description: modal.querySelector('#qt-reward-desc').value.trim(),
+      reward_is_hidden: modal.querySelector('#qt-hidden').checked,
+      stages: stagesData,
+      is_multi_stage: stagesData.length > 0,
+    };
+
+    try {
+      if (existing) {
+        await api.put(`/api/quest-templates/${existing.id}`, payload);
+      } else {
+        await api.post('/api/quest-templates', payload);
+      }
+      modal.remove();
+      loadQuests();
+    } catch (e) { showToast('Failed to save quest template'); }
+  });
+}
+
+function openQuestAssignModal(tplId) {
+  const tpl = questTemplates.find(t => t.id === tplId);
+  if (!tpl) return;
+  const players = characters.filter(c => !c.is_npc);
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="width:380px">
+      <h2 style="margin-bottom:10px">Assign: ${tpl.title}</h2>
+      <div style="font-size:0.78rem;margin-bottom:10px">Select players to receive this quest:</div>
+      <div id="qa-players" style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
+        ${players.map(p => `
+          <label style="display:flex;gap:6px;align-items:center;font-size:0.8rem;cursor:pointer">
+            <input type="checkbox" value="${p.id}" checked> ${p.name}
+          </label>
+        `).join('')}
+        ${!players.length ? '<span style="font-size:0.75rem;color:var(--text-muted)">No players in session</span>' : ''}
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" id="btn-qa-assign" style="flex:1">📤 Assign</button>
+        <button class="btn btn-ghost btn-sm" id="btn-qa-cancel" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#btn-qa-cancel').addEventListener('click', () => modal.remove());
+  modal.querySelector('#btn-qa-assign').addEventListener('click', async () => {
+    const checked = [...modal.querySelectorAll('#qa-players input:checked')].map(i => parseInt(i.value));
+    if (!checked.length) { showToast('Select at least one player'); return; }
+    try {
+      const res = await api.post('/api/quests/assign', { template_id: tplId, character_ids: checked });
+      addLog('gm.quest', `Assigned "${tpl.title}" to ${res.assigned.length} player(s)`);
+      // WS notify each player
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        for (const a of res.assigned) {
+          ws.ws.send(JSON.stringify({ type: 'quest.assigned', character_id: a.character_id, quest_title: tpl.title }));
+        }
+      }
+      modal.remove();
+      loadQuests();
+    } catch (e) { showToast('Failed to assign quest'); }
+  });
+}
+
+// Wire quest sub-tabs and buttons
+document.querySelectorAll('.quest-sub').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.quest-sub').forEach(b => { b.classList.remove('active'); b.classList.add('btn-ghost'); });
+    btn.classList.add('active');
+    btn.classList.remove('btn-ghost');
+    const sub = btn.dataset.qsub;
+    $('#quest-active-panel').style.display = sub === 'active' ? 'block' : 'none';
+    $('#quest-templates-panel').style.display = sub === 'templates' ? 'block' : 'none';
+  });
+});
+
+$('#btn-quest-create')?.addEventListener('click', () => openQuestEditorModal());
+
+// Quick Assign — choose template or create custom, then pick players
+$('#btn-quest-assign-quick')?.addEventListener('click', () => openQuickAssignModal());
+
+function openQuickAssignModal() {
+  const players = characters.filter(c => !c.is_npc);
+  if (!players.length) { showToast('No players in session'); return; }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="width:480px;max-height:90vh;overflow-y:auto">
+      <h2 style="margin-bottom:12px">📤 Assign Quest</h2>
+
+      <!-- Source: template or custom -->
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-sm qa-src active" data-src="template" style="font-size:0.78rem">From Template</button>
+        <button class="btn btn-sm btn-ghost qa-src" data-src="custom" style="font-size:0.78rem">Custom Quest</button>
+      </div>
+
+      <!-- Template picker -->
+      <div id="qa-template-section">
+        ${questTemplates.length ? `
+          <select id="qa-tpl-select" style="width:100%;font-size:0.8rem;margin-bottom:8px">
+            ${questTemplates.map(t => `<option value="${t.id}">${t.title} (${t.stages.length} stages)</option>`).join('')}
+          </select>
+          <div id="qa-tpl-preview" style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px"></div>
+        ` : '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">No templates. Create one first or use "Custom Quest".</div>'}
+      </div>
+
+      <!-- Custom quest fields -->
+      <div id="qa-custom-section" style="display:none">
+        <input type="text" id="qa-custom-title" placeholder="Quest title" style="width:100%;font-size:0.82rem;font-weight:700;margin-bottom:6px">
+        <textarea id="qa-custom-desc" placeholder="Description" rows="2" style="width:100%;font-size:0.78rem;margin-bottom:6px"></textarea>
+        <input type="text" id="qa-custom-npc" placeholder="Source NPC name (optional)" style="width:100%;font-size:0.78rem;margin-bottom:6px">
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input type="number" id="qa-custom-gold" value="0" placeholder="Gold reward (copper)" style="width:100px;font-size:0.78rem">
+          <input type="text" id="qa-custom-reward" placeholder="Reward description" style="flex:1;font-size:0.78rem">
+        </div>
+        <label style="font-size:0.72rem;display:flex;align-items:center;gap:4px;margin-bottom:8px">
+          <input type="checkbox" id="qa-custom-hidden"> Hidden reward
+        </label>
+      </div>
+
+      <!-- Player selection -->
+      <div style="font-size:0.78rem;font-weight:700;margin-bottom:6px">Assign to:</div>
+      <div id="qa-player-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
+        <label style="font-size:0.75rem;cursor:pointer;display:flex;align-items:center;gap:4px;margin-bottom:4px">
+          <input type="checkbox" id="qa-select-all" checked> <strong>Select All</strong>
+        </label>
+        ${players.map(p => `
+          <label style="display:flex;gap:6px;align-items:center;font-size:0.8rem;cursor:pointer;padding-left:16px">
+            <input type="checkbox" class="qa-player-cb" value="${p.id}" checked> ${p.name}
+          </label>
+        `).join('')}
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" id="btn-qa-go" style="flex:1">📤 Assign</button>
+        <button class="btn btn-ghost btn-sm" id="btn-qa-close" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Source tabs
+  modal.querySelectorAll('.qa-src').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modal.querySelectorAll('.qa-src').forEach(b => { b.classList.remove('active'); b.classList.add('btn-ghost'); });
+      btn.classList.add('active'); btn.classList.remove('btn-ghost');
+      const src = btn.dataset.src;
+      modal.querySelector('#qa-template-section').style.display = src === 'template' ? 'block' : 'none';
+      modal.querySelector('#qa-custom-section').style.display = src === 'custom' ? 'block' : 'none';
+    });
+  });
+
+  // Template preview
+  const tplSelect = modal.querySelector('#qa-tpl-select');
+  const preview = modal.querySelector('#qa-tpl-preview');
+  function updatePreview() {
+    if (!tplSelect || !preview) return;
+    const t = questTemplates.find(x => x.id === parseInt(tplSelect.value));
+    if (!t) { preview.textContent = ''; return; }
+    preview.innerHTML = `${t.description ? t.description.substring(0, 120) : ''}<br>Reward: ${t.reward_is_hidden ? '🔒 Hidden' : (t.reward_description || 'None')}`;
+  }
+  tplSelect?.addEventListener('change', updatePreview);
+  updatePreview();
+
+  // Select all
+  modal.querySelector('#qa-select-all')?.addEventListener('change', e => {
+    modal.querySelectorAll('.qa-player-cb').forEach(cb => cb.checked = e.target.checked);
+  });
+
+  modal.querySelector('#btn-qa-close').addEventListener('click', () => modal.remove());
+
+  modal.querySelector('#btn-qa-go').addEventListener('click', async () => {
+    const checked = [...modal.querySelectorAll('.qa-player-cb:checked')].map(i => parseInt(i.value));
+    if (!checked.length) { showToast('Select at least one player'); return; }
+
+    const isCustom = modal.querySelector('.qa-src.active')?.dataset.src === 'custom';
+
+    try {
+      let payload;
+      if (isCustom) {
+        const title = modal.querySelector('#qa-custom-title').value.trim();
+        if (!title) { showToast('Title required'); return; }
+        payload = {
+          character_ids: checked,
+          title,
+          description: modal.querySelector('#qa-custom-desc').value.trim(),
+          source_npc_name: modal.querySelector('#qa-custom-npc').value.trim() || null,
+          reward_gold_copper: parseInt(modal.querySelector('#qa-custom-gold').value) || 0,
+          reward_description: modal.querySelector('#qa-custom-reward').value.trim(),
+          reward_is_hidden: modal.querySelector('#qa-custom-hidden').checked,
+          stages: [],
+          is_multi_stage: false,
+        };
+      } else {
+        const tplId = parseInt(tplSelect?.value);
+        if (!tplId) { showToast('Select a template'); return; }
+        payload = { template_id: tplId, character_ids: checked };
+      }
+
+      const res = await api.post('/api/quests/assign', payload);
+      const questTitle = isCustom ? payload.title : (questTemplates.find(t => t.id === payload.template_id)?.title || 'Quest');
+      addLog('gm.quest', `Assigned "${questTitle}" to ${res.assigned.length} player(s)`);
+
+      // WS notify
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        for (const a of res.assigned) {
+          ws.ws.send(JSON.stringify({ type: 'quest.assigned', character_id: a.character_id, quest_title: questTitle }));
+        }
+      }
+
+      modal.remove();
+      showToast(`Quest assigned to ${res.assigned.length} player(s)!`);
+      loadQuests();
+    } catch (e) { showToast('Failed to assign quest'); }
+  });
+}
+
 
 // ══════════════════════════════════════════════════════════════
 // STAGE 7 — NPC LIBRARY
@@ -3001,6 +3815,7 @@ function openNpcTemplateModal(existing) {
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" id="nt-cancel">Cancel</button>
+        <button class="btn btn-secondary" id="nt-ai-gen">🤖 Generate with AI</button>
         <button class="btn btn-primary" id="nt-save">${isEdit ? 'Save' : 'Create'}</button>
       </div>
     </div>
@@ -3008,6 +3823,7 @@ function openNpcTemplateModal(existing) {
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#nt-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#nt-ai-gen').addEventListener('click', () => openAINpcModal(overlay));
   overlay.querySelector('#nt-save').addEventListener('click', async () => {
     const body = {
       session_id: SESSION_ID,
@@ -3127,6 +3943,382 @@ document.querySelector('#btn-create-race')?.addEventListener('click', () => open
 document.querySelector('#btn-create-class')?.addEventListener('click', () => openRCEditorModal('class', null));
 
 // ══════════════════════════════════════════════════════════════
+// STAGE 10 — ANNOUNCEMENTS
+// ══════════════════════════════════════════════════════════════
+async function loadAnnouncements() {
+  try {
+    const list = await api.get(`/api/announcements/${SESSION_CODE}`);
+    const el = $('#announcements-list');
+    if (!el) return;
+    if (!list.length) { el.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>'; return; }
+    el.innerHTML = list.map(a => `
+      <div style="padding:8px 10px;margin-bottom:6px;border-radius:var(--r-md);border:1px solid ${a.is_pinned ? 'var(--accent)' : 'var(--border)'};background:${a.is_pinned ? 'rgba(212,175,55,0.06)' : 'var(--bg-surface-2)'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-weight:600;font-size:0.78rem">${a.is_pinned ? '📌 ' : ''}${a.author_name || 'GM'}</span>
+          <span style="font-size:0.68rem;color:var(--text-muted)">${a.posted_at ? new Date(a.posted_at).toLocaleString() : ''}</span>
+        </div>
+        <div style="font-size:0.82rem;white-space:pre-wrap">${a.content}</div>
+        <div style="display:flex;gap:4px;margin-top:6px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-xs" data-ann-pin="${a.id}" data-pinned="${a.is_pinned}">${a.is_pinned ? 'Unpin' : 'Pin'}</button>
+          <button class="btn btn-ghost btn-xs" data-ann-del="${a.id}" style="color:var(--danger)">Delete</button>
+        </div>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-ann-pin]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api.patch(`/api/announcements/${btn.dataset.annPin}/pin`, { is_pinned: btn.dataset.pinned !== 'true' });
+        loadAnnouncements();
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'announcement.pinned', announcement_id: parseInt(btn.dataset.annPin) }));
+        }
+      });
+    });
+    el.querySelectorAll('[data-ann-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api.del(`/api/announcements/${btn.dataset.annDel}`);
+        loadAnnouncements();
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'announcement.deleted', announcement_id: parseInt(btn.dataset.annDel) }));
+        }
+      });
+    });
+  } catch (e) { console.error('loadAnnouncements', e); }
+}
+
+$('#btn-post-announce')?.addEventListener('click', async () => {
+  const input = $('#announce-input');
+  const content = input.value.trim();
+  if (!content) return;
+  const is_pinned = $('#announce-pin')?.checked || false;
+  const a = await api.post(`/api/announcements/${SESSION_CODE}`, { content, is_pinned });
+  input.value = '';
+  if ($('#announce-pin')) $('#announce-pin').checked = false;
+  loadAnnouncements();
+  addLog('gm.announce', `Announcement posted: "${content.substring(0, 60)}..."`);
+  if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+    ws.ws.send(JSON.stringify({ type: 'announcement.posted', announcement: a }));
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — CHARACTER NOTES (GM side)
+// ══════════════════════════════════════════════════════════════
+async function loadCharNotes(charId) {
+  const container = document.querySelector('#char-notes-section');
+  if (!container) return;
+  try {
+    const notes = await api.get(`/api/notes/character/${charId}/all`);
+    const playerNotes = notes.filter(n => !n.is_gm_note);
+    const gmNotes = notes.filter(n => n.is_gm_note);
+    container.innerHTML = `
+      <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        <h4 style="font-size:0.82rem;flex:1">📝 Notes</h4>
+        <button class="btn btn-primary btn-xs" id="btn-add-gm-note">+ GM Note</button>
+      </div>
+      ${gmNotes.length ? `<div style="margin-bottom:8px"><span style="font-size:0.72rem;color:var(--text-muted)">GM Notes (hidden from player):</span>
+        ${gmNotes.map(n => `
+          <div style="padding:6px 8px;margin:4px 0;background:rgba(212,175,55,0.08);border:1px solid var(--accent);border-radius:var(--r-sm)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong style="font-size:0.78rem">${n.title || 'Untitled'}</strong>
+              <div style="display:flex;gap:3px">
+                <button class="btn btn-ghost btn-xs" data-edit-note="${n.id}">✏️</button>
+                <button class="btn btn-ghost btn-xs" data-del-note="${n.id}" style="color:var(--danger)">🗑️</button>
+              </div>
+            </div>
+            <div style="font-size:0.78rem;white-space:pre-wrap;margin-top:3px">${n.content}</div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+      ${playerNotes.length ? `<div><span style="font-size:0.72rem;color:var(--text-muted)">Player Notes (read-only):</span>
+        ${playerNotes.map(n => `
+          <div style="padding:6px 8px;margin:4px 0;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-sm)">
+            <strong style="font-size:0.78rem">${n.title || 'Untitled'}</strong>
+            <div style="font-size:0.78rem;white-space:pre-wrap;margin-top:3px">${n.content}</div>
+          </div>
+        `).join('')}
+      </div>` : '<p class="text-muted" style="font-size:0.75rem">No player notes.</p>'}
+    `;
+    container.querySelector('#btn-add-gm-note')?.addEventListener('click', () => openNoteModal(charId, null, true));
+    container.querySelectorAll('[data-edit-note]').forEach(btn => {
+      const note = notes.find(n => n.id === parseInt(btn.dataset.editNote));
+      btn.addEventListener('click', () => openNoteModal(charId, note, true));
+    });
+    container.querySelectorAll('[data-del-note]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api.del(`/api/notes/${btn.dataset.delNote}`);
+        loadCharNotes(charId);
+      });
+    });
+  } catch (e) { console.error('loadCharNotes', e); }
+}
+
+function openNoteModal(charId, existing, isGm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="width:440px">
+      <div class="modal-header"><h3>${existing ? 'Edit' : 'New'} ${isGm ? 'GM' : ''} Note</h3></div>
+      <div class="modal-body">
+        <label class="form-label">Title</label>
+        <input type="text" id="note-title" value="${existing?.title || ''}" style="width:100%;margin-bottom:8px">
+        <label class="form-label">Content</label>
+        <textarea id="note-content" rows="6" style="width:100%;resize:vertical">${existing?.content || ''}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="btn-note-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-note-save">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#btn-note-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#btn-note-save').addEventListener('click', async () => {
+    const body = { title: overlay.querySelector('#note-title').value, content: overlay.querySelector('#note-content').value, is_gm_note: isGm };
+    if (existing) await api.put(`/api/notes/${existing.id}`, body);
+    else await api.post(`/api/notes/character/${charId}`, body);
+    overlay.remove();
+    loadCharNotes(charId);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — SESSION TIMER
+// ══════════════════════════════════════════════════════════════
+let sessionTimerRunning = false;
+let sessionTimerBase = 0;
+let sessionTimerStartedAt = null;
+let sessionTimerInterval = null;
+
+function formatTimer(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function updateTimerDisplay() {
+  let total = sessionTimerBase;
+  if (sessionTimerRunning && sessionTimerStartedAt) {
+    total += Math.floor((Date.now() - sessionTimerStartedAt) / 1000);
+  }
+  const el = $('#session-timer-display');
+  if (el) el.textContent = formatTimer(total);
+}
+
+function startTimerTick() {
+  if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+  sessionTimerInterval = setInterval(updateTimerDisplay, 1000);
+  updateTimerDisplay();
+}
+
+async function loadSessionTimer() {
+  try {
+    const t = await api.get(`/api/sessions/${SESSION_CODE}/timer`);
+    sessionTimerBase = t.total_seconds || 0;
+    sessionTimerRunning = t.running;
+    if (t.running && t.started_at) {
+      sessionTimerStartedAt = new Date(t.started_at).getTime();
+      sessionTimerBase = (t.total_seconds || 0) - Math.floor((Date.now() - sessionTimerStartedAt) / 1000);
+      if (sessionTimerBase < 0) sessionTimerBase = 0;
+    } else {
+      sessionTimerStartedAt = null;
+    }
+    const btn = $('#btn-timer-toggle');
+    if (btn) btn.textContent = sessionTimerRunning ? '⏸' : '▶';
+    startTimerTick();
+  } catch (e) { console.error('loadSessionTimer', e); }
+}
+
+$('#btn-timer-toggle')?.addEventListener('click', async () => {
+  if (sessionTimerRunning) {
+    const t = await api.post(`/api/sessions/${SESSION_CODE}/timer/pause`);
+    sessionTimerRunning = false;
+    sessionTimerBase = t.total_seconds;
+    sessionTimerStartedAt = null;
+    $('#btn-timer-toggle').textContent = '▶';
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'session.timer_paused', total_seconds: t.total_seconds }));
+    }
+  } else {
+    const t = await api.post(`/api/sessions/${SESSION_CODE}/timer/start`);
+    sessionTimerRunning = true;
+    sessionTimerBase = 0;
+    sessionTimerStartedAt = Date.now();
+    sessionTimerBase = t.total_seconds - Math.floor((Date.now() - sessionTimerStartedAt) / 1000);
+    $('#btn-timer-toggle').textContent = '⏸';
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({ type: 'session.timer_started', total_seconds: t.total_seconds }));
+    }
+  }
+  updateTimerDisplay();
+});
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — ENHANCED EVENT LOG (filter, search, export)
+// ══════════════════════════════════════════════════════════════
+let logFilter = 'all';
+let logSearchTerm = '';
+
+document.querySelectorAll('.log-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.log-filter-btn').forEach(b => { b.classList.remove('active'); b.classList.add('btn-ghost'); });
+    btn.classList.add('active');
+    btn.classList.remove('btn-ghost');
+    logFilter = btn.dataset.logFilter;
+    applyLogFilters();
+  });
+});
+
+$('#log-search')?.addEventListener('input', e => {
+  logSearchTerm = e.target.value.toLowerCase();
+  applyLogFilters();
+});
+
+function applyLogFilters() {
+  const log = $('#event-log');
+  if (!log) return;
+  const entries = log.querySelectorAll('.log-entry');
+  entries.forEach(entry => {
+    const cat = entry.dataset.logCat || '';
+    const text = entry.textContent.toLowerCase();
+    const matchFilter = logFilter === 'all' || cat.includes(logFilter);
+    const matchSearch = !logSearchTerm || text.includes(logSearchTerm);
+    entry.style.display = (matchFilter && matchSearch) ? '' : 'none';
+  });
+}
+
+$('#btn-export-log')?.addEventListener('click', () => {
+  const log = $('#event-log');
+  if (!log) return;
+  const entries = log.querySelectorAll('.log-entry');
+  let text = `Event Log — Session ${SESSION_CODE}\nExported: ${new Date().toLocaleString()}\n${'='.repeat(50)}\n\n`;
+  entries.forEach(entry => {
+    if (entry.style.display !== 'none') {
+      text += entry.textContent.trim() + '\n';
+    }
+  });
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `event-log-${SESSION_CODE}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — AI NPC GENERATION
+// ══════════════════════════════════════════════════════════════
+function openAINpcModal(templateModal) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.zIndex = '1100';
+  overlay.innerHTML = `
+    <div class="modal" style="width:500px">
+      <div class="modal-header"><h3>🤖 Generate NPC with AI</h3></div>
+      <div class="modal-body">
+        <label class="form-label">Describe this NPC:</label>
+        <textarea id="ai-npc-desc" rows="3" placeholder="An old bitter blacksmith who was once an adventurer, now retired..." style="width:100%;resize:vertical"></textarea>
+        <div id="ai-npc-preview" style="margin-top:12px;display:none"></div>
+        <div id="ai-npc-loading" style="display:none;text-align:center;padding:12px;color:var(--text-muted)">⏳ Generating...</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="btn-ai-npc-close">Cancel</button>
+        <button class="btn btn-secondary btn-sm" id="btn-ai-npc-retry" style="display:none">🔄 Retry</button>
+        <button class="btn btn-primary btn-sm" id="btn-ai-npc-generate">✨ Generate</button>
+        <button class="btn btn-primary btn-sm" id="btn-ai-npc-use" style="display:none">✅ Use This</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  let generatedNpc = null;
+
+  overlay.querySelector('#btn-ai-npc-close').addEventListener('click', () => overlay.remove());
+
+  async function doGenerate() {
+    const desc = overlay.querySelector('#ai-npc-desc').value.trim();
+    if (!desc) return;
+    overlay.querySelector('#ai-npc-loading').style.display = 'block';
+    overlay.querySelector('#ai-npc-preview').style.display = 'none';
+    overlay.querySelector('#btn-ai-npc-generate').style.display = 'none';
+    overlay.querySelector('#btn-ai-npc-retry').style.display = 'none';
+    overlay.querySelector('#btn-ai-npc-use').style.display = 'none';
+
+    try {
+      const res = await api.post('/api/ai/generate-npc', { description: desc, session_code: SESSION_CODE });
+      generatedNpc = res;
+      const preview = overlay.querySelector('#ai-npc-preview');
+      preview.style.display = 'block';
+      preview.innerHTML = `
+        <div style="padding:10px;background:var(--bg-surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
+          <h4 style="margin-bottom:6px">${res.name || 'NPC'}</h4>
+          <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">${res.description || ''}</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.75rem">
+            <span>❤️ HP: ${res.max_hp || 10}</span><span>🛡️ AC: ${res.armor_class || 10}</span>
+            <span>STR: ${res.strength || 10}</span><span>DEX: ${res.dexterity || 10}</span>
+            <span>CON: ${res.constitution || 10}</span><span>INT: ${res.intelligence || 10}</span>
+            <span>WIS: ${res.wisdom || 10}</span><span>CHA: ${res.charisma || 10}</span>
+          </div>
+          ${res.notes ? `<p style="font-size:0.75rem;margin-top:6px;color:var(--text-muted)">Notes: ${res.notes}</p>` : ''}
+        </div>
+      `;
+      overlay.querySelector('#btn-ai-npc-retry').style.display = '';
+      overlay.querySelector('#btn-ai-npc-use').style.display = '';
+    } catch (e) {
+      overlay.querySelector('#ai-npc-preview').style.display = 'block';
+      overlay.querySelector('#ai-npc-preview').innerHTML = `<p style="color:var(--danger)">Failed: ${e.message}</p>`;
+      overlay.querySelector('#btn-ai-npc-generate').style.display = '';
+    }
+    overlay.querySelector('#ai-npc-loading').style.display = 'none';
+  }
+
+  overlay.querySelector('#btn-ai-npc-generate').addEventListener('click', doGenerate);
+  overlay.querySelector('#btn-ai-npc-retry').addEventListener('click', doGenerate);
+  overlay.querySelector('#btn-ai-npc-use').addEventListener('click', () => {
+    if (!generatedNpc || !templateModal) { overlay.remove(); return; }
+    // Fill template modal fields
+    const tm = templateModal;
+    const setVal = (sel, val) => { const el = tm.querySelector(sel); if (el && val != null) el.value = val; };
+    setVal('#nt-name', generatedNpc.name);
+    setVal('#nt-desc', generatedNpc.description);
+    setVal('#nt-hp', generatedNpc.max_hp);
+    setVal('#nt-ac', generatedNpc.armor_class);
+    setVal('#nt-str', generatedNpc.strength);
+    setVal('#nt-dex', generatedNpc.dexterity);
+    setVal('#nt-con', generatedNpc.constitution);
+    setVal('#nt-int', generatedNpc.intelligence);
+    setVal('#nt-wis', generatedNpc.wisdom);
+    setVal('#nt-cha', generatedNpc.charisma);
+    setVal('#nt-init', generatedNpc.initiative_bonus);
+    setVal('#nt-notes', generatedNpc.notes);
+    if (generatedNpc.is_merchant && tm.querySelector('#nt-merchant')) tm.querySelector('#nt-merchant').checked = true;
+    overlay.remove();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 10 — WS listeners for announcements & timer
+// ══════════════════════════════════════════════════════════════
+ws.on('announcement.posted', () => loadAnnouncements());
+ws.on('announcement.pinned', () => loadAnnouncements());
+ws.on('announcement.deleted', () => loadAnnouncements());
+ws.on('session.timer_started', d => {
+  sessionTimerRunning = true;
+  sessionTimerStartedAt = Date.now();
+  sessionTimerBase = (d.total_seconds || 0) - Math.floor((Date.now() - sessionTimerStartedAt) / 1000);
+  $('#btn-timer-toggle').textContent = '⏸';
+  startTimerTick();
+});
+ws.on('session.timer_paused', d => {
+  sessionTimerRunning = false;
+  sessionTimerBase = d.total_seconds || 0;
+  sessionTimerStartedAt = null;
+  $('#btn-timer-toggle').textContent = '▶';
+  updateTimerDisplay();
+});
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 refreshChars();
@@ -3136,4 +4328,7 @@ loadCategories().then(() => loadItems());
 loadCombatPanel();
 loadRacesClasses();
 loadNpcLibrary();
+loadQuests();
+loadAnnouncements();
+loadSessionTimer();
 ws.connect();
