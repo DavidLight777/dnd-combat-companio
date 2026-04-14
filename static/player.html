@@ -10,7 +10,7 @@
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
   <div class="topbar">
-    <span class="logo">⚔️ <span id="char-name">Player</span></span>
+    <span class="logo">⚔️ <span id="char-name">Player</span> <span id="char-rc-badges" style="font-size:0.65rem;font-weight:400;opacity:0.7"></span></span>
     <span class="spacer"></span>
     <div class="ws-status">
       <span class="status-dot" id="ws-dot"></span>
@@ -34,6 +34,15 @@
 
   <div class="main-layout">
     <div class="main-area">
+      <!-- ── GM TIMER ──────────────────────────────────────── -->
+      <div id="gm-timer-banner" style="display:none;text-align:center;padding:12px;margin-bottom:8px;border-radius:var(--r-lg);background:var(--surface-2);border:2px solid var(--accent-orange)">
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">⏱ GM Timer</div>
+        <div id="gm-timer-display" style="font-size:2.2rem;font-weight:800;color:var(--accent-orange);font-variant-numeric:tabular-nums"></div>
+      </div>
+
+      <!-- ── COMBAT BANNER (Stage 5) ──────────────────────── -->
+      <div id="combat-banner" style="display:none"></div>
+
       <!-- ── HP CARD ──────────────────────────────────────── -->
       <div class="hp-card" id="hp-card">
         <div class="hp-big" id="hp-display">20 / 20</div>
@@ -46,6 +55,26 @@
 
       <!-- ── STATS ────────────────────────────────────────── -->
       <div class="stats-grid" id="stats-grid"></div>
+
+      <!-- ── CHARACTERISTIC ROLL ─────────────────────────────── -->
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+        <span style="font-size:0.82rem;font-weight:700">🎲</span>
+        <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
+          <option value="strength">Strength</option>
+          <option value="dexterity">Dexterity</option>
+          <option value="constitution">Constitution</option>
+          <option value="intelligence">Intelligence</option>
+          <option value="wisdom">Wisdom</option>
+          <option value="charisma">Charisma</option>
+        </select>
+        <select id="player-roll-type" style="font-size:0.78rem;width:115px">
+          <option value="ability_check">Ability Check</option>
+          <option value="saving_throw">Saving Throw</option>
+          <option value="skill_check">Skill Check</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+        <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
+      </div>
 
       <!-- ── PANELS ROW 1: Attack & Damage + Incoming ─────── -->
       <div class="panels-row">

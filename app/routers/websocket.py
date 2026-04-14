@@ -1,7 +1,10 @@
 """WebSocket connection endpoint."""
 
 import json
+import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+
+logger = logging.getLogger("websocket")
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -159,21 +162,33 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                     await manager.broadcast_to_session(session_code, msg_type, msg.get("data", {}))
 
                 elif msg_type == "combat.timer_started":
-                    target_pid = msg.get("player_id")
-                    async with async_session() as db:
-                        char_result = await db.execute(
-                            select(Character).where(Character.id == target_pid)
-                        )
-                        target_char = char_result.scalar_one_or_none()
-                        if target_char and target_char.player_token:
-                            await manager.send_to_token(session_code, target_char.player_token, "combat.timer_started", {
-                                "duration_seconds": msg.get("duration_seconds"),
-                                "combat_id": msg.get("combat_id"),
-                            })
-                    # Also send to GM
-                    await manager.send_to_gm(session_code, "combat.timer_started", {
-                        "player_id": target_pid,
+                    await manager.broadcast_to_session(session_code, "combat.timer_started", {
+                        "character_id": msg.get("player_id"),
                         "duration_seconds": msg.get("duration_seconds"),
+                        "combat_id": msg.get("combat_id"),
+                    })
+
+                elif msg_type == "gm.timer":
+                    await manager.broadcast_to_session(session_code, "gm.timer", {
+                        "character_id": msg.get("character_id"),
+                        "duration_seconds": msg.get("duration_seconds"),
+                    })
+
+                elif msg_type == "gm.timer_stop":
+                    await manager.broadcast_to_session(session_code, "gm.timer_stop", {
+                        "character_id": msg.get("character_id"),
+                    })
+
+                # Stage 7: Characteristic roll broadcast
+                elif msg_type == "roll.characteristic":
+                    await manager.broadcast_to_session(session_code, "roll.characteristic", {
+                        "character_id": msg.get("character_id"),
+                        "character_name": msg.get("character_name"),
+                        "stat": msg.get("stat"),
+                        "d20": msg.get("d20"),
+                        "total": msg.get("total"),
+                        "roll_type": msg.get("roll_type"),
+                        "description": msg.get("description"),
                     })
 
             except json.JSONDecodeError:

@@ -10,6 +10,8 @@ class SessionCreate(BaseModel):
 class SessionJoin(BaseModel):
     session_code: str
     player_name: str
+    race_id: int | None = None
+    class_id: int | None = None
 
 
 class SessionOut(BaseModel):
@@ -62,6 +64,10 @@ class CharacterUpdate(BaseModel):
     gold: Optional[int] = None
     gold_copper: Optional[int] = None
     can_edit_own_items: Optional[bool] = None
+    level: Optional[int] = None
+    experience: Optional[int] = None
+    race_id: Optional[int] = None
+    class_id: Optional[int] = None
 
 
 class HpPatch(BaseModel):

@@ -13,6 +13,7 @@ from app.models import (
     CombatEvent, CombatParticipant, Character, CharacterStatusEffect,
     Session,
 )
+from app.websocket_manager import manager
 
 router = APIRouter(prefix="/api/combat", tags=["combat"])
 
@@ -279,6 +280,47 @@ async def roll_npc_initiative(combat_id: int, db: AsyncSession = Depends(get_ses
     await db.commit()
     await db.refresh(ce)
     return {"ok": True, "rolls": rolls, "combat": await _serialize_combat(ce, db)}
+
+
+@router.post("/{combat_id}/request-player-initiative")
+async def request_player_initiative(combat_id: int, db: AsyncSession = Depends(get_session)):
+    """GM requests initiative rolls from all player participants. Broadcasts WS events to session."""
+    result = await db.execute(
+        select(CombatEvent).where(CombatEvent.id == combat_id)
+    )
+    ce = result.scalar_one_or_none()
+    if not ce:
+        raise HTTPException(404, "Combat not found")
+
+    # Get session code
+    sess = await db.get(Session, ce.session_id)
+    session_code = sess.code if sess else None
+    if not session_code:
+        raise HTTPException(404, "Session not found")
+
+    # Get player participants
+    parts_result = await db.execute(
+        select(CombatParticipant).where(
+            CombatParticipant.combat_event_id == combat_id,
+            CombatParticipant.is_active == True,
+        )
+    )
+    parts = parts_result.scalars().all()
+
+    sent_to = []
+    for p in parts:
+        char = await db.get(Character, p.character_id)
+        if not char or char.is_npc:
+            continue
+        # Broadcast to entire session — each player JS filters by character_id
+        await manager.broadcast_to_session(session_code, "combat.roll_initiative_request", {
+            "combat_id": combat_id,
+            "character_id": char.id,
+            "initiative_bonus": p.initiative_bonus,
+        })
+        sent_to.append({"character_id": char.id, "name": char.name})
+
+    return {"ok": True, "sent_to": sent_to}
 
 
 @router.post("/{combat_id}/set-player-initiative")

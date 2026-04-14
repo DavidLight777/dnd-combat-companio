@@ -35,6 +35,25 @@
     .lan-info .url { color: var(--accent); font-weight: 600; font-size: 0.95rem; }
     .error-msg { color: var(--accent-red); font-size: 0.8rem; margin-top: 6px; }
     .btn { width: 100%; justify-content: center; }
+    .step-dot {
+      width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 700; background: var(--bg-surface-2); color: var(--text-muted);
+      border: 2px solid var(--border); transition: all 0.2s;
+    }
+    .step-dot.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .step-dot.done { background: var(--accent-green); color: #000; border-color: var(--accent-green); }
+    .rc-card {
+      padding: 10px; border: 2px solid var(--border); border-radius: var(--r-md);
+      cursor: pointer; transition: all 0.15s; background: var(--bg-surface-2);
+    }
+    .rc-card:hover { border-color: var(--accent); }
+    .rc-card.selected { border-color: var(--accent); background: rgba(192,138,42,0.1); }
+    .rc-card .rc-name { font-weight: 700; font-size: 0.85rem; margin-bottom: 2px; }
+    .rc-card .rc-desc { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; line-height: 1.3; }
+    .rc-bonus-chip {
+      display: inline-block; font-size: 0.6rem; padding: 1px 5px; border-radius: 8px;
+      background: var(--accent)20; color: var(--accent); margin-right: 2px; margin-bottom: 2px;
+    }
   </style>
 </head>
 <body>
@@ -58,17 +77,59 @@
     <div class="divider">or</div>
 
     <!-- JOIN SESSION -->
-    <div class="section card">
+    <div class="section card" id="join-section">
       <h2>Join Existing Session</h2>
-      <div class="form-group">
-        <label>Session Code</label>
-        <input type="text" id="join-code" placeholder="WOLF-1234" style="text-transform:uppercase">
+      <!-- Step indicators -->
+      <div id="join-steps" style="display:flex;gap:4px;margin-bottom:14px">
+        <span class="step-dot active" data-step="1">1</span>
+        <span class="step-dot" data-step="2">2</span>
+        <span class="step-dot" data-step="3">3</span>
+        <span class="step-dot" data-step="4">4</span>
       </div>
-      <div class="form-group">
-        <label>Your Character Name</label>
-        <input type="text" id="join-name" placeholder="Enter your name...">
+
+      <!-- Step 1: Code + Name -->
+      <div id="join-step-1">
+        <div class="form-group">
+          <label>Session Code</label>
+          <input type="text" id="join-code" placeholder="WOLF-1234" style="text-transform:uppercase">
+        </div>
+        <div class="form-group">
+          <label>Your Character Name</label>
+          <input type="text" id="join-name" placeholder="Enter your name...">
+        </div>
+        <button class="btn btn-secondary" id="btn-join-next-1">Next →</button>
       </div>
-      <button class="btn btn-secondary" id="btn-join">Join as Player</button>
+
+      <!-- Step 2: Choose Race -->
+      <div id="join-step-2" style="display:none">
+        <h3 style="font-size:0.85rem;margin-bottom:8px">Choose Race</h3>
+        <div id="race-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" id="btn-join-back-2">← Back</button>
+          <button class="btn btn-secondary" id="btn-join-next-2" style="flex:1">Next →</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Choose Class -->
+      <div id="join-step-3" style="display:none">
+        <h3 style="font-size:0.85rem;margin-bottom:8px">Choose Class</h3>
+        <div id="class-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" id="btn-join-back-3">← Back</button>
+          <button class="btn btn-secondary" id="btn-join-next-3" style="flex:1">Next →</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Review -->
+      <div id="join-step-4" style="display:none">
+        <h3 style="font-size:0.85rem;margin-bottom:8px">Review & Join</h3>
+        <div id="join-review" style="font-size:0.82rem;margin-bottom:12px"></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" id="btn-join-back-4">← Back</button>
+          <button class="btn btn-primary" id="btn-join-confirm" style="flex:1">Join Session</button>
+        </div>
+      </div>
+
       <div class="error-msg hidden" id="join-error"></div>
     </div>
 
@@ -83,6 +144,7 @@
 
   <script>
     const $ = s => document.querySelector(s);
+    const $$ = s => document.querySelectorAll(s);
 
     // Load LAN info
     fetch('/api/server-info').then(r => r.json()).then(info => {
@@ -96,7 +158,6 @@
       const name = $('#session-name').value.trim() || 'New Session';
       $('#create-error').classList.add('hidden');
       $('#btn-create').disabled = true;
-
       try {
         const res = await fetch('/api/sessions/create', {
           method: 'POST',
@@ -105,7 +166,6 @@
         });
         if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
         const data = await res.json();
-
         sessionStorage.setItem('gm_token', data.gm_token);
         sessionStorage.setItem('session_code', data.session_code);
         sessionStorage.setItem('session_id', data.session_id);
@@ -118,28 +178,175 @@
       }
     });
 
-    // Join session
-    $('#btn-join').addEventListener('click', async () => {
+    // ── 4-step join wizard state ─────────────────────────────
+    let joinStep = 1;
+    let races = [];
+    let classes = [];
+    let selectedRaceId = null;
+    let selectedClassId = null;
+
+    function showStep(n) {
+      joinStep = n;
+      for (let i = 1; i <= 4; i++) {
+        const el = $(`#join-step-${i}`);
+        if (el) el.style.display = i === n ? '' : 'none';
+      }
+      $$('.step-dot').forEach(d => {
+        const s = parseInt(d.dataset.step);
+        d.className = 'step-dot' + (s === n ? ' active' : s < n ? ' done' : '');
+      });
+    }
+
+    function bonusChips(bonuses) {
+      return (bonuses || []).map(b => {
+        if (b.type === 'stat_bonus') return `<span class="rc-bonus-chip">+${b.value} ${b.stat.slice(0,3).toUpperCase()}</span>`;
+        if (b.type === 'hp_bonus') return `<span class="rc-bonus-chip">+${b.value} HP</span>`;
+        if (b.type === 'initiative_bonus') return `<span class="rc-bonus-chip">+${b.value} Init</span>`;
+        return '';
+      }).join('');
+    }
+
+    function renderRaceGrid() {
+      const grid = $('#race-grid');
+      // Add "No Race" option
+      const noRaceCard = `<div class="rc-card${selectedRaceId === null ? ' selected' : ''}" data-race-id="none">
+        <div class="rc-name">No Race</div>
+        <div class="rc-desc">Skip race selection</div>
+      </div>`;
+      grid.innerHTML = noRaceCard + races.filter(r => r.is_available).map(r => `
+        <div class="rc-card${selectedRaceId === r.id ? ' selected' : ''}" data-race-id="${r.id}">
+          <div class="rc-name">${r.name}</div>
+          <div class="rc-desc">${r.description}</div>
+          <div>${bonusChips(r.bonuses)}</div>
+        </div>
+      `).join('');
+      grid.querySelectorAll('.rc-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const rid = card.dataset.raceId;
+          selectedRaceId = rid === 'none' ? null : parseInt(rid);
+          grid.querySelectorAll('.rc-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        });
+      });
+    }
+
+    function renderClassGrid() {
+      const grid = $('#class-grid');
+      const noClassCard = `<div class="rc-card${selectedClassId === null ? ' selected' : ''}" data-class-id="none">
+        <div class="rc-name">No Class</div>
+        <div class="rc-desc">Skip class selection</div>
+      </div>`;
+      grid.innerHTML = noClassCard + classes.filter(c => c.is_available).map(c => `
+        <div class="rc-card${selectedClassId === c.id ? ' selected' : ''}" data-class-id="${c.id}">
+          <div class="rc-name">${c.name}</div>
+          <div class="rc-desc">${c.description}</div>
+          <div>${bonusChips(c.bonuses)}</div>
+          <div style="font-size:0.6rem;color:var(--text-muted);margin-top:2px">Hit Die: d${c.hit_die}</div>
+        </div>
+      `).join('');
+      grid.querySelectorAll('.rc-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const cid = card.dataset.classId;
+          selectedClassId = cid === 'none' ? null : parseInt(cid);
+          grid.querySelectorAll('.rc-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        });
+      });
+    }
+
+    function renderReview() {
+      const name = $('#join-name').value.trim();
+      const race = races.find(r => r.id === selectedRaceId);
+      const cls = classes.find(c => c.id === selectedClassId);
+
+      // Compute combined bonuses
+      const stats = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
+      let hpBonus = 0;
+      let initBonus = 0;
+      const allBonuses = [...(race ? race.bonuses : []), ...(cls ? cls.bonuses : [])];
+      allBonuses.forEach(b => {
+        if (b.type === 'stat_bonus' && stats[b.stat] !== undefined) stats[b.stat] += b.value;
+        if (b.type === 'hp_bonus') hpBonus += b.value;
+        if (b.type === 'initiative_bonus') initBonus += b.value;
+      });
+
+      const statsHtml = Object.entries(stats).map(([k,v]) => {
+        const base = 10;
+        const diff = v - base;
+        const diffStr = diff > 0 ? `<span style="color:var(--accent-green)">+${diff}</span>` : '';
+        return `<span style="margin-right:8px"><strong>${k.slice(0,3).toUpperCase()}</strong> ${v} ${diffStr}</span>`;
+      }).join('');
+
+      $('#join-review').innerHTML = `
+        <div style="margin-bottom:8px"><strong>Name:</strong> ${name}</div>
+        <div style="margin-bottom:8px"><strong>Race:</strong> ${race ? race.name : 'None'} ${race ? bonusChips(race.bonuses) : ''}</div>
+        <div style="margin-bottom:8px"><strong>Class:</strong> ${cls ? cls.name : 'None'} ${cls ? bonusChips(cls.bonuses) : ''}</div>
+        <hr style="border-color:var(--border);margin:8px 0">
+        <div style="margin-bottom:4px;font-weight:600;font-size:0.78rem">Final Stats Preview:</div>
+        <div style="font-size:0.78rem">${statsHtml}</div>
+        ${hpBonus ? `<div style="font-size:0.78rem;margin-top:4px"><strong>HP:</strong> ${20 + hpBonus} (base 20 + ${hpBonus})</div>` : ''}
+        ${initBonus ? `<div style="font-size:0.78rem;margin-top:2px"><strong>Initiative:</strong> +${initBonus}</div>` : ''}
+      `;
+    }
+
+    // Step 1 → 2
+    $('#btn-join-next-1').addEventListener('click', async () => {
       const code = $('#join-code').value.trim().toUpperCase();
       const name = $('#join-name').value.trim();
       $('#join-error').classList.add('hidden');
-
       if (!code || !name) {
         $('#join-error').textContent = 'Code and name are required';
         $('#join-error').classList.remove('hidden');
         return;
       }
+      // Load races
+      try {
+        const r = await fetch('/api/races-classes/races');
+        races = await r.json();
+        const c = await fetch('/api/races-classes/classes');
+        classes = await c.json();
+      } catch { races = []; classes = []; }
+      renderRaceGrid();
+      showStep(2);
+    });
 
-      $('#btn-join').disabled = true;
+    // Step 2 → 3
+    $('#btn-join-next-2').addEventListener('click', () => {
+      renderClassGrid();
+      showStep(3);
+    });
+    $('#btn-join-back-2').addEventListener('click', () => showStep(1));
+
+    // Step 3 → 4
+    $('#btn-join-next-3').addEventListener('click', () => {
+      renderReview();
+      showStep(4);
+    });
+    $('#btn-join-back-3').addEventListener('click', () => showStep(2));
+
+    // Step 4 back
+    $('#btn-join-back-4').addEventListener('click', () => showStep(3));
+
+    // Confirm join
+    $('#btn-join-confirm').addEventListener('click', async () => {
+      const code = $('#join-code').value.trim().toUpperCase();
+      const name = $('#join-name').value.trim();
+      $('#join-error').classList.add('hidden');
+      $('#btn-join-confirm').disabled = true;
+
       try {
         const res = await fetch('/api/sessions/join', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_code: code, player_name: name }),
+          body: JSON.stringify({
+            session_code: code,
+            player_name: name,
+            race_id: selectedRaceId,
+            class_id: selectedClassId,
+          }),
         });
         if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
         const data = await res.json();
-
         sessionStorage.setItem('player_token', data.player_token);
         sessionStorage.setItem('character_id', data.character_id);
         sessionStorage.setItem('session_code', data.session_code);
@@ -148,13 +355,13 @@
         $('#join-error').textContent = e.message;
         $('#join-error').classList.remove('hidden');
       } finally {
-        $('#btn-join').disabled = false;
+        $('#btn-join-confirm').disabled = false;
       }
     });
 
     // Enter key on inputs
     $('#join-code').addEventListener('keydown', e => { if (e.key === 'Enter') $('#join-name').focus(); });
-    $('#join-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-join').click(); });
+    $('#join-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-join-next-1').click(); });
     $('#session-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-create').click(); });
   </script>
 </body>

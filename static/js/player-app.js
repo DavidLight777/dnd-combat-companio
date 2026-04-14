@@ -85,6 +85,18 @@ async function loadChar() {
   $('#char-name').textContent = char.name;
   document.title = `${char.name} — Combat Companion`;
   renderAll();
+
+  // Load race/class badges
+  const badges = [];
+  if (char.race_id) {
+    try { const r = await api.get(`/api/races-classes/races/${char.race_id}`); badges.push(r.name); } catch {}
+  }
+  if (char.class_id) {
+    try { const c = await api.get(`/api/races-classes/classes/${char.class_id}`); badges.push(c.name); } catch {}
+  }
+  badges.push(`Lvl ${char.level || 1}`);
+  const el = $('#char-rc-badges');
+  if (el) el.textContent = badges.join(' · ');
 }
 function renderAll() {
   renderHP();
@@ -1200,10 +1212,296 @@ ws.on('status_effect.expired', d => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// STAGE 5 — COMBAT BANNER & INITIATIVE
+// ══════════════════════════════════════════════════════════════
+let playerCombat = null;
+let playerTimerInterval = null;
+
+async function loadCombatBanner() {
+  const banner = $('#combat-banner');
+  if (!banner) return;
+  try {
+    const res = await api.get(`/api/combat/session/${SESSION_CODE}/active`);
+    if (!res.active) {
+      banner.style.display = 'none';
+      playerCombat = null;
+      return;
+    }
+    playerCombat = res.combat;
+    renderCombatBanner();
+  } catch {
+    banner.style.display = 'none';
+  }
+}
+
+function renderCombatBanner() {
+  const banner = $('#combat-banner');
+  if (!banner || !playerCombat) { if (banner) banner.style.display = 'none'; return; }
+  const c = playerCombat;
+  banner.style.display = '';
+
+  const currentP = c.participants.find(p => p.id === c.current_participant_id);
+  const myP = c.participants.find(p => p.character_id == CHAR_ID);
+  const isMyTurn = currentP && currentP.character_id == CHAR_ID;
+
+  // Build mini turn order
+  const turnList = c.participants
+    .filter(p => p.is_active)
+    .sort((a, b) => (a.turn_order ?? 99) - (b.turn_order ?? 99))
+    .map(p => {
+      const isCur = p.id === c.current_participant_id;
+      const isMe = p.character_id == CHAR_ID;
+      return `<span style="padding:2px 6px;border-radius:var(--r-sm);font-size:0.7rem;
+        ${isCur ? 'background:var(--accent);color:#000;font-weight:700' : isMe ? 'background:var(--accent)20;font-weight:600' : 'color:var(--text-muted)'}"
+        >${p.name}${p.final_initiative !== null ? ' ('+p.final_initiative+')' : ''}</span>`;
+    }).join('');
+
+  banner.innerHTML = `
+    <div style="padding:10px;margin-bottom:8px;border-radius:var(--r-md);
+      border:2px solid ${isMyTurn ? 'var(--accent)' : 'var(--border)'};
+      background:${isMyTurn ? 'var(--accent)15' : 'var(--bg-surface-2)'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:0.75rem;color:var(--text-muted)">⚔️ ${c.name} — Round ${c.round_number}</span>
+        ${myP ? `<span style="font-size:0.7rem;color:var(--text-muted)">Init: ${myP.final_initiative ?? '—'}</span>` : ''}
+      </div>
+      <div style="font-size:1.1rem;font-weight:700;text-align:center;
+        color:${isMyTurn ? 'var(--accent)' : 'var(--text-primary)'};
+        ${isMyTurn ? 'text-shadow:0 0 12px var(--accent)' : ''}">
+        ${isMyTurn ? '🗡️ YOUR TURN!' : `${currentP ? currentP.name + "'s Turn" : '—'}`}
+      </div>
+      <div id="player-combat-timer" style="text-align:center;font-size:1.8rem;font-weight:700;color:var(--accent-orange);display:none;margin-top:4px"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;justify-content:center">${turnList}</div>
+    </div>
+  `;
+}
+
+function showInitiativeRollModal(combatId, bonus) {
+  // Remove existing modal if any
+  document.querySelectorAll('.initiative-roll-modal').forEach(e => e.remove());
+
+  async function submitRoll(d20) {
+    await api.post(`/api/combat/${combatId}/set-player-initiative`, {
+      character_id: CHAR_ID,
+      roll: d20,
+    });
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({
+        type: 'combat.initiative_submitted',
+        combat_id: combatId,
+        character_id: CHAR_ID,
+        roll: d20,
+        final: d20 + bonus,
+      }));
+    }
+    showToast(`Initiative: ${d20} + ${bonus} = ${d20 + bonus}`);
+    overlay.remove();
+    loadCombatBanner();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay initiative-roll-modal';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:320px;text-align:center;padding:24px">
+      <h2 style="margin:0 0 16px;font-size:1.3rem;color:var(--accent)">⚔️ Roll Initiative</h2>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 20px">
+        Bonus: <strong style="color:var(--text-primary)">+${bonus}</strong>
+      </p>
+      <button class="btn btn-primary" id="btn-auto-roll-init" style="width:100%;padding:14px;font-size:1.1rem;margin-bottom:12px">
+        🎲 Roll d20
+      </button>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase">or enter manually</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <input type="number" id="init-roll-input" placeholder="1–20"
+        style="width:100%;padding:10px;font-size:1rem;text-align:center;box-sizing:border-box;margin-top:8px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface-2);color:var(--text-primary)"
+        min="1" max="20">
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Auto roll — submit immediately
+  overlay.querySelector('#btn-auto-roll-init').addEventListener('click', async () => {
+    const d20 = Math.floor(Math.random() * 20) + 1;
+    const btn = overlay.querySelector('#btn-auto-roll-init');
+    btn.disabled = true;
+    btn.textContent = `🎲 Rolled: ${d20}  (${d20} + ${bonus} = ${d20 + bonus})`;
+    await submitRoll(d20);
+  });
+
+  // Manual entry — submit on Enter or blur
+  const input = overlay.querySelector('#init-roll-input');
+  async function handleManual() {
+    const v = parseInt(input.value);
+    if (!isNaN(v) && v >= 1 && v <= 20) {
+      input.disabled = true;
+      await submitRoll(v);
+    }
+  }
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') handleManual(); });
+  input.addEventListener('blur', () => { if (input.value) handleManual(); });
+}
+
+function formatTimer(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function startPlayerTimer(seconds) {
+  const display = $('#player-combat-timer');
+  if (!display) return;
+  display.style.display = '';
+  let remaining = seconds;
+  display.textContent = formatTimer(remaining);
+  display.style.color = 'var(--accent-orange)';
+
+  if (playerTimerInterval) clearInterval(playerTimerInterval);
+  playerTimerInterval = setInterval(() => {
+    remaining--;
+    display.textContent = formatTimer(remaining);
+    if (remaining <= 10) display.style.color = 'var(--accent-red)';
+    if (remaining <= 0) {
+      clearInterval(playerTimerInterval);
+      playerTimerInterval = null;
+      display.textContent = '⏰ TIME UP!';
+      display.style.animation = 'pulse 0.5s ease-in-out infinite';
+      try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2JlJmOgHBkW1x0hJiinpF5aV5eaXuLm6CTgnFjW1tqeoyco5mIeWxgX2p6jJmhmpB/cWRfYm19j5+jmo6BdGhiZnJ+j52knJGCdGlkZW97jJqgmpGEeW1oZm55iZSalpOKgXdwbG50fYmSlZSQiIN+enl4en+EiYqIhoWFhYWFhg==').play(); } catch {}
+    }
+  }, 1000);
+}
+
+let gmTimerInterval = null;
+
+function _savePlayerTimer(state) {
+  if (state) localStorage.setItem('player-gm-timer', JSON.stringify(state));
+  else localStorage.removeItem('player-gm-timer');
+}
+function _getPlayerTimer() {
+  try { return JSON.parse(localStorage.getItem('player-gm-timer')); } catch { return null; }
+}
+
+function stopGmTimer() {
+  if (gmTimerInterval) { clearInterval(gmTimerInterval); gmTimerInterval = null; }
+  _savePlayerTimer(null);
+  const banner = $('#gm-timer-banner');
+  const display = $('#gm-timer-display');
+  if (banner) { banner.style.display = 'none'; }
+  if (display) { display.style.animation = ''; }
+}
+
+function _tickGmTimer() {
+  const st = _getPlayerTimer();
+  if (!st) return;
+  const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+  const remaining = Math.max(0, st.totalSeconds - elapsed);
+  const banner = $('#gm-timer-banner');
+  const display = $('#gm-timer-display');
+  if (!banner || !display) return;
+  banner.style.display = '';
+  display.textContent = formatTimer(remaining);
+  display.style.color = remaining <= 10 ? 'var(--accent-red)' : 'var(--accent-orange)';
+  banner.style.borderColor = remaining <= 10 ? 'var(--accent-red)' : 'var(--accent-orange)';
+  if (remaining <= 0) {
+    clearInterval(gmTimerInterval);
+    gmTimerInterval = null;
+    display.textContent = '⏰ TIME UP!';
+    display.style.animation = 'pulse 0.5s ease-in-out infinite';
+    _savePlayerTimer(null);
+    try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2JlJmOgHBkW1x0hJiinpF5aV5eaXuLm6CTgnFjW1tqeoyco5mIeWxgX2p6jJmhmpB/cWRfYm19j5+jmo6BdGhiZnJ+j52knJGCdGlkZW97jJqgmpGEeW1oZm55iZSalpOKgXdwbG50fYmSlZSQiIN+enl4en+EiYqIhoWFhYWFhg==').play(); } catch {}
+    setTimeout(() => {
+      banner.style.display = 'none';
+      display.style.animation = '';
+    }, 5000);
+  }
+}
+
+function startGmTimer(seconds) {
+  if (gmTimerInterval) clearInterval(gmTimerInterval);
+  _savePlayerTimer({ totalSeconds: seconds, startedAt: Date.now() });
+  _tickGmTimer();
+  gmTimerInterval = setInterval(_tickGmTimer, 1000);
+}
+
+function restoreGmTimer() {
+  const st = _getPlayerTimer();
+  if (!st) return;
+  const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+  const remaining = st.totalSeconds - elapsed;
+  if (remaining <= 0) { _savePlayerTimer(null); return; }
+  _tickGmTimer();
+  gmTimerInterval = setInterval(_tickGmTimer, 1000);
+}
+
+// Stage 5: Combat WS events
+ws.on('combat.created', d => {
+  loadCombatBanner();
+});
+ws.on('combat.started', d => {
+  loadCombatBanner();
+  showToast('⚔️ Combat started!');
+});
+ws.on('combat.turn_changed', d => {
+  if (playerCombat) {
+    // Quick update without API call
+    loadCombatBanner();
+    if (d.current_character_id == CHAR_ID) {
+      showToast('🗡️ Your turn!');
+    }
+  }
+});
+ws.on('combat.ended', d => {
+  playerCombat = null;
+  const banner = $('#combat-banner');
+  if (banner) banner.style.display = 'none';
+  if (playerTimerInterval) { clearInterval(playerTimerInterval); playerTimerInterval = null; }
+  showToast('Combat ended');
+});
+ws.on('combat.roll_initiative_request', d => {
+  if (d.character_id == CHAR_ID) {
+    showInitiativeRollModal(d.combat_id, d.initiative_bonus || 0);
+  }
+});
+ws.on('combat.timer_started', d => {
+  if (!d.character_id || d.character_id == CHAR_ID) {
+    startPlayerTimer(d.duration_seconds || 60);
+  }
+});
+ws.on('gm.timer', d => {
+  if (d.character_id == CHAR_ID) {
+    startGmTimer(d.duration_seconds || 60);
+  }
+});
+ws.on('gm.timer_stop', d => {
+  if (d.character_id == CHAR_ID) {
+    stopGmTimer();
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// CHARACTERISTIC ROLL (Stage 7)
+// ══════════════════════════════════════════════════════════════
+$('#btn-player-roll')?.addEventListener('click', async () => {
+  const stat = $('#player-roll-stat').value;
+  const rollType = $('#player-roll-type').value;
+  try {
+    const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, { stat, roll_type: rollType });
+    $('#player-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>`;
+    // Broadcast to GM
+    ws.send({ type: 'roll.characteristic', ...res, session_code: SESSION_CODE });
+  } catch {
+    $('#player-roll-result').textContent = 'Roll failed';
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 loadChar();
 loadInventory();
 loadCurrency();
 loadStatusEffects();
+loadCombatBanner();
+restoreGmTimer();
 ws.connect();

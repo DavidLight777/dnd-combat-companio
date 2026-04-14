@@ -103,6 +103,12 @@ function renderPartyList() {
     const deadBadge = !c.is_alive ? ' <span class="cc-badge badge-dead">💀</span>' : '';
     const sel = c.id === selectedCharId ? ' selected' : '';
     const dead = !c.is_alive ? ' dead' : '';
+    const timerRow = !c.is_npc ? `
+        <div class="cc-timer-row" style="display:flex;gap:3px;align-items:center;margin-top:3px" data-timer-char="${c.id}">
+          <input type="number" value="2" min="1" max="30" step="1" style="width:36px;font-size:0.65rem;padding:1px 3px;text-align:center" data-timer-min="${c.id}">
+          <span style="font-size:0.6rem;color:var(--text-muted)">min</span>
+          <button class="btn btn-ghost" style="font-size:0.6rem;padding:1px 5px;line-height:1.2" data-send-timer="${c.id}">⏱</button>
+        </div>` : '';
     return `
       <div class="char-card${sel}${dead}" data-char-id="${c.id}">
         <div class="cc-top">
@@ -116,6 +122,7 @@ function renderPartyList() {
           <div class="hp-bar" style="width:${pct}%;background:${color}"></div>
         </div>
         <div class="cc-status-badges" data-sidebar-status="${c.id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px"></div>
+        ${timerRow}
       </div>`;
   }).join('');
 
@@ -145,6 +152,21 @@ function renderPartyList() {
       $('[data-tab="detail"]').classList.add('active');
       $('#tab-detail').classList.add('active');
     });
+  });
+
+  // Wire sidebar timer buttons
+  list.querySelectorAll('[data-send-timer]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const charId = parseInt(btn.dataset.sendTimer);
+      const minInput = list.querySelector(`[data-timer-min="${charId}"]`);
+      const mins = parseFloat(minInput?.value) || 2;
+      const secs = Math.round(mins * 60);
+      sendPlayerTimer(charId, secs);
+    });
+  });
+  list.querySelectorAll('[data-timer-min]').forEach(inp => {
+    inp.addEventListener('click', e => e.stopPropagation());
   });
 }
 
@@ -182,6 +204,14 @@ async function renderCharDetail() {
         ${c.is_npc ? `<button class="btn btn-danger btn-xs" id="btn-delete-char">Delete</button>` : ''}
       </div>
       <div class="detail-body">
+        ${!c.is_npc ? `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:0.78rem">
+          <span id="gm-char-race" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Race: <strong>${c.race_id ? '...' : 'None'}</strong></span>
+          <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Class: <strong>${c.class_id ? '...' : 'None'}</strong></span>
+          <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Lvl <strong>${c.level || 1}</strong></span>
+          <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">XP <strong><span id="gm-char-xp">${c.experience || 0}</span></strong>
+            <button class="btn btn-ghost btn-xs" id="btn-edit-xp" style="padding:0 3px;margin-left:2px;font-size:0.65rem">✏️</button>
+          </span>
+        </div>` : ''}
         <!-- HP -->
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
           <span style="font-size:1.5rem;font-weight:700;color:${hpColor};font-variant-numeric:tabular-nums">${c.current_hp} / ${c.max_hp}</span>
@@ -247,6 +277,44 @@ async function renderCharDetail() {
           <button class="btn btn-ghost btn-xs" id="btn-gm-status-library">📚 Library</button>
         </div>
         <div id="gm-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
+
+        ${!c.is_npc ? `
+        <!-- Timer (Player only) -->
+        <hr class="section-divider">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <h3 style="font-size:0.82rem;flex:1">⏱ Timer</h3>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <input type="number" id="gm-detail-timer-min" value="2" min="1" max="60" step="1" style="width:50px;font-size:0.8rem">
+          <span style="font-size:0.75rem;color:var(--text-muted)">min</span>
+          <button class="btn btn-primary btn-xs" id="btn-gm-detail-timer-start">▶ Start</button>
+          <button class="btn btn-ghost btn-xs" id="btn-gm-detail-timer-pause" style="display:none">⏸ Pause</button>
+          <button class="btn btn-ghost btn-xs" id="btn-gm-detail-timer-resume" style="display:none">▶ Resume</button>
+          <button class="btn btn-danger btn-xs" id="btn-gm-detail-timer-stop" style="display:none">⏹ Stop</button>
+        </div>
+        <div id="gm-detail-timer-display" style="font-size:1.6rem;font-weight:700;color:var(--accent-orange);margin-bottom:8px;display:none;font-variant-numeric:tabular-nums"></div>
+        ` : ''}
+
+        <!-- Characteristic Roll -->
+        <hr class="section-divider">
+        <h3 style="font-size:0.82rem;margin-bottom:6px">🎲 Characteristic Roll</h3>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+          <select id="gm-roll-stat" style="font-size:0.78rem;width:110px">
+            <option value="strength">Strength</option>
+            <option value="dexterity">Dexterity</option>
+            <option value="constitution">Constitution</option>
+            <option value="intelligence">Intelligence</option>
+            <option value="wisdom">Wisdom</option>
+            <option value="charisma">Charisma</option>
+          </select>
+          <select id="gm-roll-type" style="font-size:0.78rem;width:120px">
+            <option value="ability_check">Ability Check</option>
+            <option value="saving_throw">Saving Throw</option>
+            <option value="skill_check">Skill Check</option>
+          </select>
+          <button class="btn btn-secondary btn-xs" id="btn-gm-roll-char">🎲 Roll D20</button>
+        </div>
+        <div id="gm-roll-result" style="font-size:0.82rem;margin-bottom:8px"></div>
 
         <!-- Damage calc -->
         <hr class="section-divider">
@@ -352,6 +420,21 @@ async function renderCharDetail() {
     });
   }
 
+  // Characteristic Roll
+  $('#btn-gm-roll-char').addEventListener('click', async () => {
+    const stat = $('#gm-roll-stat').value;
+    const rollType = $('#gm-roll-type').value;
+    try {
+      const res = await api.post(`/api/characters/${c.id}/roll-characteristic`, { stat, roll_type: rollType });
+      $('#gm-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>`;
+      addLog('gm.roll', res.description);
+      // Broadcast via WS
+      ws.send({ type: 'roll.characteristic', ...res, session_code: SESSION_CODE });
+    } catch (e) {
+      $('#gm-roll-result').textContent = 'Roll failed';
+    }
+  });
+
   // Apply damage
   $('#btn-gm-apply-dmg').addEventListener('click', async () => {
     const er = parseInt($('#gm-di-enemy').value)||0;
@@ -368,6 +451,58 @@ async function renderCharDetail() {
     $('#gm-dmg-result').innerHTML = text;
     addLog('gm.damage', `${c.name}: ${er} vs KD${c.armor_class} → ${res.final_damage} dmg`);
   });
+
+  // ── Detail Timer wiring (player only) ──
+  if (!c.is_npc) {
+    const startBtn = area.querySelector('#btn-gm-detail-timer-start');
+    const pauseBtn = area.querySelector('#btn-gm-detail-timer-pause');
+    const resumeBtn = area.querySelector('#btn-gm-detail-timer-resume');
+    const stopBtn = area.querySelector('#btn-gm-detail-timer-stop');
+    const timerDisplay = area.querySelector('#gm-detail-timer-display');
+    const timerInput = area.querySelector('#gm-detail-timer-min');
+
+    startBtn.addEventListener('click', () => {
+      const mins = parseFloat(timerInput.value) || 2;
+      const secs = Math.round(mins * 60);
+      startDetailTimer(c.id, secs);
+      sendPlayerTimer(c.id, secs);
+    });
+    pauseBtn.addEventListener('click', () => pauseDetailTimer());
+    resumeBtn.addEventListener('click', () => resumeDetailTimer());
+    stopBtn.addEventListener('click', () => {
+      stopDetailTimer();
+      sendPlayerTimerStop(c.id);
+    });
+    restoreDetailTimer();
+
+    // Load race/class names
+    if (c.race_id) {
+      api.get(`/api/races-classes/races/${c.race_id}`).then(r => {
+        const el = area.querySelector('#gm-char-race');
+        if (el) el.innerHTML = `Race: <strong>${r.name}</strong>`;
+      }).catch(() => {});
+    }
+    if (c.class_id) {
+      api.get(`/api/races-classes/classes/${c.class_id}`).then(r => {
+        const el = area.querySelector('#gm-char-class');
+        if (el) el.innerHTML = `Class: <strong>${r.name}</strong>`;
+      }).catch(() => {});
+    }
+
+    // XP/Level edit
+    const xpBtn = area.querySelector('#btn-edit-xp');
+    if (xpBtn) {
+      xpBtn.addEventListener('click', async () => {
+        const newXp = prompt('Set experience:', c.experience || 0);
+        if (newXp === null) return;
+        const newLvl = prompt('Set level:', c.level || 1);
+        if (newLvl === null) return;
+        await api.patch(`/api/characters/${c.id}`, { experience: parseInt(newXp)||0, level: parseInt(newLvl)||1 });
+        await refreshChars();
+        renderCharDetail();
+      });
+    }
+  }
 
   // ── Status Effects wiring ──
   loadStatusBadges(c.id);
@@ -1802,9 +1937,12 @@ async function loadCombatPanel() {
 
   // Check for active combat
   const res = await api.get(`/api/combat/session/${SESSION_CODE}/active`);
-  if (res.active) {
+  if (res.active && res.combat.status === 'active') {
     activeCombat = res.combat;
     renderActiveCombat(panel);
+  } else if (res.active && res.combat.status === 'preparing') {
+    activeCombat = res.combat;
+    renderPreparingCombat(panel);
   } else {
     activeCombat = null;
     renderCombatSetup(panel);
@@ -1848,7 +1986,7 @@ function renderPreparingCombat(panel) {
   panel.innerHTML = `
     <div class="detail-panel">
       <div class="detail-header">
-        <h2>⚔️ ${c.name} <span class="cc-badge" style="background:var(--accent-orange)">Preparing</span></h2>
+        <h2>⚔️ ${c.name} <span class="cc-badge" style="background:var(--accent-orange)">Preparing</span> <span id="difficulty-badge" style="font-size:0.65rem"></span></h2>
       </div>
       <div class="detail-body">
         <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px">Add Participants:</div>
@@ -1880,54 +2018,102 @@ function renderPreparingCombat(panel) {
     </div>
   `;
 
-  // Wire buttons
-  panel.querySelector('#btn-combat-update-participants').addEventListener('click', async () => {
+  // Helper: sync checkboxes → API, refresh state
+  async function syncParticipants() {
     const checked = [...panel.querySelectorAll('#combat-char-selector input:checked')].map(i => parseInt(i.value));
-    const current = new Set(c.participants.map(p => p.character_id));
+    const current = new Set(activeCombat.participants.map(p => p.character_id));
     const toAdd = checked.filter(id => !current.has(id));
     const toRemove = [...current].filter(id => !checked.includes(id));
 
     for (const id of toRemove) {
-      await api.del(`/api/combat/${c.id}/participants/${id}`);
+      await api.del(`/api/combat/${activeCombat.id}/participants/${id}`);
     }
     if (toAdd.length) {
-      await api.post(`/api/combat/${c.id}/add-participants`, { character_ids: toAdd });
+      await api.post(`/api/combat/${activeCombat.id}/add-participants`, { character_ids: toAdd });
     }
-    const state = await api.get(`/api/combat/${c.id}/state`);
-    activeCombat = state;
+    if (toAdd.length || toRemove.length) {
+      const state = await api.get(`/api/combat/${activeCombat.id}/state`);
+      activeCombat = state;
+    }
+  }
+
+  // Auto-sync when checkbox changes
+  panel.querySelectorAll('#combat-char-selector input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      await syncParticipants();
+      panel.querySelector('#combat-participants-list').innerHTML = renderParticipantRows(activeCombat);
+      wireInitiativeInputs(panel, activeCombat);
+      updateDifficultyBadge();
+    });
+  });
+
+  // Initial difficulty badge
+  updateDifficultyBadge();
+
+  async function updateDifficultyBadge() {
+    const badge = panel.querySelector('#difficulty-badge');
+    if (!badge || !activeCombat) return;
+    const parts = activeCombat.participants || [];
+    const players = parts.filter(p => !p.is_npc).map(p => {
+      const ch = characters.find(x => x.id === p.character_id);
+      return { max_hp: ch?.max_hp || 20, armor_class: ch?.armor_class || 10, level: ch?.level || 1 };
+    });
+    const npcs = parts.filter(p => p.is_npc).map(p => {
+      const ch = characters.find(x => x.id === p.character_id);
+      return { max_hp: ch?.max_hp || 20, armor_class: ch?.armor_class || 10 };
+    });
+    if (!players.length || !npcs.length) { badge.textContent = ''; return; }
+    try {
+      const res = await api.post('/api/npc-library/encounter-difficulty', { players, npcs });
+      const colors = { Trivial: '#888', Easy: '#4caf50', Medium: '#ff9800', Hard: '#f44336', Deadly: '#b71c1c' };
+      const icons = { Trivial: '⚪', Easy: '🟢', Medium: '🟡', Hard: '🟠', Deadly: '🔴' };
+      badge.innerHTML = `<span style="padding:2px 8px;border-radius:10px;background:${colors[res.difficulty]}20;color:${colors[res.difficulty]};font-weight:700">${icons[res.difficulty] || ''} ${res.difficulty}</span>`;
+    } catch { badge.textContent = ''; }
+  }
+
+  // Update Participants button (still available as explicit sync)
+  panel.querySelector('#btn-combat-update-participants').addEventListener('click', async () => {
+    await syncParticipants();
     renderPreparingCombat(panel);
   });
 
   panel.querySelector('#btn-combat-roll-npc').addEventListener('click', async () => {
-    const res = await api.post(`/api/combat/${c.id}/roll-npc-initiative`);
+    await syncParticipants();
+    if (!activeCombat.participants.some(p => p.is_npc)) {
+      showToast('No NPC participants to roll for');
+      return;
+    }
+    const res = await api.post(`/api/combat/${activeCombat.id}/roll-npc-initiative`);
     activeCombat = res.combat;
     panel.querySelector('#combat-participants-list').innerHTML = renderParticipantRows(activeCombat);
+    wireInitiativeInputs(panel, activeCombat);
     addLog('gm.combat', `NPC initiative rolled: ${res.rolls.map(r => `${r.name}=${r.final}`).join(', ')}`);
   });
 
-  panel.querySelector('#btn-combat-request-player-rolls').addEventListener('click', () => {
-    const playerParts = c.participants.filter(p => !p.is_npc);
-    const bonuses = {};
-    playerParts.forEach(p => { bonuses[String(p.character_id)] = p.initiative_bonus; });
-    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
-      ws.ws.send(JSON.stringify({
-        type: 'combat.roll_initiative_request',
-        combat_id: c.id,
-        player_ids: playerParts.map(p => p.character_id),
-        bonuses,
-      }));
+  panel.querySelector('#btn-combat-request-player-rolls').addEventListener('click', async () => {
+    try { await syncParticipants(); } catch(e) { console.error('syncParticipants error:', e); }
+    const playerParts = activeCombat.participants.filter(p => !p.is_npc);
+    if (!playerParts.length) {
+      showToast('No player participants');
+      return;
     }
-    showToast('Initiative roll request sent to players');
+    const res = await api.post(`/api/combat/${activeCombat.id}/request-player-initiative`);
+    if (res.sent_to && res.sent_to.length) {
+      showToast(`Initiative request sent to ${res.sent_to.map(s => s.name).join(', ')}`);
+    } else {
+      showToast('No connected players to send to');
+    }
   });
 
   panel.querySelector('#btn-combat-start').addEventListener('click', async () => {
+    await syncParticipants();
     try {
-      const res = await api.post(`/api/combat/${c.id}/start`);
+      const res = await api.post(`/api/combat/${activeCombat.id}/start`);
       activeCombat = res;
       renderActiveCombat(panel);
-      addLog('gm.combat', `Combat "${c.name}" started!`);
+      addLog('gm.combat', `Combat "${activeCombat.name}" started!`);
       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
-        ws.ws.send(JSON.stringify({ type: 'combat.started', data: { combat_id: c.id } }));
+        ws.ws.send(JSON.stringify({ type: 'combat.started', data: { combat_id: activeCombat.id } }));
       }
     } catch (e) {
       showToast('Cannot start: ensure all participants have initiative');
@@ -1935,7 +2121,7 @@ function renderPreparingCombat(panel) {
   });
 
   // Manual initiative inputs
-  wireInitiativeInputs(panel, c);
+  wireInitiativeInputs(panel, activeCombat);
 }
 
 function renderParticipantRows(c) {
@@ -1984,12 +2170,15 @@ function renderActiveCombat(panel) {
           <div style="font-size:0.75rem;color:var(--text-muted)">Current Turn</div>
           <div style="font-size:1.2rem;font-weight:700;color:var(--accent)">${currentP ? currentP.name : '—'}</div>
           ${currentP && !currentP.is_npc ? `
-            <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;align-items:center">
-              <label style="font-size:0.7rem;color:var(--text-muted)">Timer:</label>
-              <input type="number" id="combat-timer-sec" value="30" style="width:50px;font-size:0.75rem" min="5" max="300">
-              <button class="btn btn-ghost btn-xs" id="btn-combat-timer">⏱ Start Timer</button>
+            <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;align-items:center" id="combat-timer-controls">
+              <label style="font-size:0.7rem;color:var(--text-muted)">Timer (min):</label>
+              <input type="number" id="combat-timer-min" value="2" style="width:50px;font-size:0.75rem" min="1" max="30" step="1">
+              <button class="btn btn-ghost btn-xs" id="btn-combat-timer-start">⏱ Start</button>
+              <button class="btn btn-ghost btn-xs" id="btn-combat-timer-pause" style="display:none">⏸</button>
+              <button class="btn btn-ghost btn-xs" id="btn-combat-timer-resume" style="display:none">▶</button>
+              <button class="btn btn-danger btn-xs" id="btn-combat-timer-stop" style="display:none">⏹</button>
             </div>
-            <div id="combat-timer-display" style="font-size:1.5rem;font-weight:700;color:var(--accent-orange);margin-top:4px;display:none"></div>
+            <div id="combat-timer-display" style="font-size:1.5rem;font-weight:700;color:var(--accent-orange);margin-top:4px;display:none;font-variant-numeric:tabular-nums"></div>
           ` : ''}
         </div>
 
@@ -2049,34 +2238,97 @@ function renderActiveCombat(panel) {
     loadCombatPanel();
   });
 
-  // Wire Timer
-  const timerBtn = panel.querySelector('#btn-combat-timer');
-  if (timerBtn && currentP) {
-    timerBtn.addEventListener('click', () => {
-      const sec = parseInt(panel.querySelector('#combat-timer-sec').value) || 30;
-      startCombatTimer(panel, sec, currentP.character_id);
+  // Wire Combat Timer
+  const ctStartBtn = panel.querySelector('#btn-combat-timer-start');
+  const ctPauseBtn = panel.querySelector('#btn-combat-timer-pause');
+  const ctResumeBtn = panel.querySelector('#btn-combat-timer-resume');
+  const ctStopBtn = panel.querySelector('#btn-combat-timer-stop');
+  const ctDisplay = panel.querySelector('#combat-timer-display');
+  const ctInput = panel.querySelector('#combat-timer-min');
+
+  if (ctStartBtn && currentP) {
+    ctStartBtn.addEventListener('click', () => {
+      const mins = parseFloat(ctInput.value) || 2;
+      const secs = Math.round(mins * 60);
+      startGmCombatTimer(secs, currentP.character_id);
     });
+    ctPauseBtn.addEventListener('click', () => pauseGmCombatTimer());
+    ctResumeBtn.addEventListener('click', () => resumeGmCombatTimer());
+    ctStopBtn.addEventListener('click', () => {
+      stopGmCombatTimer();
+      sendPlayerTimerStop(currentP.character_id);
+    });
+    // Restore timer if one was running
+    restoreGmCombatTimer();
   }
 }
 
-function startCombatTimer(panel, seconds, charId) {
-  const display = panel.querySelector('#combat-timer-display');
-  if (!display) return;
-  display.style.display = '';
-  let remaining = seconds;
-  display.textContent = remaining + 's';
+function formatGmTimer(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
+// ── Combat Timer (localStorage-backed) ──
+function _saveCombatTimer(state) {
+  if (state) localStorage.setItem('gm-combat-timer', JSON.stringify(state));
+  else localStorage.removeItem('gm-combat-timer');
+}
+function _getCombatTimer() {
+  try { return JSON.parse(localStorage.getItem('gm-combat-timer')); } catch { return null; }
+}
+
+function _setCombatTimerUI(running, paused) {
+  const startBtn = document.querySelector('#btn-combat-timer-start');
+  const pauseBtn = document.querySelector('#btn-combat-timer-pause');
+  const resumeBtn = document.querySelector('#btn-combat-timer-resume');
+  const stopBtn = document.querySelector('#btn-combat-timer-stop');
+  const input = document.querySelector('#combat-timer-min');
+  const display = document.querySelector('#combat-timer-display');
+  if (!startBtn) return;
+  if (running) {
+    startBtn.style.display = 'none';
+    input.style.display = 'none';
+    stopBtn.style.display = '';
+    display.style.display = '';
+    pauseBtn.style.display = paused ? 'none' : '';
+    resumeBtn.style.display = paused ? '' : 'none';
+  } else {
+    startBtn.style.display = '';
+    input.style.display = '';
+    pauseBtn.style.display = 'none';
+    resumeBtn.style.display = 'none';
+    stopBtn.style.display = 'none';
+    display.style.display = 'none';
+    display.style.animation = '';
+  }
+}
+
+function _tickCombatTimer() {
+  const st = _getCombatTimer();
+  if (!st || st.paused) return;
+  const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+  const remaining = Math.max(0, st.totalSeconds - elapsed);
+  const display = document.querySelector('#combat-timer-display');
+  if (!display) return;
+  display.textContent = formatGmTimer(remaining);
+  display.style.color = remaining <= 10 ? 'var(--accent-red)' : 'var(--accent-orange)';
+  if (remaining <= 0) {
+    clearInterval(combatTimerInterval);
+    combatTimerInterval = null;
+    display.textContent = '⏰ TIME UP!';
+    display.style.animation = 'pulse 0.5s ease-in-out 3';
+    _saveCombatTimer(null);
+    setTimeout(() => _setCombatTimerUI(false, false), 4000);
+  }
+}
+
+function startGmCombatTimer(seconds, charId) {
   if (combatTimerInterval) clearInterval(combatTimerInterval);
-  combatTimerInterval = setInterval(() => {
-    remaining--;
-    display.textContent = remaining + 's';
-    if (remaining <= 5) display.style.color = 'var(--accent-red)';
-    if (remaining <= 0) {
-      clearInterval(combatTimerInterval);
-      display.textContent = '⏰ TIME UP!';
-      display.style.animation = 'pulse 0.5s ease-in-out 3';
-    }
-  }, 1000);
+  _saveCombatTimer({ totalSeconds: seconds, startedAt: Date.now(), paused: false, charId });
+  _setCombatTimerUI(true, false);
+  _tickCombatTimer();
+  combatTimerInterval = setInterval(_tickCombatTimer, 1000);
 
   // Send timer to player
   if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
@@ -2089,6 +2341,191 @@ function startCombatTimer(panel, seconds, charId) {
   }
 }
 
+function pauseGmCombatTimer() {
+  const st = _getCombatTimer();
+  if (!st) return;
+  if (combatTimerInterval) { clearInterval(combatTimerInterval); combatTimerInterval = null; }
+  const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+  const remaining = Math.max(0, st.totalSeconds - elapsed);
+  _saveCombatTimer({ ...st, totalSeconds: remaining, startedAt: Date.now(), paused: true });
+  _setCombatTimerUI(true, true);
+}
+
+function resumeGmCombatTimer() {
+  const st = _getCombatTimer();
+  if (!st) return;
+  _saveCombatTimer({ ...st, startedAt: Date.now(), paused: false });
+  _setCombatTimerUI(true, false);
+  _tickCombatTimer();
+  combatTimerInterval = setInterval(_tickCombatTimer, 1000);
+}
+
+function stopGmCombatTimer() {
+  if (combatTimerInterval) { clearInterval(combatTimerInterval); combatTimerInterval = null; }
+  _saveCombatTimer(null);
+  _setCombatTimerUI(false, false);
+}
+
+function restoreGmCombatTimer() {
+  const st = _getCombatTimer();
+  if (!st) return;
+  if (st.paused) {
+    const display = document.querySelector('#combat-timer-display');
+    if (display) {
+      display.textContent = formatGmTimer(st.totalSeconds);
+      display.style.color = st.totalSeconds <= 10 ? 'var(--accent-red)' : 'var(--accent-orange)';
+    }
+    _setCombatTimerUI(true, true);
+  } else {
+    const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+    const remaining = st.totalSeconds - elapsed;
+    if (remaining <= 0) {
+      _saveCombatTimer(null);
+      return;
+    }
+    _setCombatTimerUI(true, false);
+    _tickCombatTimer();
+    combatTimerInterval = setInterval(_tickCombatTimer, 1000);
+  }
+}
+
+function sendPlayerTimer(charId, seconds) {
+  if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+    ws.ws.send(JSON.stringify({
+      type: 'gm.timer',
+      character_id: charId,
+      duration_seconds: seconds,
+    }));
+  }
+  showToast(`Timer ${formatGmTimer(seconds)} sent to player`);
+}
+
+function sendPlayerTimerStop(charId) {
+  if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+    ws.ws.send(JSON.stringify({
+      type: 'gm.timer_stop',
+      character_id: charId,
+    }));
+  }
+}
+
+// ── Detail panel timer (localStorage-backed) ──
+let detailTimerInterval = null;
+
+function _saveDetailTimer(state) {
+  if (state) localStorage.setItem('gm-detail-timer', JSON.stringify(state));
+  else localStorage.removeItem('gm-detail-timer');
+}
+function _getDetailTimer() {
+  try { return JSON.parse(localStorage.getItem('gm-detail-timer')); } catch { return null; }
+}
+
+function _setDetailTimerUI(running, paused) {
+  const startBtn = document.querySelector('#btn-gm-detail-timer-start');
+  const pauseBtn = document.querySelector('#btn-gm-detail-timer-pause');
+  const resumeBtn = document.querySelector('#btn-gm-detail-timer-resume');
+  const stopBtn = document.querySelector('#btn-gm-detail-timer-stop');
+  const input = document.querySelector('#gm-detail-timer-min');
+  const display = document.querySelector('#gm-detail-timer-display');
+  if (!startBtn) return;
+  if (running) {
+    startBtn.style.display = 'none';
+    input.style.display = 'none';
+    stopBtn.style.display = '';
+    display.style.display = '';
+    pauseBtn.style.display = paused ? 'none' : '';
+    resumeBtn.style.display = paused ? '' : 'none';
+  } else {
+    startBtn.style.display = '';
+    input.style.display = '';
+    pauseBtn.style.display = 'none';
+    resumeBtn.style.display = 'none';
+    stopBtn.style.display = 'none';
+    display.style.display = 'none';
+    display.style.animation = '';
+  }
+}
+
+function _tickDetailTimer() {
+  const st = _getDetailTimer();
+  if (!st || st.paused) return;
+  const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+  const remaining = Math.max(0, st.totalSeconds - elapsed);
+  const display = document.querySelector('#gm-detail-timer-display');
+  if (!display) return;
+  display.textContent = formatGmTimer(remaining);
+  display.style.color = remaining <= 10 ? 'var(--accent-red)' : 'var(--accent-orange)';
+  if (remaining <= 0) {
+    clearInterval(detailTimerInterval);
+    detailTimerInterval = null;
+    display.textContent = '⏰ TIME UP!';
+    display.style.animation = 'pulse 0.5s ease-in-out 3';
+    _saveDetailTimer(null);
+    setTimeout(() => _setDetailTimerUI(false, false), 4000);
+  }
+}
+
+function startDetailTimer(charId, seconds) {
+  if (detailTimerInterval) clearInterval(detailTimerInterval);
+  _saveDetailTimer({ totalSeconds: seconds, startedAt: Date.now(), paused: false, charId });
+  _setDetailTimerUI(true, false);
+  _tickDetailTimer();
+  detailTimerInterval = setInterval(_tickDetailTimer, 1000);
+}
+
+function pauseDetailTimer() {
+  const st = _getDetailTimer();
+  if (!st) return;
+  if (detailTimerInterval) { clearInterval(detailTimerInterval); detailTimerInterval = null; }
+  const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+  const remaining = Math.max(0, st.totalSeconds - elapsed);
+  _saveDetailTimer({ ...st, totalSeconds: remaining, startedAt: Date.now(), paused: true });
+  _setDetailTimerUI(true, true);
+}
+
+function resumeDetailTimer() {
+  const st = _getDetailTimer();
+  if (!st) return;
+  _saveDetailTimer({ ...st, startedAt: Date.now(), paused: false });
+  _setDetailTimerUI(true, false);
+  _tickDetailTimer();
+  detailTimerInterval = setInterval(_tickDetailTimer, 1000);
+}
+
+function stopDetailTimer() {
+  if (detailTimerInterval) { clearInterval(detailTimerInterval); detailTimerInterval = null; }
+  _saveDetailTimer(null);
+  _setDetailTimerUI(false, false);
+}
+
+function restoreDetailTimer() {
+  const st = _getDetailTimer();
+  if (!st) return;
+  if (st.paused) {
+    const display = document.querySelector('#gm-detail-timer-display');
+    if (display) {
+      display.textContent = formatGmTimer(st.totalSeconds);
+      display.style.color = st.totalSeconds <= 10 ? 'var(--accent-red)' : 'var(--accent-orange)';
+    }
+    _setDetailTimerUI(true, true);
+  } else {
+    const elapsed = Math.floor((Date.now() - st.startedAt) / 1000);
+    const remaining = st.totalSeconds - elapsed;
+    if (remaining <= 0) { _saveDetailTimer(null); return; }
+    _setDetailTimerUI(true, false);
+    _tickDetailTimer();
+    detailTimerInterval = setInterval(_tickDetailTimer, 1000);
+  }
+}
+
+// WS listener for characteristic rolls
+ws.on('roll.characteristic', d => {
+  if (d.description) {
+    addLog('roll', d.description);
+    showToast(d.description);
+  }
+});
+
 // WS listeners for combat
 ws.on('combat.initiative_submitted', d => {
   if (activeCombat) {
@@ -2098,6 +2535,598 @@ ws.on('combat.initiative_submitted', d => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// STAGE 6 — RACES & CLASSES MANAGER
+// ══════════════════════════════════════════════════════════════
+let rcRaces = [];
+let rcClasses = [];
+
+async function loadRacesClasses() {
+  try {
+    const [rr, cc] = await Promise.all([
+      api.get('/api/races-classes/races'),
+      api.get('/api/races-classes/classes'),
+    ]);
+    rcRaces = rr;
+    rcClasses = cc;
+  } catch { rcRaces = []; rcClasses = []; }
+  renderRCList();
+}
+
+function bonusLabel(b) {
+  if (b.type === 'stat_bonus') return `+${b.value} ${(b.stat||'').slice(0,3).toUpperCase()}`;
+  if (b.type === 'hp_bonus') return `+${b.value} HP`;
+  if (b.type === 'initiative_bonus') return `+${b.value} Init`;
+  if (b.type === 'damage_bonus') return `+${b.value} Dmg`;
+  if (b.type === 'attack_bonus') return `+${b.value} Atk`;
+  return `${b.type}: ${b.value}`;
+}
+
+function renderRCList() {
+  const rList = document.querySelector('#rc-races-list');
+  const cList = document.querySelector('#rc-classes-list');
+  if (!rList || !cList) return;
+
+  rList.innerHTML = rcRaces.length ? rcRaces.map(r => `
+    <div style="padding:8px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface-2)${!r.is_available?';opacity:0.5':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;font-size:0.85rem">${r.name}</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-ghost btn-xs" data-edit-race="${r.id}">✏️</button>
+          <button class="btn btn-ghost btn-xs" data-del-race="${r.id}" style="color:var(--accent-red)">🗑</button>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin:2px 0">${r.description}</div>
+      <div>${(r.bonuses||[]).map(b => `<span style="display:inline-block;font-size:0.6rem;padding:1px 5px;border-radius:8px;background:var(--accent)20;color:var(--accent);margin-right:2px">${bonusLabel(b)}</span>`).join('')}</div>
+      ${!r.is_available ? '<div style="font-size:0.6rem;color:var(--accent-red)">Hidden from players</div>' : ''}
+    </div>
+  `).join('') : '<span class="text-muted" style="font-size:0.8rem">No races. Click "Seed Defaults" or create one.</span>';
+
+  cList.innerHTML = rcClasses.length ? rcClasses.map(c => `
+    <div style="padding:8px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface-2)${!c.is_available?';opacity:0.5':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;font-size:0.85rem">${c.name}</span>
+        <div style="display:flex;gap:4px">
+          <span style="font-size:0.65rem;color:var(--text-muted)">d${c.hit_die}</span>
+          <button class="btn btn-ghost btn-xs" data-edit-class="${c.id}">✏️</button>
+          <button class="btn btn-ghost btn-xs" data-del-class="${c.id}" style="color:var(--accent-red)">🗑</button>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin:2px 0">${c.description}</div>
+      <div>${(c.bonuses||[]).map(b => `<span style="display:inline-block;font-size:0.6rem;padding:1px 5px;border-radius:8px;background:var(--accent)20;color:var(--accent);margin-right:2px">${bonusLabel(b)}</span>`).join('')}</div>
+      ${!c.is_available ? '<div style="font-size:0.6rem;color:var(--accent-red)">Hidden from players</div>' : ''}
+    </div>
+  `).join('') : '<span class="text-muted" style="font-size:0.8rem">No classes. Click "Seed Defaults" or create one.</span>';
+
+  // Wire edit/delete
+  rList.querySelectorAll('[data-edit-race]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const r = rcRaces.find(x => x.id === parseInt(btn.dataset.editRace));
+      if (r) openRCEditorModal('race', r);
+    });
+  });
+  rList.querySelectorAll('[data-del-race]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this race?')) return;
+      await api.del(`/api/races-classes/races/${btn.dataset.delRace}`);
+      loadRacesClasses();
+    });
+  });
+  cList.querySelectorAll('[data-edit-class]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = rcClasses.find(x => x.id === parseInt(btn.dataset.editClass));
+      if (c) openRCEditorModal('class', c);
+    });
+  });
+  cList.querySelectorAll('[data-del-class]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this class?')) return;
+      await api.del(`/api/races-classes/classes/${btn.dataset.delClass}`);
+      loadRacesClasses();
+    });
+  });
+}
+
+function openRCEditorModal(kind, existing) {
+  const isEdit = !!existing;
+  const title = isEdit ? `Edit ${kind === 'race' ? 'Race' : 'Class'}` : `Create ${kind === 'race' ? 'Race' : 'Class'}`;
+  const data = existing || { name: '', description: '', bonuses: [], special_abilities: [], is_available: true, hit_die: 8 };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header"><h3>${title}</h3><button class="modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Name</label><input type="text" id="rc-ed-name" value="${data.name}"></div>
+        <div class="form-group"><label>Description</label><textarea id="rc-ed-desc" rows="2" style="width:100%;resize:vertical">${data.description}</textarea></div>
+        ${kind === 'class' ? `<div class="form-group"><label>Hit Die</label><select id="rc-ed-hitdie">
+          ${[4,6,8,10,12].map(d => `<option value="${d}"${data.hit_die===d?' selected':''}>d${d}</option>`).join('')}
+        </select></div>` : ''}
+        <div class="form-group">
+          <label>Bonuses</label>
+          <div id="rc-ed-bonuses"></div>
+          <button class="btn btn-ghost btn-xs" id="rc-ed-add-bonus" style="margin-top:4px">+ Add Bonus</button>
+        </div>
+        <div class="form-group">
+          <label>Special Abilities (text)</label>
+          <div id="rc-ed-abilities"></div>
+          <button class="btn btn-ghost btn-xs" id="rc-ed-add-ability" style="margin-top:4px">+ Add Ability</button>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px">
+          <label class="toggle-switch"><input type="checkbox" id="rc-ed-available" ${data.is_available?'checked':''}><span class="slider"></span></label>
+          <span style="font-size:0.8rem">Available to players</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="rc-ed-cancel">Cancel</button>
+        <button class="btn btn-primary" id="rc-ed-save">${isEdit ? 'Save' : 'Create'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const bonusCont = overlay.querySelector('#rc-ed-bonuses');
+  const abilityCont = overlay.querySelector('#rc-ed-abilities');
+  let bonuses = [...(data.bonuses || [])];
+  let abilities = [...(data.special_abilities || [])];
+
+  function renderBonuses() {
+    bonusCont.innerHTML = bonuses.map((b, i) => `
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
+        <select data-bi="${i}" data-field="type" style="font-size:0.75rem;width:120px">
+          <option value="stat_bonus"${b.type==='stat_bonus'?' selected':''}>Stat Bonus</option>
+          <option value="hp_bonus"${b.type==='hp_bonus'?' selected':''}>HP Bonus</option>
+          <option value="initiative_bonus"${b.type==='initiative_bonus'?' selected':''}>Initiative</option>
+          <option value="attack_bonus"${b.type==='attack_bonus'?' selected':''}>Attack</option>
+          <option value="damage_bonus"${b.type==='damage_bonus'?' selected':''}>Damage</option>
+        </select>
+        ${b.type === 'stat_bonus' ? `<select data-bi="${i}" data-field="stat" style="font-size:0.75rem;width:90px">
+          ${['strength','dexterity','constitution','intelligence','wisdom','charisma'].map(s => `<option value="${s}"${b.stat===s?' selected':''}>${s.slice(0,3).toUpperCase()}</option>`).join('')}
+        </select>` : ''}
+        <input type="number" data-bi="${i}" data-field="value" value="${b.value||0}" style="width:50px;font-size:0.75rem">
+        <button class="btn btn-ghost btn-xs" data-remove-bonus="${i}" style="color:var(--accent-red)">✕</button>
+      </div>
+    `).join('');
+    bonusCont.querySelectorAll('[data-bi]').forEach(el => {
+      el.addEventListener('change', () => {
+        const i = parseInt(el.dataset.bi);
+        const f = el.dataset.field;
+        bonuses[i][f] = f === 'value' ? parseInt(el.value) || 0 : el.value;
+        if (f === 'type') renderBonuses();
+      });
+    });
+    bonusCont.querySelectorAll('[data-remove-bonus]').forEach(btn => {
+      btn.addEventListener('click', () => { bonuses.splice(parseInt(btn.dataset.removeBonus), 1); renderBonuses(); });
+    });
+  }
+
+  function renderAbilities() {
+    abilityCont.innerHTML = abilities.map((a, i) => `
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
+        <input type="text" data-ai="${i}" value="${a}" style="flex:1;font-size:0.75rem">
+        <button class="btn btn-ghost btn-xs" data-remove-ability="${i}" style="color:var(--accent-red)">✕</button>
+      </div>
+    `).join('');
+    abilityCont.querySelectorAll('[data-ai]').forEach(el => {
+      el.addEventListener('change', () => { abilities[parseInt(el.dataset.ai)] = el.value; });
+    });
+    abilityCont.querySelectorAll('[data-remove-ability]').forEach(btn => {
+      btn.addEventListener('click', () => { abilities.splice(parseInt(btn.dataset.removeAbility), 1); renderAbilities(); });
+    });
+  }
+
+  renderBonuses();
+  renderAbilities();
+
+  overlay.querySelector('#rc-ed-add-bonus').addEventListener('click', () => {
+    bonuses.push({ type: 'stat_bonus', stat: 'strength', value: 1 });
+    renderBonuses();
+  });
+  overlay.querySelector('#rc-ed-add-ability').addEventListener('click', () => {
+    abilities.push('New ability');
+    renderAbilities();
+  });
+
+  overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#rc-ed-cancel').addEventListener('click', () => overlay.remove());
+
+  overlay.querySelector('#rc-ed-save').addEventListener('click', async () => {
+    const body = {
+      name: overlay.querySelector('#rc-ed-name').value.trim(),
+      description: overlay.querySelector('#rc-ed-desc').value.trim(),
+      bonuses,
+      special_abilities: abilities.filter(a => a.trim()),
+      is_available: overlay.querySelector('#rc-ed-available').checked,
+    };
+    if (!body.name) return;
+
+    if (kind === 'class') {
+      body.hit_die = parseInt(overlay.querySelector('#rc-ed-hitdie')?.value) || 8;
+    }
+
+    if (isEdit) {
+      await api.put(`/api/races-classes/${kind === 'race' ? 'races' : 'classes'}/${existing.id}`, body);
+    } else {
+      await api.post(`/api/races-classes/${kind === 'race' ? 'races' : 'classes'}`, body);
+    }
+    overlay.remove();
+    loadRacesClasses();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// STAGE 7 — NPC LIBRARY
+// ══════════════════════════════════════════════════════════════
+let npcFolders = [];
+let npcTemplates = [];
+let npcEvents = [];
+
+async function loadNpcLibrary() {
+  if (!SESSION_ID) return;
+  try {
+    const [f, t, e] = await Promise.all([
+      api.get(`/api/npc-library/folders?session_id=${SESSION_ID}`),
+      api.get(`/api/npc-library/templates?session_id=${SESSION_ID}`),
+      api.get(`/api/npc-library/events?session_id=${SESSION_ID}`),
+    ]);
+    npcFolders = f;
+    npcTemplates = t;
+    npcEvents = e;
+  } catch { npcFolders = []; npcTemplates = []; npcEvents = []; }
+  renderNpcLibrary();
+}
+
+function renderFolderTree(folders, depth = 0) {
+  return folders.map(f => `
+    <div style="margin-left:${depth * 16}px;margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface-2)">
+        <span style="color:${f.color};font-size:1rem">📁</span>
+        <span style="font-weight:700;font-size:0.82rem;flex:1">${f.name}</span>
+        <span style="font-size:0.6rem;color:var(--text-muted)">${f.template_count} NPCs</span>
+        <button class="btn btn-ghost btn-xs" data-edit-folder="${f.id}">✏️</button>
+        <button class="btn btn-ghost btn-xs" data-del-folder="${f.id}" style="color:var(--accent-red)">🗑</button>
+      </div>
+      ${f.children && f.children.length ? renderFolderTree(f.children, depth + 1) : ''}
+    </div>
+  `).join('');
+}
+
+function renderNpcLibrary() {
+  const tree = document.querySelector('#npc-folder-tree');
+  const tList = document.querySelector('#npc-template-list');
+  const eList = document.querySelector('#npc-event-list');
+  if (!tree || !tList || !eList) return;
+
+  // Folder tree
+  tree.innerHTML = npcFolders.length ? renderFolderTree(npcFolders) : '<span class="text-muted" style="font-size:0.8rem">No folders.</span>';
+
+  // Templates
+  tList.innerHTML = npcTemplates.length ? npcTemplates.map(t => `
+    <div style="padding:8px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface-2)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="width:12px;height:12px;border-radius:50%;background:${t.token_color};display:inline-block"></span>
+          <span style="font-weight:700;font-size:0.85rem">${t.name}</span>
+          ${t.is_merchant ? '<span style="font-size:0.6rem;padding:1px 5px;border-radius:8px;background:var(--accent)20;color:var(--accent)">Merchant</span>' : ''}
+        </div>
+        <div style="display:flex;gap:3px">
+          <button class="btn btn-ghost btn-xs" data-spawn-tpl="${t.id}" title="Spawn">⚡</button>
+          <button class="btn btn-ghost btn-xs" data-edit-tpl="${t.id}">✏️</button>
+          <button class="btn btn-ghost btn-xs" data-del-tpl="${t.id}" style="color:var(--accent-red)">🗑</button>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--text-muted)">${t.description || ''}</div>
+      <div style="font-size:0.7rem;margin-top:2px">HP: ${t.max_hp} | KD: ${t.armor_class} | STR:${t.strength} DEX:${t.dexterity} CON:${t.constitution}</div>
+    </div>
+  `).join('') : '<span class="text-muted" style="font-size:0.8rem">No NPC templates.</span>';
+
+  // Events
+  eList.innerHTML = npcEvents.length ? npcEvents.map(e => {
+    const entries = e.npc_template_ids || [];
+    const summary = entries.map(en => {
+      const tpl = npcTemplates.find(t => t.id === en.template_id);
+      return `${tpl ? tpl.name : '?'} x${en.count}`;
+    }).join(', ');
+    return `
+    <div style="padding:8px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface-2)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;font-size:0.85rem">${e.name}</span>
+        <div style="display:flex;gap:3px">
+          <button class="btn btn-primary btn-xs" data-trigger-event="${e.id}" title="Trigger">⚡ Trigger</button>
+          <button class="btn btn-ghost btn-xs" data-edit-event="${e.id}">✏️</button>
+          <button class="btn btn-ghost btn-xs" data-del-event="${e.id}" style="color:var(--accent-red)">🗑</button>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--text-muted)">${e.description || ''}</div>
+      <div style="font-size:0.65rem;margin-top:2px">${summary || 'No NPCs configured'}</div>
+    </div>`;
+  }).join('') : '<span class="text-muted" style="font-size:0.8rem">No event templates.</span>';
+
+  // Wire folder actions
+  tree.querySelectorAll('[data-edit-folder]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fId = parseInt(btn.dataset.editFolder);
+      const flatFolders = flattenFolders(npcFolders);
+      const fo = flatFolders.find(x => x.id === fId);
+      if (fo) openFolderModal(fo);
+    });
+  });
+  tree.querySelectorAll('[data-del-folder]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this folder?')) return;
+      await api.del(`/api/npc-library/folders/${btn.dataset.delFolder}`);
+      loadNpcLibrary();
+    });
+  });
+
+  // Wire template actions
+  tList.querySelectorAll('[data-spawn-tpl]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const count = parseInt(prompt('How many to spawn?', '1')) || 1;
+      const res = await api.post(`/api/npc-library/templates/${btn.dataset.spawnTpl}/spawn`, { session_id: SESSION_ID, count });
+      showToast(`Spawned ${res.spawned.length} NPC(s)`);
+      refreshChars();
+    });
+  });
+  tList.querySelectorAll('[data-edit-tpl]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = npcTemplates.find(x => x.id === parseInt(btn.dataset.editTpl));
+      if (t) openNpcTemplateModal(t);
+    });
+  });
+  tList.querySelectorAll('[data-del-tpl]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this template?')) return;
+      await api.del(`/api/npc-library/templates/${btn.dataset.delTpl}`);
+      loadNpcLibrary();
+    });
+  });
+
+  // Wire event actions
+  eList.querySelectorAll('[data-trigger-event]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Trigger this event? NPCs will be spawned.')) return;
+      const res = await api.post(`/api/npc-library/events/${btn.dataset.triggerEvent}/trigger`);
+      showToast(`Event "${res.event_name}" triggered — ${res.spawned.length} NPC(s) spawned`);
+      refreshChars();
+    });
+  });
+  eList.querySelectorAll('[data-edit-event]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const e = npcEvents.find(x => x.id === parseInt(btn.dataset.editEvent));
+      if (e) openEventModal(e);
+    });
+  });
+  eList.querySelectorAll('[data-del-event]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this event?')) return;
+      await api.del(`/api/npc-library/events/${btn.dataset.delEvent}`);
+      loadNpcLibrary();
+    });
+  });
+}
+
+function flattenFolders(folders) {
+  let result = [];
+  for (const f of folders) {
+    result.push(f);
+    if (f.children) result = result.concat(flattenFolders(f.children));
+  }
+  return result;
+}
+
+// ── Folder Modal ──
+function openFolderModal(existing) {
+  const isEdit = !!existing;
+  const data = existing || { name: '', color: '#888888', parent_folder_id: null };
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:380px">
+      <div class="modal-header"><h3>${isEdit ? 'Edit' : 'Create'} Folder</h3><button class="modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Name</label><input type="text" id="nf-name" value="${data.name}"></div>
+        <div class="form-group"><label>Color</label><input type="color" id="nf-color" value="${data.color}"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="nf-cancel">Cancel</button>
+        <button class="btn btn-primary" id="nf-save">${isEdit ? 'Save' : 'Create'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#nf-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#nf-save').addEventListener('click', async () => {
+    const body = {
+      session_id: SESSION_ID,
+      name: overlay.querySelector('#nf-name').value.trim(),
+      color: overlay.querySelector('#nf-color').value,
+      parent_folder_id: data.parent_folder_id,
+    };
+    if (!body.name) return;
+    if (isEdit) await api.put(`/api/npc-library/folders/${existing.id}`, body);
+    else await api.post('/api/npc-library/folders', body);
+    overlay.remove();
+    loadNpcLibrary();
+  });
+}
+
+// ── NPC Template Modal ──
+function openNpcTemplateModal(existing) {
+  const isEdit = !!existing;
+  const d = existing || {
+    name: '', description: '', is_merchant: false, max_hp: 20, armor_class: 10,
+    strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10,
+    initiative_bonus: 0, token_color: '#e05252', default_equipment: [], shop_items: [], notes: '',
+    folder_id: null,
+  };
+  const flatFolders = flattenFolders(npcFolders);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;max-height:85vh;overflow-y:auto">
+      <div class="modal-header"><h3>${isEdit ? 'Edit' : 'Create'} NPC Template</h3><button class="modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><label>Name</label><input type="text" id="nt-name" value="${d.name}"></div>
+          <div class="form-group" style="width:60px"><label>Color</label><input type="color" id="nt-color" value="${d.token_color}" style="width:100%"></div>
+        </div>
+        <div class="form-group"><label>Description</label><textarea id="nt-desc" rows="2" style="width:100%">${d.description}</textarea></div>
+        <div class="form-group">
+          <label>Folder</label>
+          <select id="nt-folder">
+            <option value="">None</option>
+            ${flatFolders.map(f => `<option value="${f.id}"${d.folder_id === f.id ? ' selected' : ''}>${f.name}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div class="form-group" style="width:70px"><label>HP</label><input type="number" id="nt-hp" value="${d.max_hp}"></div>
+          <div class="form-group" style="width:70px"><label>KD</label><input type="number" id="nt-ac" value="${d.armor_class}"></div>
+          <div class="form-group" style="width:70px"><label>Init</label><input type="number" id="nt-init" value="${d.initiative_bonus}"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div class="form-group" style="width:55px"><label>STR</label><input type="number" id="nt-str" value="${d.strength}"></div>
+          <div class="form-group" style="width:55px"><label>DEX</label><input type="number" id="nt-dex" value="${d.dexterity}"></div>
+          <div class="form-group" style="width:55px"><label>CON</label><input type="number" id="nt-con" value="${d.constitution}"></div>
+          <div class="form-group" style="width:55px"><label>INT</label><input type="number" id="nt-int" value="${d.intelligence}"></div>
+          <div class="form-group" style="width:55px"><label>WIS</label><input type="number" id="nt-wis" value="${d.wisdom}"></div>
+          <div class="form-group" style="width:55px"><label>CHA</label><input type="number" id="nt-cha" value="${d.charisma}"></div>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px">
+          <label class="toggle-switch"><input type="checkbox" id="nt-merchant" ${d.is_merchant ? 'checked' : ''}><span class="slider"></span></label>
+          <span style="font-size:0.8rem">Merchant NPC</span>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="nt-notes" rows="2" style="width:100%">${d.notes}</textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="nt-cancel">Cancel</button>
+        <button class="btn btn-primary" id="nt-save">${isEdit ? 'Save' : 'Create'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#nt-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#nt-save').addEventListener('click', async () => {
+    const body = {
+      session_id: SESSION_ID,
+      name: overlay.querySelector('#nt-name').value.trim(),
+      description: overlay.querySelector('#nt-desc').value.trim(),
+      folder_id: overlay.querySelector('#nt-folder').value ? parseInt(overlay.querySelector('#nt-folder').value) : null,
+      max_hp: parseInt(overlay.querySelector('#nt-hp').value) || 20,
+      armor_class: parseInt(overlay.querySelector('#nt-ac').value) || 10,
+      initiative_bonus: parseInt(overlay.querySelector('#nt-init').value) || 0,
+      strength: parseInt(overlay.querySelector('#nt-str').value) || 10,
+      dexterity: parseInt(overlay.querySelector('#nt-dex').value) || 10,
+      constitution: parseInt(overlay.querySelector('#nt-con').value) || 10,
+      intelligence: parseInt(overlay.querySelector('#nt-int').value) || 10,
+      wisdom: parseInt(overlay.querySelector('#nt-wis').value) || 10,
+      charisma: parseInt(overlay.querySelector('#nt-cha').value) || 10,
+      token_color: overlay.querySelector('#nt-color').value,
+      is_merchant: overlay.querySelector('#nt-merchant').checked,
+      notes: overlay.querySelector('#nt-notes').value.trim(),
+      default_equipment: d.default_equipment || [],
+      shop_items: d.shop_items || [],
+    };
+    if (!body.name) return;
+    if (isEdit) await api.put(`/api/npc-library/templates/${existing.id}`, body);
+    else await api.post('/api/npc-library/templates', body);
+    overlay.remove();
+    loadNpcLibrary();
+  });
+}
+
+// ── Event Modal ──
+function openEventModal(existing) {
+  const isEdit = !!existing;
+  const d = existing || { name: '', description: '', npc_template_ids: [], folder_id: null };
+  let entries = [...(d.npc_template_ids || [])];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header"><h3>${isEdit ? 'Edit' : 'Create'} Event</h3><button class="modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Name</label><input type="text" id="ev-name" value="${d.name}"></div>
+        <div class="form-group"><label>Description</label><textarea id="ev-desc" rows="2" style="width:100%">${d.description}</textarea></div>
+        <div class="form-group">
+          <label>NPCs to spawn</label>
+          <div id="ev-npc-list"></div>
+          <button class="btn btn-ghost btn-xs" id="ev-add-npc" style="margin-top:4px">+ Add NPC</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="ev-cancel">Cancel</button>
+        <button class="btn btn-primary" id="ev-save">${isEdit ? 'Save' : 'Create'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function renderEntries() {
+    const cont = overlay.querySelector('#ev-npc-list');
+    cont.innerHTML = entries.map((en, i) => `
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
+        <select data-eni="${i}" data-field="template_id" style="flex:1;font-size:0.75rem">
+          ${npcTemplates.map(t => `<option value="${t.id}"${en.template_id === t.id ? ' selected' : ''}>${t.name}</option>`).join('')}
+        </select>
+        <span style="font-size:0.75rem">x</span>
+        <input type="number" data-eni="${i}" data-field="count" value="${en.count || 1}" style="width:50px;font-size:0.75rem" min="1">
+        <button class="btn btn-ghost btn-xs" data-remove-entry="${i}" style="color:var(--accent-red)">✕</button>
+      </div>
+    `).join('');
+    cont.querySelectorAll('[data-eni]').forEach(el => {
+      el.addEventListener('change', () => {
+        const i = parseInt(el.dataset.eni);
+        const f = el.dataset.field;
+        entries[i][f] = f === 'count' ? parseInt(el.value) || 1 : parseInt(el.value);
+      });
+    });
+    cont.querySelectorAll('[data-remove-entry]').forEach(btn => {
+      btn.addEventListener('click', () => { entries.splice(parseInt(btn.dataset.removeEntry), 1); renderEntries(); });
+    });
+  }
+  renderEntries();
+
+  overlay.querySelector('#ev-add-npc').addEventListener('click', () => {
+    entries.push({ template_id: npcTemplates[0]?.id || 0, count: 1 });
+    renderEntries();
+  });
+  overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#ev-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#ev-save').addEventListener('click', async () => {
+    const body = {
+      session_id: SESSION_ID,
+      name: overlay.querySelector('#ev-name').value.trim(),
+      description: overlay.querySelector('#ev-desc').value.trim(),
+      npc_template_ids: entries,
+      folder_id: d.folder_id,
+    };
+    if (!body.name) return;
+    if (isEdit) await api.put(`/api/npc-library/events/${existing.id}`, body);
+    else await api.post('/api/npc-library/events', body);
+    overlay.remove();
+    loadNpcLibrary();
+  });
+}
+
+// Wire create buttons
+document.querySelector('#btn-npc-create-folder')?.addEventListener('click', () => openFolderModal(null));
+document.querySelector('#btn-npc-create-template')?.addEventListener('click', () => openNpcTemplateModal(null));
+document.querySelector('#btn-npc-create-event')?.addEventListener('click', () => openEventModal(null));
+
+// Wire seed, create buttons
+document.querySelector('#btn-seed-rc')?.addEventListener('click', async () => {
+  await api.post('/api/races-classes/seed');
+  loadRacesClasses();
+  showToast('Default races & classes seeded');
+});
+document.querySelector('#btn-create-race')?.addEventListener('click', () => openRCEditorModal('race', null));
+document.querySelector('#btn-create-class')?.addEventListener('click', () => openRCEditorModal('class', null));
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 refreshChars();
@@ -2105,4 +3134,6 @@ loadInitiativeOrder();
 loadAIHistory();
 loadCategories().then(() => loadItems());
 loadCombatPanel();
+loadRacesClasses();
+loadNpcLibrary();
 ws.connect();

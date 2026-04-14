@@ -1,6 +1,8 @@
 """Character CRUD and stat management — session-aware version."""
+import random
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,9 +49,13 @@ def _serialize_char(c: Character) -> dict:
              "value": e.value, "is_active": e.is_active}
             for e in c.effects
         ],
+        "race_id": c.race_id,
+        "class_id": c.class_id,
+        "level": c.level,
+        "experience": c.experience,
         "stat_modifiers": [
             {"id": m.id, "stat_name": m.stat_name, "name": m.name,
-             "value": m.value, "is_active": m.is_active}
+             "value": m.value, "is_active": m.is_active, "source": m.source}
             for m in c.stat_modifiers
         ],
         "attack_modifiers": [
@@ -79,6 +85,7 @@ async def get_character(char_id: int, db: AsyncSession = Depends(get_session)):
 
 # ── Update character ─────────────────────────────────────────
 @router.put("/characters/{char_id}")
+@router.patch("/characters/{char_id}")
 async def update_character(char_id: int, body: CharacterUpdate, db: AsyncSession = Depends(get_session)):
     c = await db.get(Character, char_id)
     if not c:
@@ -285,3 +292,61 @@ async def reset_turns(char_id: int, db: AsyncSession = Depends(get_session)):
     await db.commit()
     await db.refresh(c)
     return _serialize_char(c)
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 7 — DICE ROLLING BY CHARACTERISTIC
+# ══════════════════════════════════════════════════════════════
+class CharacteristicRollBody(BaseModel):
+    stat: str  # strength, dexterity, etc.
+    roll_type: str = "ability_check"  # ability_check, saving_throw, skill_check
+    skill_name: str | None = None
+
+
+STAT_MAP = {
+    "strength": "strength", "dexterity": "dexterity",
+    "constitution": "constitution", "intelligence": "intelligence",
+    "wisdom": "wisdom", "charisma": "charisma",
+}
+
+
+def _stat_modifier(val: int) -> int:
+    return (val - 10) // 2
+
+
+@router.post("/characters/{char_id}/roll-characteristic")
+async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: AsyncSession = Depends(get_session)):
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+
+    stat_key = STAT_MAP.get(body.stat.lower())
+    if not stat_key:
+        raise HTTPException(400, f"Invalid stat: {body.stat}")
+
+    base_val = getattr(c, stat_key, 10)
+    # Add active stat modifiers
+    stat_mods = [m for m in c.stat_modifiers if m.stat_name == stat_key and m.is_active]
+    total_stat = base_val + sum(m.value for m in stat_mods)
+    mod = _stat_modifier(total_stat)
+
+    d20 = random.randint(1, 20)
+    total = d20 + mod
+
+    roll_label = body.roll_type.replace("_", " ").title()
+    stat_label = stat_key.capitalize()
+    skill_part = f" ({body.skill_name})" if body.skill_name else ""
+    description = f"{c.name} rolled {stat_label} {roll_label}{skill_part}: D20({d20}) + {stat_label} mod({mod:+d}) = {total}"
+
+    return {
+        "character_id": c.id,
+        "character_name": c.name,
+        "stat": stat_key,
+        "stat_value": total_stat,
+        "modifier": mod,
+        "d20": d20,
+        "total": total,
+        "roll_type": body.roll_type,
+        "skill_name": body.skill_name,
+        "description": description,
+    }

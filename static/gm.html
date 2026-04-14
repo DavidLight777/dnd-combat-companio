@@ -53,6 +53,8 @@
         <button class="gm-tab" data-tab="map">Map</button>
         <button class="gm-tab" data-tab="actions">Quick Actions</button>
         <button class="gm-tab" data-tab="log">Event Log</button>
+        <button class="gm-tab" data-tab="races-classes">Races & Classes</button>
+        <button class="gm-tab" data-tab="npc-library">NPC Library</button>
       </div>
 
       <!-- TAB: Character Detail -->
@@ -273,6 +275,69 @@
           <div class="detail-header"><h2>📜 Event Log</h2></div>
           <div class="detail-body">
             <div class="event-log" id="event-log"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: NPC Library (Stage 7) -->
+      <div class="tab-content" id="tab-npc-library" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📚 NPC Library</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-xs" id="btn-npc-create-folder">+ Folder</button>
+              <button class="btn btn-primary btn-xs" id="btn-npc-create-template">+ NPC Template</button>
+              <button class="btn btn-secondary btn-xs" id="btn-npc-create-event">+ Event</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <!-- Folders + Templates -->
+              <div style="flex:2;min-width:320px">
+                <h3 style="font-size:0.85rem;margin-bottom:8px">Folders & Templates</h3>
+                <div id="npc-folder-tree"></div>
+                <hr style="border-color:var(--border);margin:12px 0">
+                <h3 style="font-size:0.85rem;margin-bottom:8px">All Templates</h3>
+                <div id="npc-template-list"></div>
+              </div>
+              <!-- Event Templates -->
+              <div style="flex:1;min-width:240px">
+                <h3 style="font-size:0.85rem;margin-bottom:8px">Event Templates</h3>
+                <div id="npc-event-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Races & Classes (Stage 6) -->
+      <div class="tab-content" id="tab-races-classes" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>🧬 Races & Classes</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-xs" id="btn-seed-rc">Seed Defaults</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <!-- Races column -->
+              <div style="flex:1;min-width:280px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <h3 style="font-size:0.85rem;flex:1">Races</h3>
+                  <button class="btn btn-primary btn-xs" id="btn-create-race">+ Create Race</button>
+                </div>
+                <div id="rc-races-list"></div>
+              </div>
+              <!-- Classes column -->
+              <div style="flex:1;min-width:280px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <h3 style="font-size:0.85rem;flex:1">Classes</h3>
+                  <button class="btn btn-primary btn-xs" id="btn-create-class">+ Create Class</button>
+                </div>
+                <div id="rc-classes-list"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

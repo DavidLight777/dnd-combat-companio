@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, Character, CombatLog, InventoryItem, Item
+from app.models import Session, Character, CombatLog, InventoryItem, Item, Race, CharacterClass, StatModifier
 from app.schemas import SessionCreate, SessionJoin, SessionCreated, SessionJoined, SessionOut
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -73,8 +73,49 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
         name=body.player_name,
         current_hp=20,
         max_hp=20,
+        race_id=body.race_id,
+        class_id=body.class_id,
     )
     db.add(character)
+    await db.flush()
+
+    # Apply race & class bonuses as locked stat modifiers
+    hp_bonus = 0
+    initiative_bonus = 0
+    for source_type, source_id in [("race", body.race_id), ("class", body.class_id)]:
+        if not source_id:
+            continue
+        if source_type == "race":
+            obj = await db.get(Race, source_id)
+        else:
+            obj = await db.get(CharacterClass, source_id)
+        if not obj:
+            continue
+        bonuses = json.loads(obj.bonuses) if obj.bonuses else []
+        for b in bonuses:
+            btype = b.get("type", "")
+            if btype == "stat_bonus":
+                stat = b.get("stat", "")
+                val = int(b.get("value", 0))
+                if stat and val:
+                    db.add(StatModifier(
+                        character_id=character.id,
+                        stat_name=stat,
+                        name=f"{obj.name} ({source_type})",
+                        value=val,
+                        source=source_type,
+                    ))
+            elif btype == "hp_bonus":
+                hp_bonus += int(b.get("value", 0))
+            elif btype == "initiative_bonus":
+                initiative_bonus += int(b.get("value", 0))
+
+    if hp_bonus:
+        character.max_hp += hp_bonus
+        character.current_hp += hp_bonus
+    if initiative_bonus:
+        character.initiative_bonus += initiative_bonus
+
     await db.commit()
     await db.refresh(character)
 

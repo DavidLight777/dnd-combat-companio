@@ -59,13 +59,20 @@ class ConnectionManager:
             "data": data,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
-        for conn in self._connections.get(session_code, []):
+        conns = self._connections.get(session_code, [])
+        dead = []
+        sent = False
+        for conn in conns:
             if conn["token"] == token:
                 try:
                     await conn["ws"].send_text(message)
+                    sent = True
                 except Exception as e:
                     logger.warning(f"WS send_to_token failed: {e}")
-                return
+                    dead.append(conn)
+        for d in dead:
+            conns.remove(d)
+        return sent
 
     async def send_to_gm(self, session_code: str, event: str, data: dict):
         message = json.dumps({

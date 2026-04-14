@@ -72,6 +72,11 @@ class Character(Base):
     gold_copper: Mapped[int] = mapped_column(Integer, default=0)  # total wealth in copper
     can_edit_own_items: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    race_id: Mapped[int | None] = mapped_column(ForeignKey("races.id", ondelete="SET NULL"), nullable=True)
+    class_id: Mapped[int | None] = mapped_column(ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
+    level: Mapped[int] = mapped_column(Integer, default=1)
+    experience: Mapped[int] = mapped_column(Integer, default=0)
+
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -123,6 +128,8 @@ class StatModifier(Base):
     name: Mapped[str] = mapped_column(Text, default="Modifier")
     value: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, race, class
 
     character: Mapped["Character"] = relationship(back_populates="stat_modifiers")
 
@@ -440,6 +447,95 @@ class CombatParticipant(Base):
 
     combat_event: Mapped["CombatEvent"] = relationship(back_populates="participants")
     character: Mapped["Character"] = relationship(lazy="selectin")
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 6 — RACES & CLASSES
+# ══════════════════════════════════════════════════════════════
+class Race(Base):
+    __tablename__ = "races"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    bonuses: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of bonus objects
+    special_abilities: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CharacterClass(Base):
+    __tablename__ = "classes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    bonuses: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of bonus objects
+    special_abilities: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
+    hit_die: Mapped[int] = mapped_column(Integer, default=8)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 7 — NPC LIBRARY & EVENT TEMPLATES
+# ══════════════════════════════════════════════════════════════
+class NpcFolder(Base):
+    __tablename__ = "npc_folders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    color: Mapped[str] = mapped_column(Text, default="#888888")
+    parent_folder_id: Mapped[int | None] = mapped_column(ForeignKey("npc_folders.id", ondelete="SET NULL"), nullable=True)
+
+    children: Mapped[list["NpcFolder"]] = relationship(
+        "NpcFolder", back_populates="parent",
+        cascade="all, delete-orphan", lazy="noload",
+    )
+    parent: Mapped["NpcFolder | None"] = relationship(
+        "NpcFolder", back_populates="children", remote_side="NpcFolder.id", lazy="noload",
+    )
+    templates: Mapped[list["NpcTemplate"]] = relationship(
+        back_populates="folder", lazy="noload",
+    )
+
+
+class NpcTemplate(Base):
+    __tablename__ = "npc_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    folder_id: Mapped[int | None] = mapped_column(ForeignKey("npc_folders.id", ondelete="SET NULL"), nullable=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_merchant: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_hp: Mapped[int] = mapped_column(Integer, default=20)
+    armor_class: Mapped[int] = mapped_column(Integer, default=10)
+    strength: Mapped[int] = mapped_column(Integer, default=10)
+    dexterity: Mapped[int] = mapped_column(Integer, default=10)
+    constitution: Mapped[int] = mapped_column(Integer, default=10)
+    intelligence: Mapped[int] = mapped_column(Integer, default=10)
+    wisdom: Mapped[int] = mapped_column(Integer, default=10)
+    charisma: Mapped[int] = mapped_column(Integer, default=10)
+    initiative_bonus: Mapped[int] = mapped_column(Integer, default=0)
+    token_color: Mapped[str] = mapped_column(Text, default="#e05252")
+    default_equipment: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
+    shop_items: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of {item_id, stock, price_override}
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    folder: Mapped["NpcFolder | None"] = relationship(back_populates="templates")
+
+
+class EventTemplate(Base):
+    __tablename__ = "event_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    npc_template_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [{template_id, count}]
+    folder_id: Mapped[int | None] = mapped_column(ForeignKey("npc_folders.id", ondelete="SET NULL"), nullable=True)
 
 
 # ══════════════════════════════════════════════════════════════

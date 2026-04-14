@@ -44,21 +44,25 @@ All messages are JSON:
 | `status_effect.removed` | Server→All | Status effect removed from character | `{character_id, effect_name}` |
 | `status_effect.expired` | Server→All | Status effect expired (duration ended) | `{character_id, effect_name}` |
 
-## Events — Stage 5+ (planned)
+## Events — Stage 5 (Combat & Initiative)
+
+| Event | Direction | Description | Payload |
+|---|---|---|---|
+| `combat.created` | Server→All | New combat event created | `{combat_id, name}` |
+| `combat.roll_initiative_request` | GM→Players | GM requests initiative rolls from players | `{combat_id, character_id, initiative_bonus}` |
+| `combat.initiative_submitted` | Player→GM | Player submitted initiative roll | `{combat_id, character_id, roll, final}` |
+| `combat.started` | Server→All | Combat started, initiative locked | `{combat_id}` |
+| `combat.turn_changed` | Server→All | Turn advanced to next participant | `{combat_id, current_character_id, current_character_name, round_number}` |
+| `combat.timer_started` | GM→Player | Turn timer started for player | `{duration_seconds, combat_id}` |
+| `combat.ended` | Server→All | Combat ended | `{combat_id}` |
+
+## Events — Future (planned)
 
 | Event | Direction | Description |
 |---|---|---|
 | `character.hp_update` | Server→All | HP changed for character |
 | `character.stats_update` | Server→All | Stats changed |
 | `combat.damage_result` | Server→All | Damage calculation result |
-| `combat.heal_result` | Server→All | Heal result |
-| `initiative.order_set` | Server→All | Full initiative order |
-| `initiative.turn_advance` | Server→All | Whose turn it is |
 | `map.token_move` | Server→All | Token moved |
 | `map.fog_update` | Server→All | Fog of war updated |
 | `map.image_loaded` | Server→All | New map uploaded |
-| `shop.updated` | Server→All | Shop changed |
-| `log.new_entry` | Server→All/GM | New log entry |
-| `ai.response` | Server→GM | AI response |
-| `gm.force_roll` | Server→Target | GM requests roll |
-| `character.status_effect` | Server→All | Status effect changed |
