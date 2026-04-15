@@ -30,6 +30,8 @@ from app.routers.announcements import router as announcements_router
 from app.routers.notes import router as notes_router
 from app.routers.session_timer import router as session_timer_router
 from app.routers.combat_actions import router as combat_actions_router
+from app.routers.abilities import router as abilities_router
+from app.routers.memory import router as memory_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -76,6 +78,8 @@ app.include_router(announcements_router)
 app.include_router(notes_router)
 app.include_router(session_timer_router)
 app.include_router(combat_actions_router)
+app.include_router(abilities_router)
+app.include_router(memory_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

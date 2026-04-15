@@ -357,3 +357,22 @@
   font-weight: 600;
   color: var(--accent);
 }
+
+/* Ability icon picker */
+.ab-icon-pick.active {
+  background: var(--accent) !important;
+  color: #fff;
+  border-radius: var(--r-sm);
+}
+
+/* Phase 7: NPC Tab Bar */
+.npc-tab {
+  padding: 6px 12px; font-size: 0.75rem; font-weight: 600;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-muted); cursor: pointer; white-space: nowrap;
+  transition: all var(--t-fast);
+}
+.npc-tab:hover { color: var(--text); }
+.npc-tab.active {
+  color: var(--accent); border-bottom-color: var(--accent);
+}

@@ -738,6 +738,7 @@ async function loadInventory() {
     updateCurrencyDisplay(inventoryData.currency);
     renderEquipmentSlots(inventoryData.items);
     renderInventoryGrid(inventoryData.items);
+    renderActionMenu();
   } catch(e) { console.warn('loadInventory:', e); }
 }
 
@@ -828,7 +829,7 @@ function renderInventoryGrid(items) {
       <div class="inv-desc">${i.description || ''}</div>
       <div class="inv-actions">
         ${i.equippable ? `<button class="btn btn-ghost btn-xs" data-inv-equip="${i.inventory_id}" data-is-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
-        ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use="${i.inventory_id}">Use</button>` : ''}
+        ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use="${i.inventory_id}">${i.mana_cost ? '🔮'+i.mana_cost+' ' : ''}Use</button>` : ''}
         <button class="btn btn-ghost btn-xs" data-inv-drop="${i.inventory_id}" style="color:var(--accent-red)">Drop</button>
       </div>
     </div>`;
@@ -859,10 +860,24 @@ function renderInventoryGrid(items) {
   // Use consumable
   grid.querySelectorAll('[data-inv-use]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const res = await api.post(`/api/inventory/${btn.dataset.invUse}/use`, {});
-      if (res.result) addLog(res.result);
-      await loadChar();
-      loadInventory();
+      const invId = btn.dataset.invUse;
+      const card = btn.closest('.inv-card');
+      const itemName = card?.querySelector('.inv-name')?.textContent || 'item';
+      if (!confirm(`Use ${itemName}?`)) return;
+      try {
+        const res = await api.post(`/api/inventory/${invId}/use`, {});
+        if (res.results && res.results.length) {
+          res.results.forEach(r => addLog(`🧪 ${itemName}: ${r}`));
+        } else if (res.result) {
+          addLog(res.result);
+        }
+        await loadChar();
+        loadInventory();
+      } catch (e) {
+        const detail = e?.body?.detail || e?.message || 'Failed';
+        if (typeof detail === 'object' && detail.message) showToast(detail.message, 'error');
+        else showToast(String(detail), 'error');
+      }
     });
   });
 
@@ -1995,6 +2010,432 @@ ws.on('session.timer_paused', d => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// PHASE 6 — TAB SWITCHING
+// ══════════════════════════════════════════════════════════════
+$$('.player-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.player-tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $$('.player-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.getElementById(btn.dataset.tab);
+    if (tab) tab.classList.add('active');
+    // Lazy-load tabs
+    if (btn.dataset.tab === 'tab-abilities') loadAbilities();
+    if (btn.dataset.tab === 'tab-memory') loadMemory();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// PHASE 6 — TABLE VIEW (participants at the table)
+// ══════════════════════════════════════════════════════════════
+let selectedTargetId = null;
+let tableParticipants = [];
+
+async function loadTableView() {
+  try {
+    const chars = await api.get(`/api/sessions/${SESSION_CODE}/characters`);
+    tableParticipants = chars.filter(c =>
+      (c.id !== CHAR_ID && !c.is_npc) || (c.is_npc && c.place_at_table)
+    );
+    renderTableView();
+  } catch (e) { console.warn('loadTableView:', e); }
+}
+
+function renderTableView() {
+  const grid = $('#table-view-grid');
+  if (!grid) return;
+  if (!tableParticipants.length) {
+    grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No participants at table</span>';
+    return;
+  }
+  grid.innerHTML = tableParticipants.map(c => {
+    const sel = c.id === selectedTargetId ? 'selected' : '';
+    const hpPct = c.max_hp > 0 ? Math.round(c.current_hp / c.max_hp * 100) : 0;
+    const hpColor = hpPct > 60 ? 'var(--hp-high)' : hpPct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
+    let roleIcon = '';
+    if (c.is_npc) {
+      roleIcon = c.is_gm_controlled ? '⚔️' : '👤';
+    }
+    const showHp = !c.is_npc || c.show_hp_to_players;
+    return `<div class="table-card ${sel}" data-target-id="${c.id}">
+      <div class="tc-name">${roleIcon} ${c.name}</div>
+      ${c.is_npc ? `<div class="tc-role">${c.is_gm_controlled ? 'Enemy' : 'NPC'}</div>` : ''}
+      ${showHp ? `<div class="tc-hp-bar"><div class="tc-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>` : ''}
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.table-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const tid = parseInt(card.dataset.targetId);
+      selectedTargetId = tid === selectedTargetId ? null : tid;
+      renderTableView();
+      updateTargetInfo();
+    });
+  });
+}
+
+function updateTargetInfo() {
+  const info = $('#selected-target-info');
+  if (!info) return;
+  if (selectedTargetId) {
+    const t = tableParticipants.find(c => c.id === selectedTargetId);
+    info.style.display = 'block';
+    $('#selected-target-name').textContent = t ? t.name : `#${selectedTargetId}`;
+  } else {
+    info.style.display = 'none';
+  }
+}
+
+if ($('#btn-clear-target')) {
+  $('#btn-clear-target').addEventListener('click', () => {
+    selectedTargetId = null;
+    renderTableView();
+    updateTargetInfo();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// PHASE 6 — ACTION MENU
+// ══════════════════════════════════════════════════════════════
+function renderActionMenu() {
+  const body = $('#action-menu-body');
+  if (!body || !char) return;
+  let html = '';
+
+  // Attack button (if weapon equipped)
+  const wpn = inventoryData?.items?.find(i => i.is_equipped && i.equipped_slot === 'main_hand' && i.weapon_stats);
+  if (wpn) {
+    const ws = wpn.weapon_stats;
+    html += `<div class="action-card" id="action-attack">
+      <div class="ac-icon">⚔️</div>Attack
+      <div class="ac-sub">${wpn.name} · ${ws.dice_count}d${ws.dice_type}</div>
+    </div>`;
+  }
+
+  // Drink Potion (if any potion in inventory)
+  const potions = inventoryData?.items?.filter(i => i.consumable && i.category === 'potion') || [];
+  if (potions.length) {
+    html += `<div class="action-card" id="action-potion">
+      <div class="ac-icon">🧪</div>Drink Potion
+      <div class="ac-sub">${potions.length} available</div>
+    </div>`;
+  }
+
+  // Use Item (consumable with use_effect, not potions)
+  const usables = inventoryData?.items?.filter(i => i.consumable && i.category !== 'potion') || [];
+  if (usables.length) {
+    html += `<div class="action-card" id="action-use-item">
+      <div class="ac-icon">🎁</div>Use Item
+      <div class="ac-sub">${usables.length} available</div>
+    </div>`;
+  }
+
+  if (!html) html = '<span class="text-muted" style="font-size:0.8rem">No actions available — equip a weapon or get items</span>';
+  body.innerHTML = html;
+
+  // Wire attack
+  const atkBtn = body.querySelector('#action-attack');
+  if (atkBtn) {
+    atkBtn.addEventListener('click', () => executeAttackAction(wpn));
+  }
+
+  // Wire potion
+  const potBtn = body.querySelector('#action-potion');
+  if (potBtn) {
+    potBtn.addEventListener('click', () => showPotionPicker(potions));
+  }
+
+  // Wire use item
+  const itemBtn = body.querySelector('#action-use-item');
+  if (itemBtn) {
+    itemBtn.addEventListener('click', () => showPotionPicker(usables));
+  }
+}
+
+async function executeAttackAction(wpn) {
+  if (!selectedTargetId) {
+    showToast('Select a target first!', 'warn');
+    return;
+  }
+  const advMode = _advantageModes['attack'] || 'normal';
+  if (!confirm(`Attack ${tableParticipants.find(c=>c.id===selectedTargetId)?.name || 'target'} with ${wpn.name}? (${advMode})`)) return;
+  try {
+    const res = await api.post('/api/combat/execute-attack', {
+      attacker_id: CHAR_ID,
+      target_id: selectedTargetId,
+      advantage: advMode,
+    });
+    addLog(`⚔️ ${res.hit_breakdown}`);
+    if (res.hit) {
+      addLog(`💥 ${res.damage_breakdown}`);
+      addLog(`🛡️ ${res.intake_breakdown}`);
+      if (res.target_downed) addLog(`💀 ${res.target_name} is DOWN!`);
+    }
+    await loadChar();
+    loadTableView();
+  } catch (e) {
+    showToast(e?.body?.detail || 'Attack failed', 'error');
+  }
+}
+
+function showPotionPicker(items) {
+  const names = items.map((it, i) => `${i + 1}. ${it.name} (x${it.quantity})${it.mana_cost ? ' 🔮' + it.mana_cost : ''}`).join('\n');
+  const choice = prompt(`Choose item:\n${names}\nEnter number:`);
+  if (!choice) return;
+  const idx = parseInt(choice) - 1;
+  const item = items[idx];
+  if (!item) return;
+  if (!confirm(`Use ${item.name}?`)) return;
+  api.post(`/api/inventory/${item.inventory_id}/use`, {}).then(res => {
+    if (res.results && res.results.length) {
+      res.results.forEach(r => addLog(`🧪 ${item.name}: ${r}`));
+    }
+    loadChar();
+    loadInventory();
+  }).catch(e => {
+    const d = e?.body?.detail;
+    showToast(typeof d === 'object' ? d.message : String(d || 'Failed'), 'error');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// PHASE 6 — ACTIVE BONUSES & PENALTIES PANEL
+// ══════════════════════════════════════════════════════════════
+async function renderBonusesPenalties() {
+  const bonusEl = $('#active-bonuses-list');
+  const penaltyEl = $('#active-penalties-list');
+  if (!bonusEl || !penaltyEl) return;
+
+  // Bonuses from equipped items + passive abilities
+  try {
+    const data = await api.get(`/api/characters/${CHAR_ID}/equipped-bonuses`);
+    const bonuses = data.bonuses || [];
+    // Also show passive ability bonuses
+    const passiveAbs = (abilitiesData || []).filter(a => a.ability_type === 'passive' && a.is_unlocked !== false);
+    for (const pa of passiveAbs) {
+      const pe = pa.passive_effect || {};
+      const pBonuses = pe.bonuses || [];
+      for (const pb of pBonuses) {
+        bonuses.push({ value: pb.value, bonus_type: pb.bonus_type, source: `${pa.icon||'🔵'} ${pa.name} (passive)` });
+      }
+    }
+    if (bonuses.length) {
+      bonusEl.innerHTML = bonuses.map(b =>
+        `<div style="margin-bottom:3px">+${b.value} ${b.bonus_type.replace(/_/g,' ')} <span style="color:var(--text-muted)">from ${b.source}</span></div>`
+      ).join('');
+    } else {
+      bonusEl.innerHTML = '<span class="text-muted">No active bonuses</span>';
+    }
+  } catch { bonusEl.innerHTML = '<span class="text-muted">No active bonuses</span>'; }
+
+  // Penalties from status effects
+  try {
+    const effects = await api.get(`/api/characters/${CHAR_ID}/status-effects`);
+    const entries = [];
+    for (const se of (effects || [])) {
+      const effs = typeof se.effects === 'string' ? JSON.parse(se.effects) : (se.effects || []);
+      for (const e of effs) {
+        if (e.value && e.value < 0 || e.type?.includes('penalty') || e.type === 'skip_turn') {
+          entries.push(`${se.icon || '⚠️'} ${se.name}: ${e.type.replace(/_/g,' ')} ${e.value || ''}`);
+        }
+      }
+    }
+    penaltyEl.innerHTML = entries.length ?
+      entries.map(e => `<div style="margin-bottom:3px">${e}</div>`).join('') :
+      '<span class="text-muted">No active penalties</span>';
+  } catch { penaltyEl.innerHTML = '<span class="text-muted">No active penalties</span>'; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// PHASE 6 — ABILITIES TAB
+// ══════════════════════════════════════════════════════════════
+let abilitiesData = [];
+
+async function loadAbilities() {
+  try {
+    abilitiesData = await api.get(`/api/characters/${CHAR_ID}/abilities`);
+    renderAbilities();
+  } catch (e) { console.warn('loadAbilities:', e); }
+}
+
+function renderAbilities() {
+  const grid = $('#abilities-grid');
+  if (!grid) return;
+
+  // Separate by type
+  const active = abilitiesData.filter(a => a.ability_type !== 'passive' && a.ability_type !== 'reaction');
+  const passive = abilitiesData.filter(a => a.ability_type === 'passive');
+  const reactions = abilitiesData.filter(a => a.ability_type === 'reaction');
+
+  if (!abilitiesData.length) {
+    grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No abilities learned yet</span>';
+    return;
+  }
+
+  function renderCard(a) {
+    const onCd = a.cooldown_remaining > 0;
+    const typeBadge = a.ability_type === 'passive' ? '🔵' : a.ability_type === 'reaction' ? '⚡' : '';
+    const costParts = [];
+    if (a.mana_cost) costParts.push(`🔮 ${a.mana_cost}`);
+    if (a.hp_cost) costParts.push(`❤️ ${a.hp_cost}`);
+    return `<div class="ability-card ${onCd ? 'on-cooldown' : ''} ${a.ability_type === 'passive' ? 'passive' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${a.color||'#60a5fa'}">
+      <div class="ab-name">${a.icon||'⚡'} ${a.name} ${typeBadge}</div>
+      ${costParts.length ? `<div class="ab-cost">${costParts.join(' · ')}</div>` : ''}
+      ${onCd ? `<div class="ab-cd">⏳ ${a.cooldown_remaining} turns</div>` : ''}
+      ${a.cooldown_turns && !onCd ? `<div class="ab-cd" style="opacity:0.5">CD: ${a.cooldown_turns}t</div>` : ''}
+      ${a.damage_dice_count ? `<div style="font-size:0.68rem;color:var(--text-muted)">${a.damage_dice_count}d${a.damage_dice_type} ${a.damage_type||''}</div>` : ''}
+      <div class="ab-desc">${a.flavor_text || a.description || ''}</div>
+    </div>`;
+  }
+
+  let html = '';
+  if (active.length) {
+    html += '<div style="font-weight:700;font-size:0.82rem;margin-bottom:4px">🟢 Active</div>';
+    html += active.map(renderCard).join('');
+  }
+  if (reactions.length) {
+    html += '<div style="font-weight:700;font-size:0.82rem;margin:8px 0 4px">⚡ Reactions</div>';
+    html += reactions.map(renderCard).join('');
+  }
+  if (passive.length) {
+    html += '<div style="font-weight:700;font-size:0.82rem;margin:8px 0 4px">🔵 Passive</div>';
+    html += passive.map(renderCard).join('');
+  }
+  grid.innerHTML = html;
+
+  // Wire active + reaction click-to-use (not passive)
+  grid.querySelectorAll('.ability-card:not(.on-cooldown):not(.passive)').forEach(card => {
+    card.addEventListener('click', async () => {
+      const caId = card.dataset.caId;
+      const ab = abilitiesData.find(a => a.character_ability_id == caId);
+      if (!ab) return;
+      const costs = [];
+      if (ab.mana_cost) costs.push(`${ab.mana_cost} mana`);
+      if (ab.hp_cost) costs.push(`${ab.hp_cost} HP`);
+      const costStr = costs.length ? ` (costs ${costs.join(' + ')})` : '';
+      if (!confirm(`Use ${ab.name}?${costStr}`)) return;
+      try {
+        const body = {};
+        if (selectedTargetId) body.target_id = selectedTargetId;
+        const res = await api.post(`/api/character-abilities/${caId}/use`, body);
+        if (res.results) res.results.forEach(r => addLog(`✨ ${ab.name}: ${r}`));
+        await loadChar();
+        loadAbilities();
+      } catch (e) {
+        const d = e?.body?.detail;
+        showToast(typeof d === 'object' ? d.message : String(d || 'Failed'), 'error');
+      }
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// PHASE 6 — MEMORY TAB
+// ══════════════════════════════════════════════════════════════
+let memoryData = [];
+
+async function loadMemory() {
+  try {
+    memoryData = await api.get(`/api/characters/${CHAR_ID}/memory`);
+    renderMemory();
+  } catch (e) { console.warn('loadMemory:', e); }
+}
+
+function renderMemory() {
+  const list = $('#memory-list');
+  if (!list) return;
+  const search = ($('#memory-search')?.value || '').toLowerCase();
+  let filtered = memoryData;
+  if (search) {
+    filtered = memoryData.filter(m =>
+      m.title.toLowerCase().includes(search) || m.content.toLowerCase().includes(search)
+    );
+  }
+  if (!filtered.length) {
+    list.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No journal entries</span>';
+    return;
+  }
+
+  // Group by type
+  const groups = { npc_encounter: [], event: [], note: [] };
+  filtered.forEach(m => {
+    const g = groups[m.entry_type] || groups.note;
+    g.push(m);
+  });
+
+  let html = '';
+  const labels = { npc_encounter: '👤 NPC Encounters', event: '📍 Events', note: '📝 My Notes' };
+  for (const [type, entries] of Object.entries(groups)) {
+    if (!entries.length) continue;
+    html += `<div style="font-weight:700;font-size:0.82rem;margin:8px 0 4px">${labels[type]}</div>`;
+    html += entries.map(m => `<div class="memory-entry" data-mem-id="${m.id}">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="me-title">${m.title}</span>
+        <span class="me-type">${m.entry_type}</span>
+        ${m.entry_type === 'note' ? `<button class="btn btn-ghost btn-xs" data-del-mem="${m.id}" style="margin-left:auto;color:var(--accent-red)">✕</button>` : ''}
+      </div>
+      <div class="me-content">${m.content || ''}</div>
+    </div>`).join('');
+  }
+  list.innerHTML = html;
+
+  // Click to expand
+  list.querySelectorAll('.memory-entry').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-del-mem]')) return;
+      el.classList.toggle('expanded');
+    });
+  });
+
+  // Delete
+  list.querySelectorAll('[data-del-mem]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this note?')) return;
+      await api.del(`/api/memory/${btn.dataset.delMem}`);
+      loadMemory();
+    });
+  });
+}
+
+// Add note button
+if ($('#btn-add-memory')) {
+  $('#btn-add-memory').addEventListener('click', async () => {
+    const title = prompt('Note title:');
+    if (!title) return;
+    const content = prompt('Note content:');
+    await api.post(`/api/characters/${CHAR_ID}/memory`, {
+      entry_type: 'note', title, content: content || '',
+    });
+    loadMemory();
+  });
+}
+
+// Search filter
+if ($('#memory-search')) {
+  $('#memory-search').addEventListener('input', () => renderMemory());
+}
+
+// WS listeners for Phase 6
+ws.on('ability.cooldown_ready', d => {
+  if (d.character_id == CHAR_ID) {
+    showToast(`✨ ${d.ability_name} is ready!`);
+    loadAbilities();
+  }
+});
+ws.on('combat.attack_result', d => {
+  if (d.target_id == CHAR_ID || d.attacker_id == CHAR_ID) {
+    loadChar();
+    loadTableView();
+  }
+});
+ws.on('combat.character_downed', d => {
+  loadTableView();
+});
+ws.on('table.updated', () => {
+  loadTableView();
+});
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 loadChar();
@@ -2007,4 +2448,6 @@ loadPlayerAnnouncements();
 loadPlayerNotes();
 loadPlayerTimer();
 restoreGmTimer();
+loadTableView();
+renderBonusesPenalties();
 ws.connect();

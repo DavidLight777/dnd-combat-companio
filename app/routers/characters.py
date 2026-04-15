@@ -47,9 +47,12 @@ def _serialize_char(c: Character) -> dict:
         "mana_max": c.mana_max,
         "mana_regen_per_turn": c.mana_regen_per_turn,
         "can_edit_own_items": c.can_edit_own_items,
+        "place_at_table": c.place_at_table,
+        "show_hp_to_players": c.show_hp_to_players,
         "turn_count": c.turn_count,
         "status_effects": c.status_effects,
         "notes": c.notes,
+        "gm_notes": c.gm_notes,
         "effects": [
             {"id": e.id, "name": e.name, "effect_type": e.effect_type,
              "value": e.value, "is_active": e.is_active}
@@ -61,7 +64,8 @@ def _serialize_char(c: Character) -> dict:
         "experience": c.experience,
         "stat_modifiers": [
             {"id": m.id, "stat_name": m.stat_name, "name": m.name,
-             "value": m.value, "is_active": m.is_active, "source": m.source}
+             "value": m.value, "is_active": m.is_active, "source": m.source,
+             "expires_at": m.expires_at.isoformat() if m.expires_at else None}
             for m in c.stat_modifiers
         ],
         "attack_modifiers": [

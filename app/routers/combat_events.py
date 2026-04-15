@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models import (
     CombatEvent, CombatParticipant, Character, CharacterStatusEffect,
-    Session,
+    StatModifier, Session, InventoryItem, CharacterAbility,
 )
 from app.websocket_manager import manager
 
@@ -45,6 +45,15 @@ class ManualInitiativeBody(BaseModel):
 class TimerBody(BaseModel):
     participant_id: int
     duration_seconds: int
+
+
+class ExecuteAttackBody(BaseModel):
+    attacker_id: int
+    target_id: int
+    attack_type: str = "weapon"     # "weapon" | "ability"
+    ability_id: int | None = None
+    advantage: str = "normal"       # "advantage" | "normal" | "disadvantage"
+    player_roll: int | None = None  # optional player-submitted d20
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -557,6 +566,45 @@ async def _process_participant_turn_end(character_id: int, db: AsyncSession) -> 
                 "mana_max": eff_max,
                 "sources": sources,
             })
+
+    # Expired potion stat boosts cleanup
+    now = datetime.now(timezone.utc)
+    expired_mods = await db.execute(
+        select(StatModifier).where(
+            StatModifier.character_id == character_id,
+            StatModifier.source == "potion",
+            StatModifier.expires_at != None,
+            StatModifier.expires_at <= now,
+        )
+    )
+    for mod in expired_mods.scalars().all():
+        events.append({
+            "type": "modifier.expired",
+            "character_id": character_id,
+            "character_name": char.name,
+            "modifier_name": mod.name,
+            "stat_name": mod.stat_name,
+            "value": mod.value,
+        })
+        await db.delete(mod)
+
+    # Ability cooldown decrement
+    cd_result = await db.execute(
+        select(CharacterAbility).where(
+            CharacterAbility.character_id == character_id,
+            CharacterAbility.cooldown_remaining > 0,
+        )
+    )
+    for ca in cd_result.scalars().all():
+        ca.cooldown_remaining = max(0, ca.cooldown_remaining - 1)
+        if ca.cooldown_remaining == 0:
+            events.append({
+                "type": "ability.cooldown_ready",
+                "character_id": character_id,
+                "character_name": char.name,
+                "ability_name": ca.ability.name if ca.ability else "Unknown",
+            })
+
     return events
 
 
@@ -570,3 +618,304 @@ async def _has_skip_turn(character_id: int, db: AsyncSession) -> bool:
             if e.get("type") == "skip_turn" and e.get("value"):
                 return True
     return False
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 5 — FULL COMBAT ATTACK FLOW
+# ══════════════════════════════════════════════════════════════
+async def _get_equipped_weapon(character_id: int, db: AsyncSession) -> dict | None:
+    """Get the weapon equipped in main_hand slot, returning dict for game_mechanics."""
+    result = await db.execute(
+        select(InventoryItem).where(
+            InventoryItem.character_id == character_id,
+            InventoryItem.is_equipped == True,
+            InventoryItem.equipped_slot == "main_hand",
+        )
+    )
+    inv = result.scalars().first()
+    if not inv or not inv.item or not inv.item.weapon_stats:
+        return None
+    ws = inv.item.weapon_stats
+    props = ws.weapon_properties
+    if isinstance(props, str):
+        try:
+            props = json.loads(props)
+        except Exception:
+            props = []
+    return {
+        "name": inv.item.name,
+        "dice_count": ws.dice_count,
+        "dice_type": ws.dice_type,
+        "damage_type": ws.damage_type,
+        "damage_bonus": 0,
+        "attack_bonus": 0,
+        "weapon_range": ws.weapon_range or "melee",
+        "weapon_properties": props,
+    }
+
+
+async def _get_char_bonuses_and_penalties(char: Character, db: AsyncSession):
+    """Load equipped item bonuses and status penalties for a character."""
+    from app.game_mechanics import get_all_active_bonuses, aggregate_status_penalties
+
+    # Item bonuses
+    equipped_result = await db.execute(
+        select(InventoryItem).where(
+            InventoryItem.character_id == char.id,
+            InventoryItem.is_equipped == True,
+        )
+    )
+    equipped = equipped_result.scalars().all()
+    item_bonuses = get_all_active_bonuses(equipped)
+
+    # Status penalties
+    eff_result = await db.execute(
+        select(CharacterStatusEffect).where(
+            CharacterStatusEffect.character_id == char.id,
+        )
+    )
+    effects = eff_result.scalars().all()
+    effects_json = []
+    for eff in effects:
+        try:
+            effects_json.append(json.loads(eff.effects) if eff.effects else [])
+        except Exception:
+            effects_json.append([])
+    status_penalties = aggregate_status_penalties(effects_json)
+
+    return item_bonuses, status_penalties
+
+
+def _char_stats_dict(c: Character) -> dict:
+    return {
+        "strength": c.strength,
+        "dexterity": c.dexterity,
+        "constitution": c.constitution,
+        "intelligence": c.intelligence,
+        "wisdom": c.wisdom,
+        "charisma": c.charisma,
+    }
+
+
+@router.post("/execute-attack")
+async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get_session)):
+    """
+    Full combat attack flow: hit roll → damage roll → apply damage → broadcast.
+    Returns complete breakdown strings for all steps.
+    """
+    from app.game_mechanics import (
+        calculate_combat_attack, calculate_combat_damage,
+        stat_modifier, resolve_advantage_mode, get_all_active_bonuses,
+    )
+
+    # 1. Load attacker & target
+    attacker = await db.get(Character, body.attacker_id)
+    target = await db.get(Character, body.target_id)
+    if not attacker:
+        raise HTTPException(404, "Attacker not found")
+    if not target:
+        raise HTTPException(404, "Target not found")
+
+    # 2. Load bonuses & penalties
+    atk_item_bonuses, atk_status_penalties = await _get_char_bonuses_and_penalties(attacker, db)
+    tgt_item_bonuses, tgt_status_penalties = await _get_char_bonuses_and_penalties(target, db)
+
+    # 3. Get weapon
+    weapon = await _get_equipped_weapon(body.attacker_id, db)
+
+    # 4. Resolve advantage mode (player choice + forced status)
+    adv_mode = resolve_advantage_mode(body.advantage, atk_status_penalties)
+
+    # 5. Stat modifier for attack
+    attacker_stats = _char_stats_dict(attacker)
+    item_atk_bonus = int(atk_item_bonuses.get("attack_bonus", 0))
+    status_atk_penalty = atk_status_penalties.get("attack_penalty", 0)
+
+    # 6. HIT ROLL
+    if body.player_roll is not None:
+        # Player submitted d20 — use as-is (single roll, no advantage re-roll)
+        d20 = body.player_roll
+        atk_result = calculate_combat_attack(
+            attacker_stats, target.armor_class, weapon,
+            item_atk_bonus, status_atk_penalty, "normal",
+        )
+        # Override d20 with player roll
+        sm = atk_result.stat_mod
+        wb = atk_result.weapon_bonus
+        total = d20 + sm + wb + item_atk_bonus - status_atk_penalty
+        fumble = (d20 == 1)
+        critical = (d20 == 20)
+        hit = False if fumble else (critical or total >= target.armor_class)
+    else:
+        atk_result = calculate_combat_attack(
+            attacker_stats, target.armor_class, weapon,
+            item_atk_bonus, status_atk_penalty, adv_mode,
+        )
+        d20 = atk_result.d20
+        sm = atk_result.stat_mod
+        wb = atk_result.weapon_bonus
+        total = atk_result.total
+        fumble = atk_result.fumble
+        critical = atk_result.critical
+        hit = atk_result.hit
+
+    # 7. Build hit breakdown string
+    parts = [f"D20({d20})"]
+    if sm != 0:
+        stat_name = "STR"
+        if weapon:
+            props = weapon.get("weapon_properties", [])
+            wrange = weapon.get("weapon_range", "melee")
+            if wrange == "ranged":
+                stat_name = "DEX"
+            elif "finesse" in props:
+                dex_mod = stat_modifier(attacker.dexterity)
+                str_mod = stat_modifier(attacker.strength)
+                stat_name = "DEX" if dex_mod > str_mod else "STR"
+        parts.append(f"{stat_name}({'+' if sm >= 0 else ''}{sm})")
+    if wb != 0:
+        parts.append(f"{weapon['name'] if weapon else 'Weapon'}({'+' if wb >= 0 else ''}{wb})")
+    if item_atk_bonus != 0:
+        # Find item sources for attack bonus
+        for bd in atk_item_bonuses.get("breakdown", []):
+            if bd["bonus_type"] == "attack_bonus":
+                parts.append(f"{bd['source']}(+{int(bd['value'])})")
+    if status_atk_penalty != 0:
+        parts.append(f"Status({status_atk_penalty})")
+
+    hit_str = " + ".join(parts) + f" = {total} vs AC {target.armor_class}"
+    if fumble:
+        hit_str += " → FUMBLE (nat 1)"
+    elif critical:
+        hit_str += " → CRITICAL HIT (nat 20)"
+    elif hit:
+        hit_str += " → HIT"
+    else:
+        hit_str += " → MISS"
+
+    # Advantage prefix
+    if adv_mode != "normal" and body.player_roll is None:
+        adv_label = "ADV" if adv_mode == "advantage" else "DISADV"
+        d20s = atk_result.all_d20s
+        hit_str = f"{adv_label}: D20[{', '.join(str(x) for x in d20s)}] took {d20} | " + hit_str
+
+    # 8. If miss, return early
+    if not hit:
+        return {
+            "hit": False,
+            "critical": False,
+            "fumble": fumble,
+            "hit_breakdown": hit_str,
+            "damage_breakdown": None,
+            "intake_breakdown": None,
+            "final_damage": 0,
+            "target_hp_before": target.current_hp,
+            "target_hp_after": target.current_hp,
+            "attacker_name": attacker.name,
+            "target_name": target.name,
+        }
+
+    # 9. DAMAGE ROLL
+    if weapon:
+        dc = weapon["dice_count"]
+        dt = weapon["dice_type"]
+    else:
+        dc = attacker.attack_dice_count or 1
+        dt = attacker.attack_dice_type or 6
+
+    # Roll damage dice (crit = double dice count)
+    actual_dc = dc * 2 if critical else dc
+    dice_rolls = [random.randint(1, dt) for _ in range(actual_dc)]
+    base_damage = sum(dice_rolls)
+
+    # Stat mod for damage
+    if weapon:
+        from app.game_mechanics import _calc_damage_stat_mod
+        dmg_sm = _calc_damage_stat_mod(attacker_stats, weapon)
+    else:
+        dmg_sm = stat_modifier(attacker.strength)
+
+    item_dmg_bonus = int(atk_item_bonuses.get("damage_bonus", 0))
+    status_dmg_penalty = atk_status_penalties.get("damage_penalty", 0)
+
+    raw_damage = max(0, base_damage + dmg_sm + item_dmg_bonus - status_dmg_penalty)
+
+    # Build damage breakdown string
+    dice_str = "+".join(str(r) for r in dice_rolls)
+    dmg_parts = [f"{actual_dc}d{dt}({dice_str}={base_damage})"]
+    if dmg_sm != 0:
+        stat_label = "STR"
+        if weapon:
+            props = weapon.get("weapon_properties", [])
+            wrange = weapon.get("weapon_range", "melee")
+            if wrange == "ranged":
+                stat_label = "DEX"
+            elif "finesse" in props:
+                stat_label = "DEX" if stat_modifier(attacker.dexterity) > stat_modifier(attacker.strength) else "STR"
+        dmg_parts.append(f"{stat_label} mod({'+' if dmg_sm >= 0 else ''}{dmg_sm})")
+    if item_dmg_bonus != 0:
+        for bd in atk_item_bonuses.get("breakdown", []):
+            if bd["bonus_type"] == "damage_bonus":
+                dmg_parts.append(f"{bd['source']}(+{int(bd['value'])})")
+    if status_dmg_penalty != 0:
+        dmg_parts.append(f"Status({-status_dmg_penalty})")
+
+    damage_str = " + ".join(dmg_parts) + f" = {raw_damage} raw"
+    if critical:
+        damage_str = "CRIT ×2 dice! " + damage_str
+
+    # 10. APPLY DAMAGE TO TARGET (armor/reduction)
+    # Get target's flat & percent damage reduction from items
+    tgt_flat_dr = int(tgt_item_bonuses.get("flat_damage_reduction", 0))
+    tgt_pct_dr = float(tgt_item_bonuses.get("percent_damage_reduction", 0))
+    # Status penalty on reduction (negative = less protection)
+    tgt_dr_penalty = tgt_status_penalties.get("damage_reduction_penalty", 0.0)
+    total_pct_reduction = min(100.0, max(0.0, tgt_pct_dr + tgt_dr_penalty))
+
+    after_pct = raw_damage * (1.0 - total_pct_reduction / 100.0)
+    final_damage = max(0, int(after_pct) - tgt_flat_dr)
+
+    # Build intake breakdown string
+    intake_parts = [f"{raw_damage}"]
+    if total_pct_reduction > 0:
+        sources = [bd for bd in tgt_item_bonuses.get("breakdown", []) if bd["bonus_type"] == "percent_damage_reduction"]
+        src_str = ", ".join(f"{s['source']}({s['value']}%)" for s in sources)
+        if tgt_dr_penalty:
+            src_str += f", Status({tgt_dr_penalty}%)"
+        intake_parts.append(f"× {(100 - total_pct_reduction):.0f}% ({src_str})")
+        intake_parts.append(f"= {int(after_pct)}")
+    if tgt_flat_dr > 0:
+        sources = [bd for bd in tgt_item_bonuses.get("breakdown", []) if bd["bonus_type"] == "flat_damage_reduction"]
+        src_str = ", ".join(f"{s['source']}({int(s['value'])})" for s in sources)
+        intake_parts.append(f"- {tgt_flat_dr} flat ({src_str})")
+
+    intake_str = " ".join(intake_parts) + f" = {final_damage} final"
+
+    # 11. Apply to target HP
+    hp_before = target.current_hp
+    target.current_hp = max(0, target.current_hp - final_damage)
+    hp_after = target.current_hp
+    target_downed = hp_after <= 0
+
+    if target_downed:
+        target.is_alive = False
+
+    await db.commit()
+    await db.refresh(target)
+
+    return {
+        "hit": True,
+        "critical": critical,
+        "fumble": False,
+        "hit_breakdown": hit_str,
+        "damage_breakdown": damage_str,
+        "intake_breakdown": intake_str,
+        "final_damage": final_damage,
+        "target_hp_before": hp_before,
+        "target_hp_after": hp_after,
+        "target_downed": target_downed,
+        "attacker_name": attacker.name,
+        "target_name": target.name,
+        "dice_rolls": dice_rolls,
+        "raw_damage": raw_damage,
+    }

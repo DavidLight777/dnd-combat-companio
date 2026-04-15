@@ -563,6 +563,10 @@ async def change_quantity(inventory_id: int, body: dict, db: AsyncSession = Depe
 
 @router.post("/inventory/{inventory_id}/use")
 async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_session)):
+    import random
+    from app.game_mechanics import spend_mana, get_effective_mana_max, restore_mana as _restore_mana
+    from app.models import StatModifier, CharacterStatusEffect, StatusEffectTemplate
+
     entry = await db.get(InventoryItem, inventory_id)
     if not entry:
         raise HTTPException(404)
@@ -571,27 +575,152 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
         raise HTTPException(400, "Item is not consumable")
 
     char = await db.get(Character, entry.character_id)
-    result_text = f"Used {item.name}"
+    if not char:
+        raise HTTPException(404, "Character not found")
 
-    # Apply effect from legacy single-effect
-    if item.effect_type == "hp_bonus" and item.effect_value and char:
-        old_hp = char.current_hp
-        char.current_hp = min(char.max_hp, char.current_hp + int(item.effect_value))
-        result_text = f"Used {item.name}: +{char.current_hp - old_hp} HP ({old_hp}→{char.current_hp})"
+    results = []
 
-    # Apply hp_bonus from item bonuses
-    for bonus in (item.bonuses or []):
-        if bonus.bonus_type == "hp_bonus" and char:
+    # 1. Mana cost check
+    mana_cost = item.mana_cost or 0
+    if mana_cost > 0:
+        eff_max = get_effective_mana_max(char.mana_max)
+        mana_result = spend_mana(char.mana_current, eff_max, mana_cost)
+        if not mana_result["success"]:
+            raise HTTPException(400, {"error": True, "code": "NOT_ENOUGH_MANA",
+                                      "message": mana_result["message"]})
+        char.mana_current = mana_result["mana_current"]
+        results.append(f"Spent {mana_cost} mana")
+
+    # 2. Process use_effect JSON
+    use_effect_raw = item.use_effect
+    effects_list = []
+    if use_effect_raw:
+        try:
+            ue = json.loads(use_effect_raw) if isinstance(use_effect_raw, str) else use_effect_raw
+            effects_list = ue.get("effects", []) if isinstance(ue, dict) else ue
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    for eff in effects_list:
+        etype = eff.get("type", "")
+
+        if etype == "heal_hp":
+            dice_count = eff.get("dice_count", 1)
+            dice_type = eff.get("dice_type", 4)
+            flat_bonus = eff.get("flat_bonus", 0)
+            rolls = [random.randint(1, dice_type) for _ in range(dice_count)]
+            total_heal = sum(rolls) + flat_bonus
             old_hp = char.current_hp
-            char.current_hp = min(char.max_hp, char.current_hp + int(bonus.value))
-            result_text = f"Used {item.name}: +{char.current_hp - old_hp} HP ({old_hp}→{char.current_hp})"
+            char.current_hp = min(char.max_hp, char.current_hp + total_heal)
+            actual = char.current_hp - old_hp
+            roll_str = "+".join(str(r) for r in rolls)
+            results.append(f"Heal: {dice_count}d{dice_type}+{flat_bonus} ({roll_str}+{flat_bonus}={total_heal}) → +{actual} HP ({old_hp}→{char.current_hp})")
 
-    # Reduce quantity
+        elif etype == "restore_mana":
+            amount = eff.get("amount", 0)
+            eff_max = get_effective_mana_max(char.mana_max)
+            old_mana = char.mana_current
+            char.mana_current = _restore_mana(char.mana_current, eff_max, amount=amount)
+            actual = char.mana_current - old_mana
+            results.append(f"Mana: +{actual} ({old_mana}→{char.mana_current})")
+
+        elif etype == "apply_status":
+            template_id = eff.get("template_id")
+            duration = eff.get("duration_turns")
+            if template_id:
+                tmpl = await db.get(StatusEffectTemplate, template_id)
+                if tmpl:
+                    cse = CharacterStatusEffect(
+                        character_id=char.id,
+                        template_id=tmpl.id,
+                        name=tmpl.name,
+                        icon=tmpl.icon,
+                        color=tmpl.color,
+                        effects=tmpl.effects,
+                        remaining_turns=duration if duration else tmpl.default_duration,
+                    )
+                    db.add(cse)
+                    results.append(f"Applied status: {tmpl.icon} {tmpl.name}" + (f" ({duration} turns)" if duration else ""))
+
+        elif etype == "stat_boost":
+            stat = eff.get("stat", "strength")
+            value = eff.get("value", 0)
+            duration_turns = eff.get("duration_turns", 3)
+            from datetime import timedelta
+            expires = datetime.now(timezone.utc) + timedelta(minutes=duration_turns * 2)
+            mod = StatModifier(
+                character_id=char.id,
+                stat_name=stat,
+                name=f"{item.name} boost",
+                value=value,
+                is_active=True,
+                source="potion",
+                expires_at=expires,
+            )
+            db.add(mod)
+            results.append(f"Stat boost: +{value} {stat.capitalize()} for {duration_turns} turns")
+
+        elif etype == "remove_status":
+            status_name = eff.get("status_name", "")
+            if status_name:
+                res = await db.execute(
+                    select(CharacterStatusEffect).where(
+                        CharacterStatusEffect.character_id == char.id,
+                        CharacterStatusEffect.name == status_name,
+                    )
+                )
+                for cse in res.scalars().all():
+                    await db.delete(cse)
+                results.append(f"Removed status: {status_name}")
+
+        elif etype == "damage":
+            dice_count = eff.get("dice_count", 1)
+            dice_type = eff.get("dice_type", 6)
+            flat_bonus = eff.get("flat_bonus", 0)
+            rolls = [random.randint(1, dice_type) for _ in range(dice_count)]
+            total_dmg = sum(rolls) + flat_bonus
+            old_hp = char.current_hp
+            char.current_hp = max(0, char.current_hp - total_dmg)
+            if char.current_hp <= 0:
+                char.is_alive = False
+            actual = old_hp - char.current_hp
+            results.append(f"Damage: {dice_count}d{dice_type}+{flat_bonus}={total_dmg} → -{actual} HP ({old_hp}→{char.current_hp})")
+
+        elif etype == "custom":
+            desc = eff.get("description", "")
+            results.append(f"Effect: {desc}")
+
+    # 3. Legacy single-effect fallback (if no use_effect)
+    if not effects_list:
+        if item.effect_type == "hp_bonus" and item.effect_value and char:
+            old_hp = char.current_hp
+            char.current_hp = min(char.max_hp, char.current_hp + int(item.effect_value))
+            results.append(f"+{char.current_hp - old_hp} HP ({old_hp}→{char.current_hp})")
+        for bonus in (item.bonuses or []):
+            if bonus.bonus_type == "hp_bonus":
+                old_hp = char.current_hp
+                char.current_hp = min(char.max_hp, char.current_hp + int(bonus.value))
+                results.append(f"+{char.current_hp - old_hp} HP ({old_hp}→{char.current_hp})")
+
+    # 4. Reduce quantity
     entry.quantity -= 1
+    qty_left = max(0, entry.quantity)
     if entry.quantity <= 0:
         await db.delete(entry)
     await db.commit()
-    return {"ok": True, "result": result_text}
+
+    return {
+        "ok": True,
+        "item_name": item.name,
+        "results": results,
+        "result": f"Used {item.name}: " + "; ".join(results) if results else f"Used {item.name}",
+        "character_id": char.id,
+        "current_hp": char.current_hp,
+        "max_hp": char.max_hp,
+        "mana_current": char.mana_current,
+        "mana_max": char.mana_max,
+        "quantity_remaining": qty_left,
+    }
 
 
 # ── Equipped bonuses aggregation ─────────────────────────────

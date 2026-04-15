@@ -33,123 +33,214 @@
     </div>
   </div>
 
-  <div class="main-layout">
-    <div class="main-area">
-      <!-- ── GM TIMER ──────────────────────────────────────── -->
-      <div id="gm-timer-banner" style="display:none;text-align:center;padding:12px;margin-bottom:8px;border-radius:var(--r-lg);background:var(--surface-2);border:2px solid var(--accent-orange)">
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">⏱ GM Timer</div>
-        <div id="gm-timer-display" style="font-size:2.2rem;font-weight:800;color:var(--accent-orange);font-variant-numeric:tabular-nums"></div>
-      </div>
+  <!-- ═══ TAB CONTENT AREA ═══ -->
+  <div class="tab-content-area" style="padding-bottom:56px">
 
-      <!-- ── COMBAT BANNER (Stage 5) ──────────────────────── -->
-      <div id="combat-banner" style="display:none"></div>
+    <!-- ══ MAIN TAB ══════════════════════════════════════════ -->
+    <div class="player-tab active" id="tab-main">
+      <div class="main-layout">
+        <div class="main-area">
+          <!-- GM TIMER -->
+          <div id="gm-timer-banner" style="display:none;text-align:center;padding:12px;margin-bottom:8px;border-radius:var(--r-lg);background:var(--surface-2);border:2px solid var(--accent-orange)">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">⏱ GM Timer</div>
+            <div id="gm-timer-display" style="font-size:2.2rem;font-weight:800;color:var(--accent-orange);font-variant-numeric:tabular-nums"></div>
+          </div>
 
-      <!-- ── HP CARD ──────────────────────────────────────── -->
-      <div class="hp-card" id="hp-card">
-        <div class="hp-big" id="hp-display">20 / 20</div>
-        <div class="hp-label">Hit Points · KD: <span id="kd-display">10</span></div>
-        <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div></div>
-      </div>
+          <!-- COMBAT BANNER -->
+          <div id="combat-banner" style="display:none"></div>
 
-      <!-- ── MANA BAR ────────────────────────────────────── -->
-      <div class="mana-card" id="mana-card" style="display:none;margin-bottom:8px;padding:8px 12px;background:var(--bg-surface);border:1px solid #60a5fa40;border-radius:var(--r-md)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:1.1rem">🔮</span>
-          <span id="mana-display" style="font-size:1rem;font-weight:700;color:#60a5fa;font-variant-numeric:tabular-nums">0 / 0</span>
-          <span id="mana-regen-badge" style="font-size:0.7rem;color:var(--text-muted);display:none">+0/turn</span>
-          <div style="flex:1;height:8px;border-radius:4px;background:var(--bg-surface-2);overflow:hidden">
-            <div id="mana-bar" style="width:0%;height:100%;background:#60a5fa;border-radius:4px;transition:width .3s"></div>
+          <!-- CHARACTER INFO BAR -->
+          <div class="hp-card" id="hp-card">
+            <div class="hp-big" id="hp-display">20 / 20</div>
+            <div class="hp-label">Hit Points · KD: <span id="kd-display">10</span></div>
+            <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div></div>
+          </div>
+
+          <!-- MANA BAR -->
+          <div class="mana-card" id="mana-card" style="display:none;margin-bottom:8px;padding:8px 12px;background:var(--bg-surface);border:1px solid #60a5fa40;border-radius:var(--r-md)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:1.1rem">🔮</span>
+              <span id="mana-display" style="font-size:1rem;font-weight:700;color:#60a5fa;font-variant-numeric:tabular-nums">0 / 0</span>
+              <span id="mana-regen-badge" style="font-size:0.7rem;color:var(--text-muted);display:none">+0/turn</span>
+              <div style="flex:1;height:8px;border-radius:4px;background:var(--bg-surface-2);overflow:hidden">
+                <div id="mana-bar" style="width:0%;height:100%;background:#60a5fa;border-radius:4px;transition:width .3s"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATUS EFFECTS -->
+          <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
+
+          <!-- TABLE VIEW (participants) -->
+          <div class="panels-row">
+            <section class="panel panel-full">
+              <div class="panel-header"><h2>👥 At the Table</h2></div>
+              <div class="panel-body">
+                <div id="table-view-grid" style="display:flex;flex-wrap:wrap;gap:8px;min-height:24px">
+                  <span class="text-muted" style="font-size:0.8rem">No participants yet</span>
+                </div>
+                <div id="selected-target-info" style="display:none;margin-top:8px;padding:6px 10px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--accent);font-size:0.82rem">
+                  🎯 Target: <strong id="selected-target-name">—</strong>
+                  <button class="btn btn-ghost btn-xs" id="btn-clear-target" style="margin-left:8px">✕ Clear</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ACTION MENU -->
+          <div class="panels-row">
+            <section class="panel panel-full">
+              <div class="panel-header"><h2>⚡ Actions</h2></div>
+              <div class="panel-body" id="action-menu-body" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+            </section>
+          </div>
+
+          <!-- INFO PANEL: Bonuses & Penalties -->
+          <div class="panels-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <section class="panel">
+              <div class="panel-header"><h2>✅ Active Bonuses</h2></div>
+              <div class="panel-body" id="active-bonuses-list" style="font-size:0.8rem">
+                <span class="text-muted">No active bonuses</span>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-header"><h2>❌ Active Penalties</h2></div>
+              <div class="panel-body" id="active-penalties-list" style="font-size:0.8rem">
+                <span class="text-muted">No active penalties</span>
+              </div>
+            </section>
+          </div>
+
+          <!-- STATS -->
+          <div class="stats-grid" id="stats-grid"></div>
+
+          <!-- CHARACTERISTIC ROLL -->
+          <div style="margin:8px 0;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:0.82rem;font-weight:700">🎲</span>
+              <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
+                <option value="strength">Strength</option>
+                <option value="dexterity">Dexterity</option>
+                <option value="constitution">Constitution</option>
+                <option value="intelligence">Intelligence</option>
+                <option value="wisdom">Wisdom</option>
+                <option value="charisma">Charisma</option>
+              </select>
+              <select id="player-roll-type" style="font-size:0.78rem;width:115px">
+                <option value="ability_check">Ability Check</option>
+                <option value="saving_throw">Saving Throw</option>
+                <option value="skill_check">Skill Check</option>
+              </select>
+              <div class="adv-toggle" id="char-roll-adv-toggle">
+                <button data-mode="normal" class="active">Normal</button>
+                <button data-mode="advantage">ADV</button>
+                <button data-mode="disadvantage">DISADV</button>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+            </div>
+            <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
+          </div>
+
+          <!-- Attack & Damage + Incoming -->
+          <div class="panels-row">
+            <section class="panel">
+              <div class="panel-header"><h2>⚔️ Attack & Damage Roll</h2></div>
+              <div class="panel-body" id="attack-body"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header"><h2>🛡️ Incoming Damage</h2></div>
+              <div class="panel-body" id="defense-body"></div>
+            </section>
+          </div>
+
+          <!-- Recovery + Turn Counter -->
+          <div class="panels-row">
+            <section class="panel">
+              <div class="panel-header"><h2>💚 HP Recovery</h2></div>
+              <div class="panel-body" id="heal-body"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header"><h2>⏱️ Turn Counter</h2></div>
+              <div class="panel-body" id="turns-body"></div>
+            </section>
+          </div>
+
+          <!-- Effects -->
+          <div class="panels-row">
+            <section class="panel panel-full">
+              <div class="panel-header"><h2>✨ Effects & Passive Bonuses</h2></div>
+              <div class="panel-body" id="effects-body"></div>
+            </section>
+          </div>
+
+          <!-- Quests (collapsible) -->
+          <details class="panels-row" style="margin-bottom:8px">
+            <summary style="cursor:pointer;font-weight:700;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">📜 Quests</summary>
+            <div style="padding:8px">
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <button class="btn btn-ghost btn-xs player-quest-tab active" data-pqtab="active">Active</button>
+                <button class="btn btn-ghost btn-xs player-quest-tab" data-pqtab="completed">Completed</button>
+              </div>
+              <div id="player-quests-active"></div>
+              <div id="player-quests-completed" style="display:none"></div>
+            </div>
+          </details>
+
+          <!-- Announcements -->
+          <div class="panels-row">
+            <section class="panel panel-full">
+              <div class="panel-header"><h2>📢 Announcements</h2></div>
+              <div class="panel-body" id="player-announcements">
+                <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
+              </div>
+            </section>
+          </div>
+
+          <!-- Log -->
+          <div class="panels-row">
+            <section class="panel panel-full">
+              <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+                <h2 style="flex:1">📜 Log</h2>
+                <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
+                <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
+              </div>
+              <div class="panel-body">
+                <div id="calc-log" class="calc-log"></div>
+                <div id="roll-history-log" class="calc-log" style="display:none"></div>
+              </div>
+            </section>
           </div>
         </div>
-      </div>
 
-      <!-- ── STATUS EFFECTS ────────────────────────────────── -->
-      <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
-
-      <!-- ── STATS ────────────────────────────────────────── -->
-      <div class="stats-grid" id="stats-grid"></div>
-
-      <!-- ── CHARACTERISTIC ROLL ─────────────────────────────── -->
-      <div style="margin:8px 0;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:0.82rem;font-weight:700">🎲</span>
-          <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
-            <option value="strength">Strength</option>
-            <option value="dexterity">Dexterity</option>
-            <option value="constitution">Constitution</option>
-            <option value="intelligence">Intelligence</option>
-            <option value="wisdom">Wisdom</option>
-            <option value="charisma">Charisma</option>
-          </select>
-          <select id="player-roll-type" style="font-size:0.78rem;width:115px">
-            <option value="ability_check">Ability Check</option>
-            <option value="saving_throw">Saving Throw</option>
-            <option value="skill_check">Skill Check</option>
-          </select>
-          <div class="adv-toggle" id="char-roll-adv-toggle">
-            <button data-mode="normal" class="active">Normal</button>
-            <button data-mode="advantage">ADV</button>
-            <button data-mode="disadvantage">DISADV</button>
-          </div>
-          <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+        <!-- SIDEBAR: Enemy Damage Calc -->
+        <div class="sidebar-right">
+          <h2 style="margin-bottom:12px">🎯 Enemy Damage Calc</h2>
+          <div id="enemy-calc-body"></div>
         </div>
-        <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
       </div>
+    </div>
 
-      <!-- ── PANELS ROW 1: Attack & Damage + Incoming ─────── -->
-      <div class="panels-row">
-        <section class="panel">
-          <div class="panel-header"><h2>⚔️ Attack & Damage Roll</h2></div>
-          <div class="panel-body" id="attack-body"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-header"><h2>🛡️ Incoming Damage</h2></div>
-          <div class="panel-body" id="defense-body"></div>
-        </section>
-      </div>
-
-      <!-- ── PANELS ROW 2: Recovery + Turn Counter ────────── -->
-      <div class="panels-row">
-        <section class="panel">
-          <div class="panel-header"><h2>💚 HP Recovery</h2></div>
-          <div class="panel-body" id="heal-body"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-header"><h2>⏱️ Turn Counter</h2></div>
-          <div class="panel-body" id="turns-body"></div>
-        </section>
-      </div>
-
-      <!-- ── PANELS ROW 3: Effects ────────────────────────── -->
-      <div class="panels-row">
-        <section class="panel panel-full">
-          <div class="panel-header"><h2>✨ Effects & Passive Bonuses</h2></div>
-          <div class="panel-body" id="effects-body"></div>
-        </section>
-      </div>
-
-      <!-- ── PANELS ROW: Inventory ─────────────────────────── -->
+    <!-- ══ INVENTORY TAB ═════════════════════════════════════ -->
+    <div class="player-tab" id="tab-inventory" style="display:none;padding:12px">
       <div class="panels-row">
         <section class="panel panel-full">
           <div class="panel-header" style="display:flex;align-items:center;gap:12px">
             <h2 style="flex:1">🎒 Inventory</h2>
-            <span class="currency-display" id="currency-display">
-              <span class="curr-plat" id="curr-plat" style="display:none">💎 <strong>0</strong>P</span>
-              <span class="curr-gold" id="curr-gold">🪙 <strong>0</strong>G</span>
-              <span class="curr-silver" id="curr-silver">🥈 <strong>0</strong>S</span>
-              <span class="curr-copper" id="curr-copper">🟤 <strong>0</strong>B</span>
+            <span class="currency-display" id="inv-currency-display">
+              <span class="inv-curr-plat" style="display:none">💎 <strong>0</strong>P</span>
+              <span class="inv-curr-gold">🪙 <strong>0</strong>G</span>
+              <span class="inv-curr-silver">🥈 <strong>0</strong>S</span>
+              <span class="inv-curr-copper">🟤 <strong>0</strong>B</span>
             </span>
             <span style="font-size:0.78rem;color:var(--text-muted)">Weight: <strong id="weight-display">0</strong></span>
             <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>
           </div>
           <div class="panel-body">
-            <!-- Equipment Slots -->
             <div class="equipment-panel" id="equipment-panel">
               <h3 style="font-size:0.82rem;margin-bottom:8px">⚔️ Equipment</h3>
               <div class="equip-slots-grid" id="equip-slots-grid"></div>
             </div>
             <hr class="section-divider">
-            <!-- Inventory Filter Tabs -->
             <div class="inv-filter-tabs" id="inv-filter-tabs">
               <button class="btn btn-ghost btn-xs inv-filter active" data-inv-filter="all">All</button>
               <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="equipped">Equipped</button>
@@ -173,32 +264,7 @@
         </div>
       </div>
 
-      <!-- ── QUESTS (Stage 8) ────────────────────────────────── -->
-      <div class="panels-row">
-        <section class="panel panel-full">
-          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
-            <h2 style="flex:1">📜 Quests</h2>
-            <button class="btn btn-ghost btn-xs player-quest-tab active" data-pqtab="active">Active</button>
-            <button class="btn btn-ghost btn-xs player-quest-tab" data-pqtab="completed">Completed</button>
-          </div>
-          <div class="panel-body">
-            <div id="player-quests-active"></div>
-            <div id="player-quests-completed" style="display:none"></div>
-          </div>
-        </section>
-      </div>
-
-      <!-- ── ANNOUNCEMENTS (Stage 10) ─────────────────────── -->
-      <div class="panels-row">
-        <section class="panel panel-full">
-          <div class="panel-header"><h2>📢 Announcements</h2></div>
-          <div class="panel-body" id="player-announcements">
-            <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
-          </div>
-        </section>
-      </div>
-
-      <!-- ── NOTES (Stage 10) ─────────────────────────────── -->
+      <!-- My Notes -->
       <div class="panels-row">
         <section class="panel panel-full">
           <div class="panel-header" style="display:flex;align-items:center;gap:8px">
@@ -208,29 +274,49 @@
           <div class="panel-body" id="player-notes-list"></div>
         </section>
       </div>
+    </div>
 
-      <!-- ── LOG ──────────────────────────────────────────── -->
+    <!-- ══ ABILITIES TAB ═════════════════════════════════════ -->
+    <div class="player-tab" id="tab-abilities" style="display:none;padding:12px">
       <div class="panels-row">
         <section class="panel panel-full">
-          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
-            <h2 style="flex:1">📜 Log</h2>
-            <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
-            <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
-          </div>
+          <div class="panel-header"><h2>✨ Abilities</h2></div>
           <div class="panel-body">
-            <div id="calc-log" class="calc-log"></div>
-            <div id="roll-history-log" class="calc-log" style="display:none"></div>
+            <div id="abilities-grid" style="display:flex;flex-wrap:wrap;gap:10px;min-height:40px">
+              <span class="text-muted" style="font-size:0.8rem">No abilities learned yet</span>
+            </div>
           </div>
         </section>
       </div>
     </div>
 
-    <!-- ── SIDEBAR: Enemy Damage Calc ─────────────────────── -->
-    <div class="sidebar-right">
-      <h2 style="margin-bottom:12px">🎯 Enemy Damage Calc</h2>
-      <div id="enemy-calc-body"></div>
+    <!-- ══ MEMORY TAB ════════════════════════════════════════ -->
+    <div class="player-tab" id="tab-memory" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:8px">
+            <h2 style="flex:1">� Journal</h2>
+            <input type="text" id="memory-search" placeholder="Search..." style="font-size:0.78rem;width:140px">
+            <button class="btn btn-primary btn-xs" id="btn-add-memory">+ Add Note</button>
+          </div>
+          <div class="panel-body">
+            <div id="memory-list" style="min-height:40px">
+              <span class="text-muted" style="font-size:0.8rem">No journal entries yet</span>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
+
   </div>
+
+  <!-- ═══ BOTTOM TAB BAR ═══ -->
+  <nav class="player-tab-bar">
+    <button class="player-tab-btn active" data-tab="tab-main">⚔️<span>Main</span></button>
+    <button class="player-tab-btn" data-tab="tab-inventory">🎒<span>Inventory</span></button>
+    <button class="player-tab-btn" data-tab="tab-abilities">✨<span>Abilities</span></button>
+    <button class="player-tab-btn" data-tab="tab-memory">📖<span>Memory</span></button>
+  </nav>
 
   <script src="/static/js/websocket-client.js"></script>
   <script src="/static/js/map-canvas.js"></script>

@@ -10,6 +10,7 @@ const $$ = s => document.querySelectorAll(s);
 const params = new URLSearchParams(location.search);
 const SESSION_CODE = params.get('code') || sessionStorage.getItem('session_code');
 const GM_TOKEN = sessionStorage.getItem('gm_token');
+const SESSION_ID = parseInt(sessionStorage.getItem('session_id')) || null;
 if (!SESSION_CODE || !GM_TOKEN) location.href = '/';
 $('#session-code').textContent = SESSION_CODE;
 
@@ -231,253 +232,338 @@ async function renderCharDetail() {
     </div>`
   ).join('') || '<span class="text-muted" style="font-size:0.8rem">None</span>';
 
-  area.innerHTML = `
-    <div class="detail-panel">
-      <div class="detail-header">
-        <h2>${c.name} ${c.is_npc ? '<span class="cc-badge badge-npc">NPC</span>' : '<span class="cc-badge badge-player">Player</span>'} ${!c.is_alive?'<span class="cc-badge badge-dead">💀 DEAD</span>':''}</h2>
-        ${c.is_npc ? `<button class="btn btn-danger btn-xs" id="btn-delete-char">Delete</button>` : ''}
-      </div>
-      <div class="detail-body">
-        ${!c.is_npc ? `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:0.78rem">
-          <span id="gm-char-race" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Race: <strong>${c.race_id ? '...' : 'None'}</strong></span>
-          <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Class: <strong>${c.class_id ? '...' : 'None'}</strong></span>
-          <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Lvl <strong>${c.level || 1}</strong></span>
-          <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">XP <strong><span id="gm-char-xp">${c.experience || 0}</span></strong>
-            <button class="btn btn-ghost btn-xs" id="btn-edit-xp" style="padding:0 3px;margin-left:2px;font-size:0.65rem">✏️</button>
-          </span>
-        </div>` : ''}
-        <!-- HP -->
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <span style="font-size:1.5rem;font-weight:700;color:${hpColor};font-variant-numeric:tabular-nums">${c.current_hp} / ${c.max_hp}</span>
-          <span style="font-size:0.8rem;color:var(--text-muted)">KD: ${c.armor_class}</span>
-          <div class="hp-bar-container" style="flex:1"><div class="hp-bar" style="width:${pct}%;background:${hpColor}"></div></div>
-        </div>
-
-        <!-- Quick HP -->
-        <div class="action-row">
-          <button class="btn btn-ghost btn-xs" data-hp-delta="-5">-5</button>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="-10">-10</button>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="-20">-20</button>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="-50">-50</button>
-          <span style="width:8px"></span>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="5">+5</button>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="10">+10</button>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="20">+20</button>
-          <button class="btn btn-ghost btn-xs" data-hp-delta="999" style="color:var(--accent-green)">Full</button>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">
-          <label style="font-size:0.78rem;color:var(--text-muted)">Custom:</label>
-          <input type="number" id="gm-hp-custom" value="0" style="width:60px">
-          <button class="btn btn-ghost btn-xs" id="gm-hp-add">+ Add</button>
-          <button class="btn btn-ghost btn-xs" id="gm-hp-sub">- Sub</button>
-          <button class="btn btn-ghost btn-xs" id="gm-hp-set">Set</button>
-        </div>
-
-        <!-- Mana (Phase 3) -->
-        ${c.mana_max > 0 ? (() => {
-          const manaPct = c.mana_max > 0 ? (c.mana_current / c.mana_max * 100) : 0;
-          return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-            <span style="font-size:1.1rem;font-weight:700;color:#60a5fa;font-variant-numeric:tabular-nums">🔮 ${c.mana_current} / ${c.mana_max}</span>
-            ${c.mana_regen_per_turn ? `<span style="font-size:0.7rem;color:var(--text-muted)">+${c.mana_regen_per_turn}/turn</span>` : ''}
-            <div style="flex:1;height:8px;border-radius:4px;background:var(--bg-surface-2);overflow:hidden"><div style="width:${manaPct}%;height:100%;background:#60a5fa;border-radius:4px;transition:width .3s"></div></div>
-          </div>
-          <div class="action-row" style="margin-bottom:8px">
-            <button class="btn btn-ghost btn-xs" data-mana-delta="5">+5</button>
-            <button class="btn btn-ghost btn-xs" data-mana-delta="10">+10</button>
-            <button class="btn btn-ghost btn-xs" data-mana-delta="20">+20</button>
-            <button class="btn btn-ghost btn-xs" data-mana-full="1" style="color:#60a5fa">Full</button>
-            <span style="width:8px"></span>
-            <button class="btn btn-ghost btn-xs" data-mana-delta="-5">-5</button>
-            <button class="btn btn-ghost btn-xs" data-mana-delta="-10">-10</button>
-            <button class="btn btn-ghost btn-xs" data-mana-delta="-20">-20</button>
-          </div>`;
-        })() : ''}
-
-        <hr class="section-divider">
-
-        <!-- Permanent Bonuses (Phase 1 fix: Race/Class bonuses visible to GM) -->
-        ${(() => {
-          const raceMods = (c.stat_modifiers || []).filter(m => m.source === 'race');
-          const classMods = (c.stat_modifiers || []).filter(m => m.source === 'class');
-          if (!raceMods.length && !classMods.length) return '';
-          let html = '<div style="margin-bottom:8px">';
-          html += '<h3 style="font-size:0.82rem;margin-bottom:6px">🏷️ Permanent Bonuses</h3>';
-          if (raceMods.length) {
-            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
-            html += raceMods.map(m => `<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:#fbbf2420;border:1px solid #fbbf24;color:#fbbf24">${m.name || m.stat_name}: ${m.value > 0 ? '+' : ''}${m.value}</span>`).join('');
-            html += '</div>';
-          }
-          if (classMods.length) {
-            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
-            html += classMods.map(m => `<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:#60a5fa20;border:1px solid #60a5fa;color:#60a5fa">${m.name || m.stat_name}: ${m.value > 0 ? '+' : ''}${m.value}</span>`).join('');
-            html += '</div>';
-          }
-          html += '</div>';
-          return html;
-        })()}
-
-        <!-- Stats (effective = base + all modifiers) -->
-        <div class="stats-inline">
-          ${stats.map((s,i) => {
-            const base = c[s];
-            const modSum = (c.stat_modifiers || []).filter(m => m.stat_name === s && m.is_active).reduce((a, m) => a + m.value, 0);
-            const eff = base + modSum;
-            const modLabel = modSum !== 0 ? ` <span style="font-size:0.55rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">(${modSum > 0 ? '+' : ''}${modSum})</span>` : '';
-            return `<div class="stat-inline"><div class="sl">${labels[i]}</div><div class="sv">${eff}${modLabel}</div></div>`;
-          }).join('')}
-          <div class="stat-inline"><div class="sl">KD</div><div class="sv" style="color:var(--accent)">${c.armor_class}</div></div>
-        </div>
-
-        <!-- Edit stats row (base values) -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-          ${stats.map((s,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-            <span style="font-size:0.6rem;color:var(--text-muted)">${labels[i]}</span>
-            <input type="number" value="${c[s]}" data-gm-stat="${s}" style="width:48px;font-size:0.78rem;padding:3px">
-          </div>`).join('')}
-          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-            <span style="font-size:0.6rem;color:var(--text-muted)">KD</span>
-            <input type="number" value="${c.armor_class}" data-gm-stat="armor_class" style="width:48px;font-size:0.78rem;padding:3px">
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-            <span style="font-size:0.6rem;color:var(--text-muted)">MaxHP</span>
-            <input type="number" value="${c.max_hp}" data-gm-stat="max_hp" style="width:48px;font-size:0.78rem;padding:3px">
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-            <span style="font-size:0.6rem;color:#60a5fa">MaxMP</span>
-            <input type="number" value="${c.mana_max}" data-gm-stat="mana_max" style="width:48px;font-size:0.78rem;padding:3px">
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-            <span style="font-size:0.6rem;color:#60a5fa">MP/T</span>
-            <input type="number" value="${c.mana_regen_per_turn}" data-gm-stat="mana_regen_per_turn" style="width:48px;font-size:0.78rem;padding:3px">
-          </div>
-        </div>
-
-        <hr class="section-divider">
-
-        <!-- Effects -->
-        <h3 style="font-size:0.82rem;margin-bottom:6px">Effects</h3>
-        <div id="gm-effects">${effectsHtml}</div>
-
-        <!-- Status Effects (Stage 4) -->
-        <hr class="section-divider">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <h3 style="font-size:0.82rem;flex:1">⚡ Status Effects</h3>
-          <button class="btn btn-primary btn-xs" id="btn-gm-add-status">+ Add Status</button>
-          <button class="btn btn-ghost btn-xs" id="btn-gm-status-library">📚 Library</button>
-        </div>
-        <div id="gm-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="font-size:0.72rem;color:var(--text-muted)">Force Adv/Disadv:</span>
-          <div class="adv-toggle" id="gm-force-adv-toggle">
-            <button data-mode="normal" class="active">Normal</button>
-            <button data-mode="advantage">ADV</button>
-            <button data-mode="disadvantage">DISADV</button>
-          </div>
-        </div>
-
-        ${!c.is_npc ? `
-        <!-- Timer (Player only) -->
-        <hr class="section-divider">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <h3 style="font-size:0.82rem;flex:1">⏱ Timer</h3>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-          <input type="number" id="gm-detail-timer-min" value="2" min="1" max="60" step="1" style="width:50px;font-size:0.8rem">
-          <span style="font-size:0.75rem;color:var(--text-muted)">min</span>
-          <button class="btn btn-primary btn-xs" id="btn-gm-detail-timer-start">▶ Start</button>
-          <button class="btn btn-ghost btn-xs" id="btn-gm-detail-timer-pause" style="display:none">⏸ Pause</button>
-          <button class="btn btn-ghost btn-xs" id="btn-gm-detail-timer-resume" style="display:none">▶ Resume</button>
-          <button class="btn btn-danger btn-xs" id="btn-gm-detail-timer-stop" style="display:none">⏹ Stop</button>
-        </div>
-        <div id="gm-detail-timer-display" style="font-size:1.6rem;font-weight:700;color:var(--accent-orange);margin-bottom:8px;display:none;font-variant-numeric:tabular-nums"></div>
-        ` : ''}
-
-        <!-- Characteristic Roll -->
-        <hr class="section-divider">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <h3 style="font-size:0.82rem;margin:0">🎲 Characteristic Roll</h3>
-          ${makeAdvToggle('gm_char_roll')}
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-          <select id="gm-roll-stat" style="font-size:0.78rem;width:110px">
-            <option value="strength">Strength</option>
-            <option value="dexterity">Dexterity</option>
-            <option value="constitution">Constitution</option>
-            <option value="intelligence">Intelligence</option>
-            <option value="wisdom">Wisdom</option>
-            <option value="charisma">Charisma</option>
-          </select>
-          <select id="gm-roll-type" style="font-size:0.78rem;width:120px">
-            <option value="ability_check">Ability Check</option>
-            <option value="saving_throw">Saving Throw</option>
-            <option value="skill_check">Skill Check</option>
-          </select>
-          <button class="btn btn-secondary btn-xs" id="btn-gm-roll-char">🎲 Roll D20</button>
-        </div>
-        <div id="gm-roll-result" style="font-size:0.82rem;margin-bottom:8px"></div>
-
-        <!-- Damage calc -->
-        <hr class="section-divider">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <h3 style="font-size:0.82rem;margin:0">Apply Damage to ${c.name}</h3>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <label style="font-size:0.78rem;color:var(--text-muted)">Enemy Roll:</label>
-          <input type="number" id="gm-di-enemy" style="width:56px">
-          <label style="font-size:0.78rem;color:var(--text-muted)">Raw Dmg:</label>
-          <input type="number" id="gm-di-dmg" style="width:56px">
-          <button class="btn btn-danger btn-sm" id="btn-gm-apply-dmg">⚔️ Apply</button>
-        </div>
-        <div id="gm-dmg-result" style="margin-top:6px;font-size:0.82rem"></div>
-
-        <!-- Currency Section -->
-        <hr class="section-divider">
-        <h3 style="font-size:0.82rem;margin-bottom:6px">💰 Currency</h3>
-        <div id="gm-currency-display" style="font-size:0.85rem;margin-bottom:6px;font-weight:600;color:var(--accent)"></div>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-          <span style="font-size:0.7rem;color:#e0c97f">P:</span><input type="number" id="gm-give-plat" value="0" style="width:42px;font-size:0.75rem" min="0">
-          <span style="font-size:0.7rem;color:#fbbf24">G:</span><input type="number" id="gm-give-gold" value="0" style="width:42px;font-size:0.75rem" min="0">
-          <span style="font-size:0.7rem;color:#94a3b8">S:</span><input type="number" id="gm-give-silver" value="0" style="width:42px;font-size:0.75rem" min="0">
-          <span style="font-size:0.7rem;color:#b87333">B:</span><input type="number" id="gm-give-bronze" value="0" style="width:42px;font-size:0.75rem" min="0">
-          <button class="btn btn-primary btn-xs" id="btn-gm-give-currency">+ Give</button>
-          <button class="btn btn-ghost btn-xs" id="btn-gm-take-currency">- Take</button>
-        </div>
-        <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
-          <span style="font-size:0.7rem;color:var(--text-muted)">Set total bronze:</span>
-          <input type="number" id="gm-wealth-bronze" value="${c.wealth_bronze || c.gold_copper || 0}" style="width:80px;font-size:0.75rem">
-          <button class="btn btn-ghost btn-xs" id="btn-gm-set-gold">Set</button>
-          <button class="btn btn-ghost btn-xs" id="btn-gm-tx-history" style="margin-left:auto">📜 History</button>
-        </div>
-
-        <!-- Inventory Section -->
-        <hr class="section-divider">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <h3 style="font-size:0.82rem;flex:1">🎒 Inventory</h3>
-          <label style="font-size:0.7rem;color:var(--text-muted)">Player can edit:</label>
-          <label class="toggle-switch"><input type="checkbox" id="gm-can-edit-items" ${c.can_edit_own_items?'checked':''}><span class="slider"></span></label>
-        </div>
-        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-xs" id="btn-gm-give-item">+ Give Item</button>
-        </div>
-        <div id="gm-char-inventory" style="font-size:0.8rem"></div>
-
-        ${c.is_npc ? `
-        <!-- Merchant Section (NPC only) -->
-        <hr class="section-divider">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <h3 style="font-size:0.82rem;flex:1">🏪 Merchant</h3>
-          <button class="btn btn-primary btn-xs" id="btn-gm-merchant-settings">⚙️ Shop Settings</button>
-          <button class="btn btn-ghost btn-xs" id="btn-gm-initiate-trade">🤝 Initiate Trade</button>
-        </div>
-        <div id="gm-merchant-preview" style="font-size:0.8rem"></div>
-        ` : ''}
-
-        <!-- Notes (Stage 10) -->
-        <hr class="section-divider">
-        <div id="char-notes-section"></div>
-      </div>
+  // ── Shared HTML fragments ──
+  const hpHtml = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <span style="font-size:1.5rem;font-weight:700;color:${hpColor};font-variant-numeric:tabular-nums">${c.current_hp} / ${c.max_hp}</span>
+      <span style="font-size:0.8rem;color:var(--text-muted)">KD: ${c.armor_class}</span>
+      <div class="hp-bar-container" style="flex:1"><div class="hp-bar" style="width:${pct}%;background:${hpColor}"></div></div>
     </div>
-  `;
+    <div class="action-row">
+      <button class="btn btn-ghost btn-xs" data-hp-delta="-5">-5</button>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="-10">-10</button>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="-20">-20</button>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="-50">-50</button>
+      <span style="width:8px"></span>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="5">+5</button>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="10">+10</button>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="20">+20</button>
+      <button class="btn btn-ghost btn-xs" data-hp-delta="999" style="color:var(--accent-green)">Full</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">
+      <label style="font-size:0.78rem;color:var(--text-muted)">Custom:</label>
+      <input type="number" id="gm-hp-custom" value="0" style="width:60px">
+      <button class="btn btn-ghost btn-xs" id="gm-hp-add">+ Add</button>
+      <button class="btn btn-ghost btn-xs" id="gm-hp-sub">- Sub</button>
+      <button class="btn btn-ghost btn-xs" id="gm-hp-set">Set</button>
+    </div>`;
+
+  const manaHtml = c.mana_max > 0 ? (() => {
+    const manaPct = c.mana_max > 0 ? (c.mana_current / c.mana_max * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <span style="font-size:1.1rem;font-weight:700;color:#60a5fa;font-variant-numeric:tabular-nums">🔮 ${c.mana_current} / ${c.mana_max}</span>
+      ${c.mana_regen_per_turn ? `<span style="font-size:0.7rem;color:var(--text-muted)">+${c.mana_regen_per_turn}/turn</span>` : ''}
+      <div style="flex:1;height:8px;border-radius:4px;background:var(--bg-surface-2);overflow:hidden"><div style="width:${manaPct}%;height:100%;background:#60a5fa;border-radius:4px;transition:width .3s"></div></div>
+    </div>
+    <div class="action-row" style="margin-bottom:8px">
+      <button class="btn btn-ghost btn-xs" data-mana-delta="5">+5</button>
+      <button class="btn btn-ghost btn-xs" data-mana-delta="10">+10</button>
+      <button class="btn btn-ghost btn-xs" data-mana-delta="20">+20</button>
+      <button class="btn btn-ghost btn-xs" data-mana-full="1" style="color:#60a5fa">Full</button>
+      <span style="width:8px"></span>
+      <button class="btn btn-ghost btn-xs" data-mana-delta="-5">-5</button>
+      <button class="btn btn-ghost btn-xs" data-mana-delta="-10">-10</button>
+      <button class="btn btn-ghost btn-xs" data-mana-delta="-20">-20</button>
+    </div>`;
+  })() : '';
+
+  const permanentBonusesHtml = (() => {
+    const raceMods = (c.stat_modifiers || []).filter(m => m.source === 'race');
+    const classMods = (c.stat_modifiers || []).filter(m => m.source === 'class');
+    if (!raceMods.length && !classMods.length) return '';
+    let html = '<div style="margin-bottom:8px">';
+    html += '<h3 style="font-size:0.82rem;margin-bottom:6px">🏷️ Permanent Bonuses</h3>';
+    if (raceMods.length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
+      html += raceMods.map(m => `<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:#fbbf2420;border:1px solid #fbbf24;color:#fbbf24">${m.name || m.stat_name}: ${m.value > 0 ? '+' : ''}${m.value}</span>`).join('');
+      html += '</div>';
+    }
+    if (classMods.length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
+      html += classMods.map(m => `<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:#60a5fa20;border:1px solid #60a5fa;color:#60a5fa">${m.name || m.stat_name}: ${m.value > 0 ? '+' : ''}${m.value}</span>`).join('');
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  })();
+
+  const statsHtml = `
+    <div class="stats-inline">
+      ${stats.map((s,i) => {
+        const base = c[s];
+        const modSum = (c.stat_modifiers || []).filter(m => m.stat_name === s && m.is_active).reduce((a, m) => a + m.value, 0);
+        const eff = base + modSum;
+        const modLabel = modSum !== 0 ? ` <span style="font-size:0.55rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">(${modSum > 0 ? '+' : ''}${modSum})</span>` : '';
+        return `<div class="stat-inline"><div class="sl">${labels[i]}</div><div class="sv">${eff}${modLabel}</div></div>`;
+      }).join('')}
+      <div class="stat-inline"><div class="sl">KD</div><div class="sv" style="color:var(--accent)">${c.armor_class}</div></div>
+    </div>`;
+
+  const editStatsHtml = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      ${stats.map((s,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:var(--text-muted)">${labels[i]}</span>
+        <input type="number" value="${c[s]}" data-gm-stat="${s}" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>`).join('')}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:var(--text-muted)">KD</span>
+        <input type="number" value="${c.armor_class}" data-gm-stat="armor_class" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:var(--text-muted)">MaxHP</span>
+        <input type="number" value="${c.max_hp}" data-gm-stat="max_hp" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:#60a5fa">MaxMP</span>
+        <input type="number" value="${c.mana_max}" data-gm-stat="mana_max" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:#60a5fa">MP/T</span>
+        <input type="number" value="${c.mana_regen_per_turn}" data-gm-stat="mana_regen_per_turn" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>
+    </div>`;
+
+  const effectsSection = `
+    <h3 style="font-size:0.82rem;margin-bottom:6px">Effects</h3>
+    <div id="gm-effects">${effectsHtml}</div>`;
+
+  const statusSection = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="font-size:0.82rem;flex:1">⚡ Status Effects</h3>
+      <button class="btn btn-primary btn-xs" id="btn-gm-add-status">+ Add Status</button>
+      <button class="btn btn-ghost btn-xs" id="btn-gm-status-library">📚 Library</button>
+    </div>
+    <div id="gm-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:0.72rem;color:var(--text-muted)">Force Adv/Disadv:</span>
+      <div class="adv-toggle" id="gm-force-adv-toggle">
+        <button data-mode="normal" class="active">Normal</button>
+        <button data-mode="advantage">ADV</button>
+        <button data-mode="disadvantage">DISADV</button>
+      </div>
+    </div>`;
+
+  const rollSection = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:0.82rem;margin:0">🎲 Characteristic Roll</h3>
+      ${makeAdvToggle('gm_char_roll')}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <select id="gm-roll-stat" style="font-size:0.78rem;width:110px">
+        <option value="strength">Strength</option>
+        <option value="dexterity">Dexterity</option>
+        <option value="constitution">Constitution</option>
+        <option value="intelligence">Intelligence</option>
+        <option value="wisdom">Wisdom</option>
+        <option value="charisma">Charisma</option>
+      </select>
+      <select id="gm-roll-type" style="font-size:0.78rem;width:120px">
+        <option value="ability_check">Ability Check</option>
+        <option value="saving_throw">Saving Throw</option>
+        <option value="skill_check">Skill Check</option>
+      </select>
+      <button class="btn btn-secondary btn-xs" id="btn-gm-roll-char">🎲 Roll D20</button>
+    </div>
+    <div id="gm-roll-result" style="font-size:0.82rem;margin-bottom:8px"></div>`;
+
+  const dmgCalcHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:0.82rem;margin:0">Apply Damage to ${c.name}</h3>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:0.78rem;color:var(--text-muted)">Enemy Roll:</label>
+      <input type="number" id="gm-di-enemy" style="width:56px">
+      <label style="font-size:0.78rem;color:var(--text-muted)">Raw Dmg:</label>
+      <input type="number" id="gm-di-dmg" style="width:56px">
+      <button class="btn btn-danger btn-sm" id="btn-gm-apply-dmg">⚔️ Apply</button>
+    </div>
+    <div id="gm-dmg-result" style="margin-top:6px;font-size:0.82rem"></div>`;
+
+  const currencyHtml = `
+    <h3 style="font-size:0.82rem;margin-bottom:6px">💰 Currency</h3>
+    <div id="gm-currency-display" style="font-size:0.85rem;margin-bottom:6px;font-weight:600;color:var(--accent)"></div>
+    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <span style="font-size:0.7rem;color:#e0c97f">P:</span><input type="number" id="gm-give-plat" value="0" style="width:42px;font-size:0.75rem" min="0">
+      <span style="font-size:0.7rem;color:#fbbf24">G:</span><input type="number" id="gm-give-gold" value="0" style="width:42px;font-size:0.75rem" min="0">
+      <span style="font-size:0.7rem;color:#94a3b8">S:</span><input type="number" id="gm-give-silver" value="0" style="width:42px;font-size:0.75rem" min="0">
+      <span style="font-size:0.7rem;color:#b87333">B:</span><input type="number" id="gm-give-bronze" value="0" style="width:42px;font-size:0.75rem" min="0">
+      <button class="btn btn-primary btn-xs" id="btn-gm-give-currency">+ Give</button>
+      <button class="btn btn-ghost btn-xs" id="btn-gm-take-currency">- Take</button>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+      <span style="font-size:0.7rem;color:var(--text-muted)">Set total bronze:</span>
+      <input type="number" id="gm-wealth-bronze" value="${c.wealth_bronze || c.gold_copper || 0}" style="width:80px;font-size:0.75rem">
+      <button class="btn btn-ghost btn-xs" id="btn-gm-set-gold">Set</button>
+      <button class="btn btn-ghost btn-xs" id="btn-gm-tx-history" style="margin-left:auto">📜 History</button>
+    </div>`;
+
+  const inventoryHtml = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="font-size:0.82rem;flex:1">🎒 Inventory</h3>
+      <label style="font-size:0.7rem;color:var(--text-muted)">Player can edit:</label>
+      <label class="toggle-switch"><input type="checkbox" id="gm-can-edit-items" ${c.can_edit_own_items?'checked':''}><span class="slider"></span></label>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-xs" id="btn-gm-give-item">+ Give Item</button>
+    </div>
+    <div id="gm-char-inventory" style="font-size:0.8rem"></div>`;
+
+  const abilitiesAssignHtml = `
+    <div style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:0.82rem;font-weight:700">✨ Abilities</span>
+        <button class="btn btn-ghost btn-xs" id="btn-assign-ability">+ Assign</button>
+      </div>
+      <div id="npc-abilities-list" style="font-size:0.78rem"></div>
+    </div>`;
+
+  // ── NPC: 6-tab layout | Player: single scrollable view ──
+  if (c.is_npc) {
+    area.innerHTML = `
+      <div class="detail-panel">
+        <!-- NPC Header Bar (always visible) -->
+        <div class="detail-header" style="flex-wrap:wrap;gap:6px">
+          <h2 style="flex:1">${c.name} <span class="cc-badge badge-npc">NPC</span> ${!c.is_alive?'<span class="cc-badge badge-dead">💀 DEAD</span>':''}</h2>
+          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:3px;cursor:pointer" title="Token color">🎨 <input type="color" id="npc-token-color" value="${c.token_color||'#60a5fa'}" style="width:24px;height:20px;border:none;padding:0;cursor:pointer"></label>
+            <label style="font-size:0.72rem;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="npc-place-table" ${c.place_at_table?'checked':''}> Table</label>
+            <label style="font-size:0.72rem;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="npc-show-hp" ${c.show_hp_to_players?'checked':''}> HP</label>
+            <button class="btn btn-danger btn-xs" id="btn-npc-kill" title="Kill/KO">💀</button>
+            <button class="btn btn-danger btn-xs" id="btn-delete-char" title="Remove from session">🗑️</button>
+          </div>
+        </div>
+
+        <!-- NPC Tab Bar -->
+        <div class="npc-tab-bar" style="display:flex;gap:0;border-bottom:2px solid var(--border);overflow-x:auto;background:var(--bg-surface)">
+          <button class="npc-tab active" data-npc-tab="stats">⚔️ Stats</button>
+          <button class="npc-tab" data-npc-tab="inventory">🎒 Inv</button>
+          <button class="npc-tab" data-npc-tab="status">⚡ Status</button>
+          <button class="npc-tab" data-npc-tab="abilities">✨ Abilities</button>
+          <button class="npc-tab" data-npc-tab="notes">📝 Notes</button>
+          <button class="npc-tab" data-npc-tab="rolls">🎲 Rolls</button>
+        </div>
+
+        <div class="detail-body" style="padding-top:8px">
+          <!-- Tab: Stats & Combat -->
+          <div class="npc-tab-content active" data-npc-panel="stats">
+            ${hpHtml}
+            ${manaHtml}
+            ${permanentBonusesHtml}
+            ${statsHtml}
+            ${editStatsHtml}
+            <hr class="section-divider">
+            ${dmgCalcHtml}
+          </div>
+
+          <!-- Tab: Inventory -->
+          <div class="npc-tab-content" data-npc-panel="inventory" style="display:none">
+            ${inventoryHtml}
+            ${currencyHtml}
+            <hr class="section-divider">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <h3 style="font-size:0.82rem;flex:1">🏪 Merchant</h3>
+              <button class="btn btn-primary btn-xs" id="btn-gm-merchant-settings">⚙️ Shop Settings</button>
+              <button class="btn btn-ghost btn-xs" id="btn-gm-initiate-trade">🤝 Initiate Trade</button>
+            </div>
+            <div id="gm-merchant-preview" style="font-size:0.8rem"></div>
+          </div>
+
+          <!-- Tab: Status Effects -->
+          <div class="npc-tab-content" data-npc-panel="status" style="display:none">
+            ${effectsSection}
+            <hr class="section-divider">
+            ${statusSection}
+          </div>
+
+          <!-- Tab: Abilities -->
+          <div class="npc-tab-content" data-npc-panel="abilities" style="display:none">
+            ${abilitiesAssignHtml}
+          </div>
+
+          <!-- Tab: Turn Counter & Notes -->
+          <div class="npc-tab-content" data-npc-panel="notes" style="display:none">
+            <div style="margin-bottom:8px">
+              <h3 style="font-size:0.82rem;margin-bottom:6px">📝 GM Notes</h3>
+              <textarea id="npc-gm-notes" rows="8" style="width:100%;font-size:0.8rem;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:8px;resize:vertical">${c.gm_notes||''}</textarea>
+              <div style="display:flex;gap:6px;margin-top:4px">
+                <button class="btn btn-primary btn-xs" id="btn-save-npc-notes">Save Notes</button>
+                <button class="btn btn-ghost btn-xs" id="btn-preview-npc-notes">Preview</button>
+              </div>
+              <div id="npc-notes-preview" style="display:none;margin-top:6px;font-size:0.8rem;padding:8px;background:var(--bg-surface-2);border-radius:var(--r-md)"></div>
+            </div>
+            <hr class="section-divider">
+            <div id="char-notes-section"></div>
+          </div>
+
+          <!-- Tab: Characteristic Rolls -->
+          <div class="npc-tab-content" data-npc-panel="rolls" style="display:none">
+            ${rollSection}
+          </div>
+        </div>
+      </div>`;
+  } else {
+    // ── Player: original single-view layout ──
+    area.innerHTML = `
+      <div class="detail-panel">
+        <div class="detail-header">
+          <h2>${c.name} <span class="cc-badge badge-player">Player</span> ${!c.is_alive?'<span class="cc-badge badge-dead">💀 DEAD</span>':''}</h2>
+        </div>
+        <div class="detail-body">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:0.78rem">
+            <span id="gm-char-race" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Race: <strong>${c.race_id ? '...' : 'None'}</strong></span>
+            <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Class: <strong>${c.class_id ? '...' : 'None'}</strong></span>
+            <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Lvl <strong>${c.level || 1}</strong></span>
+            <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">XP <strong><span id="gm-char-xp">${c.experience || 0}</span></strong>
+              <button class="btn btn-ghost btn-xs" id="btn-edit-xp" style="padding:0 3px;margin-left:2px;font-size:0.65rem">✏️</button>
+            </span>
+          </div>
+          ${hpHtml}
+          ${manaHtml}
+          ${abilitiesAssignHtml}
+          <hr class="section-divider">
+          ${permanentBonusesHtml}
+          ${statsHtml}
+          ${editStatsHtml}
+          <hr class="section-divider">
+          ${effectsSection}
+          <hr class="section-divider">
+          ${statusSection}
+          <hr class="section-divider">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <h3 style="font-size:0.82rem;flex:1">⏱ Timer</h3>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+            <input type="number" id="gm-detail-timer-min" value="2" min="1" max="60" step="1" style="width:50px;font-size:0.8rem">
+            <span style="font-size:0.75rem;color:var(--text-muted)">min</span>
+            <button class="btn btn-primary btn-xs" id="btn-gm-detail-timer-start">▶ Start</button>
+            <button class="btn btn-ghost btn-xs" id="btn-gm-detail-timer-pause" style="display:none">⏸ Pause</button>
+            <button class="btn btn-ghost btn-xs" id="btn-gm-detail-timer-resume" style="display:none">▶ Resume</button>
+            <button class="btn btn-danger btn-xs" id="btn-gm-detail-timer-stop" style="display:none">⏹ Stop</button>
+          </div>
+          <div id="gm-detail-timer-display" style="font-size:1.6rem;font-weight:700;color:var(--accent-orange);margin-bottom:8px;display:none;font-variant-numeric:tabular-nums"></div>
+          <hr class="section-divider">
+          ${rollSection}
+          <hr class="section-divider">
+          ${dmgCalcHtml}
+          <hr class="section-divider">
+          ${currencyHtml}
+          <hr class="section-divider">
+          ${inventoryHtml}
+          <hr class="section-divider">
+          <div id="char-notes-section"></div>
+        </div>
+      </div>`;
+  }
 
   // ── Wire events ──
   // HP delta buttons
@@ -545,6 +631,164 @@ async function renderCharDetail() {
       await refreshChars();
       renderCharDetail();
       addLog('gm.npc', `Deleted NPC: ${c.name}`);
+    });
+  }
+
+  // Phase 7: NPC Tab switching
+  if (c.is_npc) {
+    area.querySelectorAll('.npc-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.npcTab;
+        area.querySelectorAll('.npc-tab').forEach(t => t.classList.toggle('active', t === tab));
+        area.querySelectorAll('.npc-tab-content').forEach(p => {
+          p.style.display = p.dataset.npcPanel === target ? '' : 'none';
+          p.classList.toggle('active', p.dataset.npcPanel === target);
+        });
+      });
+    });
+
+    // Kill/KO button
+    const killBtn = area.querySelector('#btn-npc-kill');
+    if (killBtn) {
+      killBtn.addEventListener('click', async () => {
+        if (!confirm(`Kill/KO ${c.name}?`)) return;
+        await api.patch(`/api/characters/${c.id}/hp`, { set: 0 });
+        await api.put(`/api/characters/${c.id}`, { is_alive: false });
+        try {
+          await api.post(`/api/characters/${c.id}/status-effects`, { name: 'Unconscious', icon: '💀', color: '#ef4444', effects: '[]', remaining_turns: -1 });
+        } catch {}
+        addLog('gm.npc', `${c.name}: KILLED/KO`);
+        await refreshChars();
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'combat.character_downed', character_id: c.id, character_name: c.name }));
+        }
+      });
+    }
+
+    // Token color picker
+    const colorPicker = area.querySelector('#npc-token-color');
+    if (colorPicker) {
+      colorPicker.addEventListener('change', async () => {
+        await api.put(`/api/characters/${c.id}`, { token_color: colorPicker.value });
+        addLog('gm.npc', `${c.name}: token color → ${colorPicker.value}`);
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'npc.token_color_changed', character_id: c.id, color: colorPicker.value }));
+        }
+      });
+    }
+
+    // GM Notes save
+    const saveNotesBtn = area.querySelector('#btn-save-npc-notes');
+    if (saveNotesBtn) {
+      saveNotesBtn.addEventListener('click', async () => {
+        const txt = area.querySelector('#npc-gm-notes').value;
+        await api.put(`/api/characters/${c.id}`, { gm_notes: txt });
+        showToast('Notes saved');
+      });
+    }
+    const previewBtn = area.querySelector('#btn-preview-npc-notes');
+    if (previewBtn) {
+      previewBtn.addEventListener('click', () => {
+        const preview = area.querySelector('#npc-notes-preview');
+        const ta = area.querySelector('#npc-gm-notes');
+        if (preview.style.display === 'none') {
+          preview.style.display = '';
+          preview.innerHTML = ta.value.replace(/\n/g, '<br>');
+          previewBtn.textContent = 'Edit';
+        } else {
+          preview.style.display = 'none';
+          previewBtn.textContent = 'Preview';
+        }
+      });
+    }
+  }
+
+  // Phase 6: Place at Table / Show HP toggles
+  const placeChk = area.querySelector('#npc-place-table');
+  if (placeChk) {
+    placeChk.addEventListener('change', async () => {
+      await api.put(`/api/characters/${c.id}`, { place_at_table: placeChk.checked });
+      addLog('gm.npc', `${c.name}: Place at Table = ${placeChk.checked}`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+        ws.ws.send(JSON.stringify({ type: 'table.updated' }));
+    });
+  }
+  const showHpChk = area.querySelector('#npc-show-hp');
+  if (showHpChk) {
+    showHpChk.addEventListener('change', async () => {
+      await api.put(`/api/characters/${c.id}`, { show_hp_to_players: showHpChk.checked });
+      addLog('gm.npc', `${c.name}: Show HP = ${showHpChk.checked}`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+        ws.ws.send(JSON.stringify({ type: 'table.updated' }));
+    });
+  }
+
+  // Phase 7: Ability assign + enhanced list
+  const abList = area.querySelector('#npc-abilities-list');
+  if (abList) {
+    try {
+      const cas = await api.get(`/api/characters/${c.id}/abilities`);
+      if (cas.length) {
+        abList.innerHTML = cas.map(a => {
+          const onCd = a.cooldown_remaining > 0;
+          const typeBadge = a.ability_type === 'passive' ? '<span style="font-size:0.6rem;background:#3b82f620;color:#60a5fa;padding:1px 5px;border-radius:8px">passive</span>' :
+            a.ability_type === 'reaction' ? '<span style="font-size:0.6rem;background:#f59e0b20;color:#f59e0b;padding:1px 5px;border-radius:8px">reaction</span>' : '';
+          const costParts = [];
+          if (a.mana_cost) costParts.push(`🔮${a.mana_cost}`);
+          if (a.hp_cost) costParts.push(`❤️${a.hp_cost}`);
+          return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;padding:4px 8px;border-left:3px solid ${a.color||'#60a5fa'};background:var(--bg-surface-2);border-radius:var(--r-sm);${onCd?'opacity:0.5':''}">
+            <span style="font-weight:600;font-size:0.78rem">${a.icon||'⚡'} ${a.name}</span>
+            ${typeBadge}
+            ${costParts.length ? `<span style="font-size:0.65rem;color:var(--text-muted)">${costParts.join(' ')}</span>` : ''}
+            ${onCd ? `<span style="color:var(--accent-orange);font-size:0.65rem">⏳${a.cooldown_remaining}t</span>` : ''}
+            ${a.cooldown_turns && !onCd ? `<span style="font-size:0.6rem;color:var(--text-muted)">CD:${a.cooldown_turns}t</span>` : ''}
+            <span style="margin-left:auto;display:flex;gap:3px">
+              ${a.ability_type !== 'passive' && !onCd ? `<button class="btn btn-primary btn-xs" data-use-ca="${a.character_ability_id}" data-use-name="${a.name}" style="font-size:0.6rem;padding:1px 6px">Use</button>` : ''}
+              <button class="btn btn-ghost btn-xs" data-rm-ca="${a.character_ability_id}" style="color:var(--accent-red);font-size:0.65rem">✕</button>
+            </span>
+          </div>`;
+        }).join('');
+        abList.querySelectorAll('[data-rm-ca]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            await api.del(`/api/character-abilities/${btn.dataset.rmCa}`);
+            renderCharDetail();
+          });
+        });
+        abList.querySelectorAll('[data-use-ca]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const caId = btn.dataset.useCa;
+            const abName = btn.dataset.useName;
+            try {
+              const res = await api.post(`/api/character-abilities/${caId}/use`, {});
+              if (res.results) res.results.forEach(r => addLog('gm.ability', `${c.name} → ${abName}: ${r}`));
+              await refreshChars();
+              renderCharDetail();
+            } catch (e) {
+              const d = e?.body?.detail;
+              showToast(typeof d === 'object' ? d.message : String(d || 'Failed'), 'error');
+            }
+          });
+        });
+      } else {
+        abList.innerHTML = '<span class="text-muted">No abilities assigned</span>';
+      }
+    } catch { abList.innerHTML = '<span class="text-muted">—</span>'; }
+  }
+  const assignBtn = area.querySelector('#btn-assign-ability');
+  if (assignBtn) {
+    assignBtn.addEventListener('click', async () => {
+      try {
+        const all = await api.get(`/api/abilities?session_id=${SESSION_ID}`);
+        if (!all.length) { showToast('No abilities created yet. Create one in GM Tools.'); return; }
+        const names = all.map((a, i) => `${i+1}. ${a.name} (🔮${a.mana_cost})`).join('\n');
+        const pick = prompt(`Assign ability:\n${names}\nEnter number:`);
+        if (!pick) return;
+        const ab = all[parseInt(pick) - 1];
+        if (!ab) return;
+        await api.post(`/api/characters/${c.id}/abilities`, { ability_id: ab.id });
+        renderCharDetail();
+        addLog('gm.ability', `Assigned ${ab.name} to ${c.name}`);
+      } catch (e) { showToast(e?.body?.detail || 'Failed'); }
     });
   }
 
@@ -2089,6 +2333,11 @@ function openItemEditor(itemId = null) {
       $('#item-ed-wrange').value = item.weapon_stats.range || '';
     }
     tempBonuses = (item.bonuses || []).map(b => ({...b}));
+    // Use effects
+    const ue = item.use_effect;
+    tempUseEffects = (ue && ue.effects) ? ue.effects.map(e => ({...e})) : [];
+    $('#use-effects-section').classList.toggle('hidden', !item.consumable);
+    renderUseEffectEditor();
     $('#btn-delete-item').classList.remove('hidden');
   } else {
     $('#item-modal-title').textContent = 'New Item';
@@ -2103,7 +2352,10 @@ function openItemEditor(itemId = null) {
     $('#item-ed-tags').value = '';
     $('#item-ed-is-weapon').checked = false;
     $('#weapon-stats-section').classList.add('hidden');
+    $('#use-effects-section').classList.add('hidden');
     tempBonuses = [];
+    tempUseEffects = [];
+    renderUseEffectEditor();
     $('#btn-delete-item').classList.add('hidden');
   }
   renderBonusEditor();
@@ -2184,6 +2436,11 @@ async function saveItem() {
       condition_description: b.condition_description || null,
     })),
   };
+  if (tempUseEffects.length > 0) {
+    body.use_effect = { effects: tempUseEffects };
+  } else {
+    body.use_effect = null;
+  }
   if ($('#item-ed-is-weapon').checked) {
     body.weapon_stats = {
       dice_count: parseInt($('#item-ed-wdice-count').value) || 1,
@@ -2230,6 +2487,68 @@ async function deleteItem() {
   } catch (e) { showToast('Error: ' + e.message); }
 }
 
+// ── Use Effects Editor ──
+let tempUseEffects = [];
+const USE_EFFECT_TYPES = [
+  {value:'heal_hp', label:'Heal HP'},
+  {value:'restore_mana', label:'Restore Mana'},
+  {value:'apply_status', label:'Apply Status'},
+  {value:'stat_boost', label:'Stat Boost'},
+  {value:'remove_status', label:'Remove Status'},
+  {value:'damage', label:'Damage (self)'},
+  {value:'custom', label:'Custom'},
+];
+
+function renderUseEffectEditor() {
+  const list = $('#use-effect-editor-list');
+  if (!tempUseEffects.length) {
+    list.innerHTML = '<div style="font-size:0.78rem;color:var(--text-muted);padding:4px 0">No effects. Click "+ Add Effect".</div>';
+    return;
+  }
+  list.innerHTML = tempUseEffects.map((e, i) => {
+    const typeOpts = USE_EFFECT_TYPES.map(t =>
+      `<option value="${t.value}" ${t.value === e.type ? 'selected' : ''}>${t.label}</option>`
+    ).join('');
+    let fields = '';
+    if (e.type === 'heal_hp' || e.type === 'damage') {
+      fields = `<input type="number" data-ue-field="dice_count" value="${e.dice_count||1}" min="1" style="width:40px" title="Dice count">d<input type="number" data-ue-field="dice_type" value="${e.dice_type||4}" min="1" style="width:40px" title="Dice type">+<input type="number" data-ue-field="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" title="Flat bonus">`;
+    } else if (e.type === 'restore_mana') {
+      fields = `<label style="font-size:0.7rem">Amount:</label><input type="number" data-ue-field="amount" value="${e.amount||0}" style="width:50px">`;
+    } else if (e.type === 'apply_status') {
+      fields = `<label style="font-size:0.7rem">Template ID:</label><input type="number" data-ue-field="template_id" value="${e.template_id||''}" style="width:50px"><label style="font-size:0.7rem">Turns:</label><input type="number" data-ue-field="duration_turns" value="${e.duration_turns||3}" style="width:40px">`;
+    } else if (e.type === 'stat_boost') {
+      const statOpts = STAT_NAMES.map(s => `<option value="${s}" ${s===e.stat?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('');
+      fields = `<select data-ue-field="stat">${statOpts}</select><input type="number" data-ue-field="value" value="${e.value||0}" style="width:40px" title="Value"><label style="font-size:0.7rem">Turns:</label><input type="number" data-ue-field="duration_turns" value="${e.duration_turns||3}" style="width:40px">`;
+    } else if (e.type === 'remove_status') {
+      fields = `<label style="font-size:0.7rem">Name:</label><input type="text" data-ue-field="status_name" value="${e.status_name||''}" style="width:100px" placeholder="Poisoned">`;
+    } else if (e.type === 'custom') {
+      fields = `<input type="text" data-ue-field="description" value="${e.description||''}" style="width:160px" placeholder="Effect description">`;
+    }
+    return `<div class="ue-row" data-ue-idx="${i}" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+      <select class="ue-type-select">${typeOpts}</select>
+      ${fields}
+      <button class="btn-icon danger" data-remove-ue="${i}" title="Remove">🗑️</button>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.ue-row').forEach(row => {
+    const idx = parseInt(row.dataset.ueIdx);
+    row.querySelector('.ue-type-select').addEventListener('change', ev => {
+      tempUseEffects[idx] = {type: ev.target.value};
+      renderUseEffectEditor();
+    });
+    row.querySelectorAll('[data-ue-field]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const f = inp.dataset.ueField;
+        const v = inp.type === 'number' ? (parseFloat(inp.value)||0) : inp.value;
+        tempUseEffects[idx][f] = v;
+      });
+    });
+    const rmBtn = row.querySelector('[data-remove-ue]');
+    if (rmBtn) rmBtn.addEventListener('click', () => { tempUseEffects.splice(idx,1); renderUseEffectEditor(); });
+  });
+}
+
 // ── Wire Item DB Events ──
 $('#btn-new-item').addEventListener('click', () => openItemEditor(null));
 $('#btn-close-item-modal').addEventListener('click', closeItemModal);
@@ -2242,6 +2561,13 @@ $('#btn-add-bonus').addEventListener('click', () => {
 });
 $('#item-ed-is-weapon').addEventListener('change', e => {
   $('#weapon-stats-section').classList.toggle('hidden', !e.target.checked);
+});
+$('#item-ed-consumable').addEventListener('change', e => {
+  $('#use-effects-section').classList.toggle('hidden', !e.target.checked);
+});
+$('#btn-add-use-effect').addEventListener('click', () => {
+  tempUseEffects.push({type: 'heal_hp', dice_count: 2, dice_type: 4, flat_bonus: 2});
+  renderUseEffectEditor();
 });
 
 // Filters
@@ -4726,6 +5052,375 @@ ws.on('session.timer_paused', d => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// PHASE 6 — GM ABILITY MANAGER
+// ══════════════════════════════════════════════════════════════
+let gmAbilities = [];
+
+async function loadGmAbilities() {
+  try {
+    gmAbilities = await api.get(`/api/abilities?session_id=${SESSION_ID}`);
+    renderGmAbilities();
+  } catch (e) { console.warn('loadGmAbilities:', e); }
+}
+
+const _AB_ICONS = ['⚡','⚔️','🔥','❄️','☠️','✨','🛡️','💨','🌊','🌑','💀','🌿','🪄','💫','🌟','⭐','🔮','❤️','🎯','👁️'];
+const _AB_DMGTYPES = ['physical','fire','ice','lightning','poison','holy','dark','arcane','custom'];
+const _AB_STATS = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+const _AB_EFF_TYPES = ['heal_hp','restore_mana','apply_status','stat_boost','remove_status','damage','summon_npc','teleport','custom'];
+
+function renderGmAbilities() {
+  const el = $('#gm-abilities-list');
+  if (!el) return;
+  if (!gmAbilities.length) {
+    el.innerHTML = '<p class="text-muted">No abilities created yet. Click "+ New Ability" to add one.</p>';
+    return;
+  }
+  el.innerHTML = gmAbilities.map(a => {
+    const tags = (Array.isArray(a.tags) ? a.tags : []).map(t => `<span style="font-size:0.62rem;padding:1px 5px;border-radius:8px;background:var(--bg-surface-2);border:1px solid var(--border)">${t}</span>`).join('');
+    const typeBadge = a.ability_type === 'passive' ? '🔵 Passive' : a.ability_type === 'reaction' ? '⚡ Reaction' : '🟢 Active';
+    const targetIcon = { self:'🙂', single:'🎯', aoe:'💥', none:'—' }[a.target_type] || '';
+    const effCount = (a.effect?.effects || []).length;
+    return `<div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--border);background:var(--bg-surface)">
+      <div style="width:4px;background:${a.color||'#60a5fa'}"></div>
+      <div style="flex:1;padding:8px 10px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:1.1rem">${a.icon||'⚡'}</span>
+          <span style="font-weight:700;font-size:0.85rem">${a.name}</span>
+          <span style="font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--bg-surface-2);border:1px solid var(--border)">${typeBadge}</span>
+          ${a.mana_cost ? `<span style="font-size:0.65rem;color:#60a5fa;font-weight:600">🔮 ${a.mana_cost}</span>` : ''}
+          ${a.hp_cost ? `<span style="font-size:0.65rem;color:var(--accent-red);font-weight:600">❤️ ${a.hp_cost}</span>` : ''}
+          ${a.cooldown_turns ? `<span style="font-size:0.65rem;color:var(--accent-orange)">⏳ ${a.cooldown_turns}t</span>` : ''}
+          ${a.damage_dice_count ? `<span style="font-size:0.65rem">${a.damage_dice_count}d${a.damage_dice_type} ${a.damage_type}</span>` : ''}
+          <span style="font-size:0.65rem">${targetIcon}</span>
+          ${effCount ? `<span style="font-size:0.62rem;color:var(--text-muted)">${effCount} effects</span>` : ''}
+        </div>
+        ${tags ? `<div style="display:flex;gap:3px;margin-top:3px;flex-wrap:wrap">${tags}</div>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;padding:4px;justify-content:center">
+        <button class="btn btn-ghost btn-xs" data-edit-ability="${a.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-xs" data-dup-ability="${a.id}" title="Duplicate">📋</button>
+        <button class="btn btn-ghost btn-xs" data-assign-ability="${a.id}" title="Assign">👤</button>
+        <button class="btn btn-ghost btn-xs" data-del-ability="${a.id}" style="color:var(--accent-red)" title="Delete">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-edit-ability]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ab = gmAbilities.find(a => a.id == btn.dataset.editAbility);
+      if (ab) showAbilityEditor(ab);
+    });
+  });
+  el.querySelectorAll('[data-dup-ability]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api.post(`/api/abilities/${btn.dataset.dupAbility}/duplicate`);
+      loadGmAbilities();
+    });
+  });
+  el.querySelectorAll('[data-assign-ability]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ab = gmAbilities.find(a => a.id == btn.dataset.assignAbility);
+      if (!ab) return;
+      const charNames = characters.map((c, i) => `${i+1}. ${c.name} ${c.is_npc?'(NPC)':'(Player)'}`).join('\n');
+      const pick = prompt(`Assign "${ab.name}" to:\n${charNames}\nEnter numbers (comma-separated):`);
+      if (!pick) return;
+      const idxs = pick.split(',').map(s => parseInt(s.trim()) - 1).filter(i => i >= 0 && i < characters.length);
+      for (const idx of idxs) {
+        try {
+          await api.post(`/api/characters/${characters[idx].id}/abilities`, { ability_id: ab.id });
+        } catch {}
+      }
+      showToast(`Assigned ${ab.name} to ${idxs.length} character(s)`);
+    });
+  });
+  el.querySelectorAll('[data-del-ability]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this ability?')) return;
+      await api.del(`/api/abilities/${btn.dataset.delAbility}`);
+      loadGmAbilities();
+    });
+  });
+}
+
+function showAbilityEditor(existing = null) {
+  const d = existing || {};
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;justify-content:center;align-items:flex-start;padding:30px;overflow-y:auto';
+
+  const tags = Array.isArray(d.tags) ? d.tags.join(', ') : '';
+  const effects = d.effect?.effects || [];
+  const passiveEff = d.passive_effect || {};
+
+  overlay.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:600px;max-width:95vw;padding:20px;max-height:90vh;overflow-y:auto">
+    <h2 style="margin:0 0 12px;font-size:1rem">${existing ? 'Edit' : 'Create'} Ability</h2>
+
+    <!-- Section 1: Identity -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">🏷️ Identity</legend>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <div style="flex:1"><label style="font-size:0.72rem">Name</label><input id="ab-name" value="${d.name||''}" style="width:100%"></div>
+        <div style="width:80px"><label style="font-size:0.72rem">Color</label><input id="ab-color" type="color" value="${d.color||'#60a5fa'}" style="width:100%;height:30px"></div>
+      </div>
+      <div style="margin-bottom:6px">
+        <label style="font-size:0.72rem">Icon</label>
+        <div id="ab-icon-grid" style="display:flex;flex-wrap:wrap;gap:4px">${_AB_ICONS.map(ic => `<button class="btn btn-ghost btn-xs ab-icon-pick ${ic===(d.icon||'⚡')?'active':''}" data-icon="${ic}" style="font-size:1.1rem;padding:2px 4px">${ic}</button>`).join('')}</div>
+      </div>
+      <div style="margin-bottom:6px"><label style="font-size:0.72rem">Flavor Text (shown to players)</label><textarea id="ab-flavor" rows="2" style="width:100%;font-size:0.78rem">${d.flavor_text||''}</textarea></div>
+      <div style="margin-bottom:6px"><label style="font-size:0.72rem">GM Notes (hidden from players)</label><textarea id="ab-notes" rows="2" style="width:100%;font-size:0.78rem">${d.notes||''}</textarea></div>
+      <div><label style="font-size:0.72rem">Tags (comma-separated)</label><input id="ab-tags" value="${tags}" style="width:100%"></div>
+    </fieldset>
+
+    <!-- Section 2: Type & Targeting -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">⚙️ Type & Targeting</legend>
+      <div style="display:flex;gap:12px;margin-bottom:6px">
+        <label style="font-size:0.78rem"><input type="radio" name="ab-type" value="active" ${(d.ability_type||'active')==='active'?'checked':''}> Active</label>
+        <label style="font-size:0.78rem"><input type="radio" name="ab-type" value="passive" ${d.ability_type==='passive'?'checked':''}> Passive</label>
+        <label style="font-size:0.78rem"><input type="radio" name="ab-type" value="reaction" ${d.ability_type==='reaction'?'checked':''}> Reaction</label>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:6px">
+        <label style="font-size:0.78rem"><input type="radio" name="ab-target" value="self" ${d.target_type==='self'?'checked':''}> Self</label>
+        <label style="font-size:0.78rem"><input type="radio" name="ab-target" value="single" ${(d.target_type||'single')==='single'?'checked':''}> Single</label>
+        <label style="font-size:0.78rem"><input type="radio" name="ab-target" value="aoe" ${d.target_type==='aoe'?'checked':''}> AoE</label>
+        <label style="font-size:0.78rem"><input type="radio" name="ab-target" value="none" ${d.target_type==='none'?'checked':''}> None</label>
+      </div>
+      <div id="ab-aoe-row" style="display:${d.target_type==='aoe'?'flex':'none'};gap:6px;align-items:center;margin-bottom:6px">
+        <label style="font-size:0.72rem">AoE Radius (cells):</label><input id="ab-aoe" type="number" value="${d.aoe_radius||3}" min="1" style="width:60px">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:0.72rem">Damage Type:</label>
+        <select id="ab-dmgtype" style="font-size:0.78rem">${_AB_DMGTYPES.map(t => `<option value="${t}" ${t===(d.damage_type||'physical')?'selected':''}>${t}</option>`).join('')}</select>
+        <input id="ab-custom-dmg" placeholder="Custom type name" value="${d.custom_damage_type||''}" style="width:120px;display:${d.damage_type==='custom'?'':'none'}">
+      </div>
+    </fieldset>
+
+    <!-- Section 3: Costs & Cooldown -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">💰 Costs & Cooldown</legend>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div><label style="font-size:0.72rem">🔮 Mana Cost</label><input id="ab-mana" type="number" value="${d.mana_cost||0}" min="0" style="width:60px"></div>
+        <div><label style="font-size:0.72rem">❤️ HP Cost</label><input id="ab-hpcost" type="number" value="${d.hp_cost||0}" min="0" style="width:60px"></div>
+        <div><label style="font-size:0.72rem">⏳ Cooldown (turns)</label><input id="ab-cd" type="number" value="${d.cooldown_turns||0}" min="0" style="width:60px"></div>
+      </div>
+      <div style="margin-top:6px;display:flex;gap:12px;align-items:center">
+        <label style="font-size:0.78rem"><input type="checkbox" id="ab-hitroll" ${d.requires_hit_roll?'checked':''}> Requires Hit Roll</label>
+        <div id="ab-hitstat-row" style="display:${d.requires_hit_roll?'flex':'none'};gap:6px;align-items:center">
+          <label style="font-size:0.72rem">Hit stat:</label>
+          <select id="ab-hitstat" style="font-size:0.78rem">${_AB_STATS.map(s => `<option value="${s}" ${s===(d.hit_stat||'strength')?'selected':''}>${s.substring(0,3).toUpperCase()}</option>`).join('')}</select>
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- Section 4: Damage -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">🗡️ Damage</legend>
+      <label style="font-size:0.78rem"><input type="checkbox" id="ab-has-dmg" ${d.damage_dice_count?'checked':''}> This ability deals damage</label>
+      <div id="ab-dmg-fields" style="display:${d.damage_dice_count?'flex':'none'};gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+        <input id="ab-ddc" type="number" value="${d.damage_dice_count||1}" min="1" style="width:50px">
+        <span>d</span>
+        <select id="ab-ddt" style="font-size:0.78rem">${[4,6,8,10,12,20].map(v => `<option value="${v}" ${v===(d.damage_dice_type||6)?'selected':''}>${v}</option>`).join('')}</select>
+        <label style="font-size:0.72rem">Dmg stat:</label>
+        <select id="ab-dmgstat" style="font-size:0.78rem"><option value="">None</option>${_AB_STATS.map(s => `<option value="${s}" ${s===(d.damage_stat||'strength')?'selected':''}>${s.substring(0,3).toUpperCase()}</option>`).join('')}</select>
+      </div>
+    </fieldset>
+
+    <!-- Section 5: Effects Chain -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">✨ Effects Chain</legend>
+      <div id="ab-effects-list"></div>
+      <button class="btn btn-ghost btn-xs" id="ab-add-effect" style="margin-top:4px">+ Add Effect</button>
+    </fieldset>
+
+    <!-- Section 6: Passive Effect (if passive type) -->
+    <fieldset id="ab-passive-section" style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px;display:${d.ability_type==='passive'?'block':'none'}">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">🔵 Passive Effect</legend>
+      <div id="ab-passive-list"></div>
+      <button class="btn btn-ghost btn-xs" id="ab-add-passive" style="margin-top:4px">+ Add Bonus</button>
+    </fieldset>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-ghost btn-sm" id="ab-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="ab-save">${existing ? 'Save Changes' : 'Create Ability'}</button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(overlay);
+
+  // ── Wire icon picker ──
+  let selectedIcon = d.icon || '⚡';
+  overlay.querySelectorAll('.ab-icon-pick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      overlay.querySelectorAll('.ab-icon-pick').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedIcon = btn.dataset.icon;
+    });
+  });
+
+  // ── Toggle visibility based on radio/checkbox ──
+  overlay.querySelectorAll('[name="ab-target"]').forEach(r => r.addEventListener('change', () => {
+    overlay.querySelector('#ab-aoe-row').style.display = overlay.querySelector('[name="ab-target"]:checked').value === 'aoe' ? 'flex' : 'none';
+  }));
+  overlay.querySelectorAll('[name="ab-type"]').forEach(r => r.addEventListener('change', () => {
+    overlay.querySelector('#ab-passive-section').style.display = overlay.querySelector('[name="ab-type"]:checked').value === 'passive' ? 'block' : 'none';
+  }));
+  overlay.querySelector('#ab-dmgtype').addEventListener('change', () => {
+    overlay.querySelector('#ab-custom-dmg').style.display = overlay.querySelector('#ab-dmgtype').value === 'custom' ? '' : 'none';
+  });
+  overlay.querySelector('#ab-hitroll').addEventListener('change', () => {
+    overlay.querySelector('#ab-hitstat-row').style.display = overlay.querySelector('#ab-hitroll').checked ? 'flex' : 'none';
+  });
+  overlay.querySelector('#ab-has-dmg').addEventListener('change', () => {
+    overlay.querySelector('#ab-dmg-fields').style.display = overlay.querySelector('#ab-has-dmg').checked ? 'flex' : 'none';
+  });
+
+  // ── Effects chain ──
+  let editorEffects = [...effects];
+  function renderEffectsEditor() {
+    const el = overlay.querySelector('#ab-effects-list');
+    if (!editorEffects.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No effects</span>'; return; }
+    el.innerHTML = editorEffects.map((e, i) => {
+      let fields = '';
+      if (e.type === 'heal_hp' || e.type === 'damage') {
+        fields = `<input type="number" data-ef="dice_count" value="${e.dice_count||1}" min="1" style="width:40px" placeholder="dc"> d <input type="number" data-ef="dice_type" value="${e.dice_type||6}" style="width:40px" placeholder="dt"> + <input type="number" data-ef="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" placeholder="bonus">`;
+      } else if (e.type === 'restore_mana') {
+        fields = `Amount: <input type="number" data-ef="amount" value="${e.amount||0}" style="width:50px">`;
+      } else if (e.type === 'apply_status') {
+        fields = `Template ID: <input type="number" data-ef="template_id" value="${e.template_id||''}" style="width:50px"> Duration: <input type="number" data-ef="duration_turns" value="${e.duration_turns||3}" style="width:40px">t`;
+      } else if (e.type === 'stat_boost') {
+        fields = `Stat: <select data-ef="stat">${_AB_STATS.map(s => `<option value="${s}" ${s===e.stat?'selected':''}>${s.substring(0,3)}</option>`).join('')}</select> Value: <input type="number" data-ef="value" value="${e.value||0}" style="width:40px"> Duration: <input type="number" data-ef="duration_turns" value="${e.duration_turns||3}" style="width:40px">t`;
+      } else if (e.type === 'remove_status') {
+        fields = `Status name: <input data-ef="status_name" value="${e.status_name||''}" style="width:100px">`;
+      } else if (e.type === 'custom' || e.type === 'teleport') {
+        fields = `Desc: <input data-ef="description" value="${e.description||''}" style="width:180px">`;
+      } else if (e.type === 'summon_npc') {
+        fields = `Template ID: <input type="number" data-ef="template_id" value="${e.template_id||''}" style="width:50px"> Count: <input type="number" data-ef="count" value="${e.count||1}" style="width:40px">`;
+      }
+      return `<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;font-size:0.72rem" data-eff-idx="${i}">
+        <select data-ef-type style="font-size:0.72rem">${_AB_EFF_TYPES.map(t => `<option value="${t}" ${t===e.type?'selected':''}>${t}</option>`).join('')}</select>
+        ${fields}
+        <button class="btn btn-ghost btn-xs" data-rm-eff="${i}" style="color:var(--accent-red)">✕</button>
+      </div>`;
+    }).join('');
+
+    // Wire type change
+    el.querySelectorAll('[data-ef-type]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const idx = parseInt(sel.closest('[data-eff-idx]').dataset.effIdx);
+        editorEffects[idx] = { type: sel.value };
+        renderEffectsEditor();
+      });
+    });
+    // Wire field changes
+    el.querySelectorAll('[data-ef]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const idx = parseInt(inp.closest('[data-eff-idx]').dataset.effIdx);
+        const key = inp.dataset.ef;
+        const v = inp.type === 'number' ? (parseInt(inp.value)||0) : inp.value;
+        editorEffects[idx][key] = v;
+      });
+    });
+    // Wire remove
+    el.querySelectorAll('[data-rm-eff]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        editorEffects.splice(parseInt(btn.dataset.rmEff), 1);
+        renderEffectsEditor();
+      });
+    });
+  }
+  renderEffectsEditor();
+  overlay.querySelector('#ab-add-effect').addEventListener('click', () => {
+    editorEffects.push({ type: 'damage', dice_count: 1, dice_type: 6, flat_bonus: 0 });
+    renderEffectsEditor();
+  });
+
+  // ── Passive bonuses ──
+  let passiveBonuses = passiveEff.bonuses || [];
+  function renderPassiveEditor() {
+    const el = overlay.querySelector('#ab-passive-list');
+    if (!passiveBonuses.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No passive bonuses</span>'; return; }
+    el.innerHTML = passiveBonuses.map((b, i) => `<div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;font-size:0.72rem" data-pb-idx="${i}">
+      <select data-pb="bonus_type" style="font-size:0.72rem">
+        <option value="attack_bonus" ${b.bonus_type==='attack_bonus'?'selected':''}>ATK Bonus</option>
+        <option value="damage_bonus" ${b.bonus_type==='damage_bonus'?'selected':''}>DMG Bonus</option>
+        <option value="stat_bonus" ${b.bonus_type==='stat_bonus'?'selected':''}>Stat Bonus</option>
+        <option value="damage_reduction_flat" ${b.bonus_type==='damage_reduction_flat'?'selected':''}>Dmg Reduction (flat)</option>
+        <option value="damage_reduction_pct" ${b.bonus_type==='damage_reduction_pct'?'selected':''}>Dmg Reduction (%)</option>
+      </select>
+      Value: <input type="number" data-pb="value" value="${b.value||0}" style="width:50px">
+      <button class="btn btn-ghost btn-xs" data-rm-pb="${i}" style="color:var(--accent-red)">✕</button>
+    </div>`).join('');
+    el.querySelectorAll('[data-pb]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const idx = parseInt(inp.closest('[data-pb-idx]').dataset.pbIdx);
+        passiveBonuses[idx][inp.dataset.pb] = inp.type === 'number' ? (parseInt(inp.value)||0) : inp.value;
+      });
+    });
+    el.querySelectorAll('[data-rm-pb]').forEach(btn => {
+      btn.addEventListener('click', () => { passiveBonuses.splice(parseInt(btn.dataset.rmPb), 1); renderPassiveEditor(); });
+    });
+  }
+  renderPassiveEditor();
+  overlay.querySelector('#ab-add-passive').addEventListener('click', () => {
+    passiveBonuses.push({ bonus_type: 'attack_bonus', value: 1 });
+    renderPassiveEditor();
+  });
+
+  // ── Cancel / Save ──
+  overlay.querySelector('#ab-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#ab-save').addEventListener('click', async () => {
+    const hasDmg = overlay.querySelector('#ab-has-dmg').checked;
+    const body = {
+      name: overlay.querySelector('#ab-name').value.trim() || 'Ability',
+      description: overlay.querySelector('#ab-flavor').value.trim(),
+      session_id: SESSION_ID,
+      icon: selectedIcon,
+      color: overlay.querySelector('#ab-color').value,
+      flavor_text: overlay.querySelector('#ab-flavor').value.trim() || null,
+      notes: overlay.querySelector('#ab-notes').value.trim() || null,
+      tags: overlay.querySelector('#ab-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+      ability_type: overlay.querySelector('[name="ab-type"]:checked')?.value || 'active',
+      target_type: overlay.querySelector('[name="ab-target"]:checked')?.value || 'single',
+      aoe_radius: overlay.querySelector('[name="ab-target"]:checked')?.value === 'aoe' ? (parseInt(overlay.querySelector('#ab-aoe').value)||3) : null,
+      damage_type: overlay.querySelector('#ab-dmgtype').value,
+      custom_damage_type: overlay.querySelector('#ab-dmgtype').value === 'custom' ? overlay.querySelector('#ab-custom-dmg').value : null,
+      mana_cost: parseInt(overlay.querySelector('#ab-mana').value) || 0,
+      hp_cost: parseInt(overlay.querySelector('#ab-hpcost').value) || 0,
+      cooldown_turns: parseInt(overlay.querySelector('#ab-cd').value) || 0,
+      requires_hit_roll: overlay.querySelector('#ab-hitroll').checked,
+      hit_stat: overlay.querySelector('#ab-hitstat').value,
+      damage_stat: hasDmg ? overlay.querySelector('#ab-dmgstat').value : 'strength',
+      damage_dice_count: hasDmg ? (parseInt(overlay.querySelector('#ab-ddc').value)||1) : null,
+      damage_dice_type: hasDmg ? (parseInt(overlay.querySelector('#ab-ddt').value)||6) : null,
+      is_passive: (overlay.querySelector('[name="ab-type"]:checked')?.value || 'active') === 'passive',
+      passive_effect: passiveBonuses.length ? { bonuses: passiveBonuses } : null,
+      effect: { effects: editorEffects },
+    };
+
+    try {
+      if (existing) {
+        await api.put(`/api/abilities/${existing.id}`, body);
+      } else {
+        await api.post('/api/abilities', body);
+      }
+      overlay.remove();
+      loadGmAbilities();
+    } catch (e) { showToast('Save failed: ' + (e.message || '')); }
+  });
+}
+
+if ($('#btn-new-ability')) {
+  $('#btn-new-ability').addEventListener('click', () => showAbilityEditor());
+}
+
+// WS: table.updated → refresh player table views
+ws.on('table.updated', () => {
+  // GM doesn't need to do anything special, but players will reload
+});
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 refreshChars();
@@ -4738,4 +5433,5 @@ loadNpcLibrary();
 loadQuests();
 loadAnnouncements();
 loadSessionTimer();
+loadGmAbilities();
 ws.connect();

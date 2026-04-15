@@ -131,6 +131,25 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                         "price_display": msg.get("price_display"),
                     })
 
+                elif msg_type == "combat.attack_result":
+                    await manager.broadcast_to_session(session_code, "combat.attack_result", msg)
+
+                elif msg_type == "combat.character_downed":
+                    await manager.broadcast_to_session(session_code, "combat.character_downed", msg)
+
+                elif msg_type == "table.updated":
+                    await manager.broadcast_to_session(session_code, "table.updated", msg)
+
+                elif msg_type == "modifier.expired":
+                    await manager.broadcast_to_session(session_code, "modifier.expired", {
+                        "character_id": msg.get("character_id"),
+                        "modifier_name": msg.get("modifier_name"),
+                        "stat_name": msg.get("stat_name"),
+                    })
+
+                elif msg_type == "item.used":
+                    await manager.broadcast_to_session(session_code, "item.used", msg)
+
                 elif msg_type == "mana.updated":
                     await manager.broadcast_to_session(session_code, "mana.updated", {
                         "character_id": msg.get("character_id"),

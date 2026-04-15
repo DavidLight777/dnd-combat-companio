@@ -61,6 +61,20 @@
         <button class="gm-tab" data-tab="npc-library">NPC Library</button>
         <button class="gm-tab" data-tab="quests">📜 Quests</button>
         <button class="gm-tab" data-tab="announcements">📢 Board</button>
+        <button class="gm-tab" data-tab="abilities">✨ Abilities</button>
+      </div>
+
+      <!-- TAB: Abilities (Phase 6) -->
+      <div class="tab-content" id="tab-abilities" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>✨ Ability Manager</h2>
+            <button class="btn btn-primary btn-sm" id="btn-new-ability">+ New Ability</button>
+          </div>
+          <div class="detail-body">
+            <div id="gm-abilities-list"></div>
+          </div>
+        </div>
       </div>
 
       <!-- TAB: Character Detail -->
@@ -185,6 +199,15 @@
                 <label style="font-size:0.78rem">Range:</label>
                 <input type="text" id="item-ed-wrange" placeholder="melee" style="width:70px">
               </div>
+            </div>
+
+            <!-- Use Effects (for consumables/potions) -->
+            <div id="use-effects-section" class="hidden" style="margin-top:12px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-md)">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <h3 style="font-size:0.85rem;flex:1">🧪 Use Effects</h3>
+                <button class="btn btn-ghost btn-xs" id="btn-add-use-effect">+ Add Effect</button>
+              </div>
+              <div id="use-effect-editor-list"></div>
             </div>
 
             <!-- Bonuses -->

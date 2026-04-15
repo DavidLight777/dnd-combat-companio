@@ -68,10 +68,14 @@ class CharacterUpdate(BaseModel):
     mana_max: Optional[int] = None
     mana_regen_per_turn: Optional[int] = None
     can_edit_own_items: Optional[bool] = None
+    place_at_table: Optional[bool] = None
+    show_hp_to_players: Optional[bool] = None
     level: Optional[int] = None
     experience: Optional[int] = None
     race_id: Optional[int] = None
     class_id: Optional[int] = None
+    is_alive: Optional[bool] = None
+    gm_notes: Optional[str] = None
 
 
 class HpPatch(BaseModel):

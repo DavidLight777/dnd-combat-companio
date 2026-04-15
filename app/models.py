@@ -79,6 +79,9 @@ class Character(Base):
     mana_max: Mapped[int] = mapped_column(Integer, default=0)
     mana_regen_per_turn: Mapped[int] = mapped_column(Integer, default=0)
     can_edit_own_items: Mapped[bool] = mapped_column(Boolean, default=False)
+    place_at_table: Mapped[bool] = mapped_column(Boolean, default=False)
+    show_hp_to_players: Mapped[bool] = mapped_column(Boolean, default=False)
+    gm_notes: Mapped[str] = mapped_column(Text, default="")
 
     race_id: Mapped[int | None] = mapped_column(ForeignKey("races.id", ondelete="SET NULL"), nullable=True)
     class_id: Mapped[int | None] = mapped_column(ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
@@ -137,7 +140,8 @@ class StatModifier(Base):
     value: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, race, class
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, race, class, potion
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # for timed boosts (potions)
 
     character: Mapped["Character"] = relationship(back_populates="stat_modifiers")
 
@@ -685,3 +689,81 @@ class CharacterNote(Base):
     is_gm_note: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 6 — ABILITIES
+# ══════════════════════════════════════════════════════════════
+class Ability(Base):
+    __tablename__ = "abilities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+
+    # Identity
+    icon: Mapped[str] = mapped_column(Text, default="⚡")
+    color: Mapped[str] = mapped_column(Text, default="#60a5fa")
+    flavor_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)  # GM-only
+    tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
+
+    # Type & Targeting
+    ability_type: Mapped[str] = mapped_column(String(20), default="active")  # active / passive / reaction
+    target_type: Mapped[str] = mapped_column(String(20), default="single")  # self / single / aoe / none
+    aoe_radius: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Damage typing
+    damage_type: Mapped[str] = mapped_column(String(20), default="physical")
+    custom_damage_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Costs & Cooldown
+    mana_cost: Mapped[int] = mapped_column(Integer, default=0)
+    hp_cost: Mapped[int] = mapped_column(Integer, default=0)
+    cooldown_turns: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Hit roll
+    requires_hit_roll: Mapped[bool] = mapped_column(Boolean, default=False)
+    hit_stat: Mapped[str] = mapped_column(String(20), default="strength")
+    damage_stat: Mapped[str] = mapped_column(String(20), default="strength")
+
+    # Damage dice
+    damage_dice_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    damage_dice_type: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Passive
+    is_passive: Mapped[bool] = mapped_column(Boolean, default=False)
+    passive_effect: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON bonus
+
+    # Effects chain
+    effect: Mapped[str] = mapped_column(Text, default="{}")  # JSON — same schema as use_effect
+    range: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CharacterAbility(Base):
+    __tablename__ = "character_abilities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    ability_id: Mapped[int] = mapped_column(ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False)
+    is_unlocked: Mapped[bool] = mapped_column(Boolean, default=True)
+    cooldown_remaining: Mapped[int] = mapped_column(Integer, default=0)
+
+    ability: Mapped["Ability"] = relationship(lazy="selectin")
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 6 — CHARACTER MEMORY / JOURNAL
+# ══════════════════════════════════════════════════════════════
+class CharacterMemory(Base):
+    __tablename__ = "character_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    entry_type: Mapped[str] = mapped_column(String(30), default="note")  # npc_encounter, event, note
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    content: Mapped[str] = mapped_column(Text, default="")
+    related_npc_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
