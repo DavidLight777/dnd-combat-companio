@@ -269,11 +269,11 @@ async function renderCharDetail() {
       <button class="btn btn-ghost btn-xs" data-mana-delta="5">+5</button>
       <button class="btn btn-ghost btn-xs" data-mana-delta="10">+10</button>
       <button class="btn btn-ghost btn-xs" data-mana-delta="20">+20</button>
-      <button class="btn btn-ghost btn-xs" data-mana-full="1" style="color:#60a5fa">Full</button>
       <span style="width:8px"></span>
       <button class="btn btn-ghost btn-xs" data-mana-delta="-5">-5</button>
       <button class="btn btn-ghost btn-xs" data-mana-delta="-10">-10</button>
       <button class="btn btn-ghost btn-xs" data-mana-delta="-20">-20</button>
+      <button class="btn btn-ghost btn-xs" data-mana-full="1" style="color:#60a5fa;margin-left:4px" title="Full mana restore">🔮 Full</button>
     </div>`;
   })() : '';
 
@@ -376,6 +376,25 @@ async function renderCharDetail() {
     </div>
     <div id="gm-roll-result" style="font-size:0.82rem;margin-bottom:8px"></div>`;
 
+  const npcAttackHtml = c.is_npc ? `
+    <hr class="section-divider">
+    <h3 style="font-size:0.82rem;margin-bottom:6px">⚔️ NPC Attack</h3>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <label style="font-size:0.78rem;color:var(--text-muted)">Target:</label>
+      <select id="npc-atk-target" style="font-size:0.78rem;min-width:120px"></select>
+      <div class="adv-toggle" id="npc-atk-adv-toggle" style="font-size:0.65rem">
+        <button data-mode="normal" class="active">Normal</button>
+        <button data-mode="advantage">ADV</button>
+        <button data-mode="disadvantage">DISADV</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <button class="btn btn-primary btn-sm" id="btn-npc-roll-attack">⚔️ Roll Attack</button>
+      <span id="npc-weapon-info" style="font-size:0.72rem;color:var(--text-muted)"></span>
+    </div>
+    <div id="npc-atk-result" style="font-size:0.8rem;margin-bottom:8px"></div>
+  ` : '';
+
   const dmgCalcHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       <h3 style="font-size:0.82rem;margin:0">Apply Damage to ${c.name}</h3>
@@ -461,6 +480,7 @@ async function renderCharDetail() {
             ${permanentBonusesHtml}
             ${statsHtml}
             ${editStatsHtml}
+            ${npcAttackHtml}
             <hr class="section-divider">
             ${dmgCalcHtml}
           </div>
@@ -493,6 +513,16 @@ async function renderCharDetail() {
           <!-- Tab: Turn Counter & Notes -->
           <div class="npc-tab-content" data-npc-panel="notes" style="display:none">
             <div style="margin-bottom:8px">
+              <h3 style="font-size:0.82rem;margin-bottom:6px">🔄 Turn Counter</h3>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <span style="font-size:1.2rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums" id="npc-turn-count">${c.turn_count||0}</span>
+                <button class="btn btn-primary btn-xs" id="btn-npc-turn-inc">+1 Turn</button>
+                <button class="btn btn-ghost btn-xs" id="btn-npc-turn-dec">-1</button>
+                <button class="btn btn-ghost btn-xs" id="btn-npc-turn-reset" style="color:var(--accent-red)">Reset</button>
+              </div>
+            </div>
+            <hr class="section-divider">
+            <div style="margin-bottom:8px">
               <h3 style="font-size:0.82rem;margin-bottom:6px">📝 GM Notes</h3>
               <textarea id="npc-gm-notes" rows="8" style="width:100%;font-size:0.8rem;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:8px;resize:vertical">${c.gm_notes||''}</textarea>
               <div style="display:flex;gap:6px;margin-top:4px">
@@ -508,6 +538,10 @@ async function renderCharDetail() {
           <!-- Tab: Characteristic Rolls -->
           <div class="npc-tab-content" data-npc-panel="rolls" style="display:none">
             ${rollSection}
+            <hr class="section-divider">
+            <label style="display:flex;align-items:center;gap:4px;font-size:0.75rem;cursor:pointer">
+              <input type="checkbox" id="npc-broadcast-rolls"> Broadcast rolls to players
+            </label>
           </div>
         </div>
       </div>`;
@@ -701,6 +735,104 @@ async function renderCharDetail() {
         }
       });
     }
+
+    // NPC Attack section wiring
+    const atkTarget = area.querySelector('#npc-atk-target');
+    if (atkTarget) {
+      // Populate targets (all session characters except this NPC)
+      const sessionChars = characters.filter(ch => ch.id !== c.id && ch.is_alive);
+      atkTarget.innerHTML = sessionChars.map(ch =>
+        `<option value="${ch.id}">${ch.name}${ch.is_npc ? ' (NPC)' : ''} — KD:${ch.armor_class}</option>`
+      ).join('');
+      if (!sessionChars.length) atkTarget.innerHTML = '<option value="">No targets</option>';
+
+      // Show weapon info
+      (async () => {
+        try {
+          const inv = await api.get(`/api/characters/${c.id}/inventory`);
+          const mainHand = (inv.items||[]).find(i => i.is_equipped && i.equipped_slot === 'main_hand');
+          const wInfo = area.querySelector('#npc-weapon-info');
+          if (mainHand && wInfo) {
+            wInfo.textContent = `🗡️ ${mainHand.name}`;
+          } else if (wInfo) {
+            wInfo.textContent = `👊 Unarmed (${c.attack_dice_count||1}d${c.attack_dice_type||6})`;
+          }
+        } catch {}
+      })();
+
+      // Advantage toggle
+      area.querySelectorAll('#npc-atk-adv-toggle button').forEach(b => {
+        b.addEventListener('click', () => {
+          area.querySelectorAll('#npc-atk-adv-toggle button').forEach(x => x.classList.toggle('active', x === b));
+        });
+      });
+
+      // Roll Attack button
+      const atkBtn = area.querySelector('#btn-npc-roll-attack');
+      if (atkBtn) {
+        atkBtn.addEventListener('click', async () => {
+          const targetId = parseInt(atkTarget.value);
+          if (!targetId) { showToast('Select a target'); return; }
+          const advBtn = area.querySelector('#npc-atk-adv-toggle button.active');
+          const advMode = advBtn ? advBtn.dataset.mode : 'normal';
+          const resultDiv = area.querySelector('#npc-atk-result');
+          resultDiv.innerHTML = '<span style="color:var(--text-muted)">Rolling...</span>';
+          try {
+            const res = await api.post('/api/combat/execute-attack', {
+              attacker_id: c.id, target_id: targetId,
+              attack_type: 'weapon', advantage: advMode,
+            });
+            let html = '';
+            if (res.hit) {
+              html += `<div style="color:var(--accent-green);font-weight:700">${res.critical ? '🎯 CRITICAL HIT!' : '⚔️ HIT!'}</div>`;
+              html += `<div style="font-size:0.75rem">${res.hit_breakdown}</div>`;
+              html += `<div style="font-size:0.75rem;margin-top:3px">${res.damage_breakdown}</div>`;
+              html += `<div style="font-size:0.75rem">${res.intake_breakdown}</div>`;
+              html += `<div style="font-weight:600;margin-top:3px">${res.target_name}: <span style="color:var(--accent-red)">${res.final_damage} dmg</span> → ${res.target_hp_after} HP${res.target_downed ? ' 💀 DOWN!' : ''}</div>`;
+            } else {
+              html += `<div style="color:var(--text-muted);font-weight:700">${res.fumble ? '💨 FUMBLE!' : '🛡️ MISS'}</div>`;
+              html += `<div style="font-size:0.75rem">${res.hit_breakdown}</div>`;
+            }
+            resultDiv.innerHTML = html;
+            addLog('gm.combat', `${c.name} → ${res.target_name}: ${res.hit ? (res.critical ? 'CRIT ' : '') + res.final_damage + ' dmg' : 'MISS'}`);
+            await refreshChars();
+            if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+              ws.ws.send(JSON.stringify({
+                type: 'combat.attack_result',
+                attacker_id: c.id, attacker_name: c.name,
+                target_name: res.target_name, hit: res.hit, critical: res.critical,
+                final_damage: res.final_damage, target_hp_after: res.target_hp_after,
+              }));
+            }
+          } catch (e) {
+            resultDiv.innerHTML = `<span style="color:var(--accent-red)">${e?.body?.detail || 'Attack failed'}</span>`;
+          }
+        });
+      }
+    }
+
+    // Turn counter wiring
+    const turnCountEl = area.querySelector('#npc-turn-count');
+    const turnInc = area.querySelector('#btn-npc-turn-inc');
+    const turnDec = area.querySelector('#btn-npc-turn-dec');
+    const turnReset = area.querySelector('#btn-npc-turn-reset');
+    if (turnInc) {
+      const updateTurn = async (val) => {
+        await api.put(`/api/characters/${c.id}`, { turn_count: Math.max(0, val) });
+        if (turnCountEl) turnCountEl.textContent = Math.max(0, val);
+        c.turn_count = Math.max(0, val);
+      };
+      turnInc.addEventListener('click', () => updateTurn((c.turn_count||0) + 1));
+      turnDec.addEventListener('click', () => updateTurn((c.turn_count||0) - 1));
+      turnReset.addEventListener('click', () => updateTurn(0));
+    }
+
+    // Broadcast rolls toggle wiring
+    const broadcastChk = area.querySelector('#npc-broadcast-rolls');
+    if (broadcastChk) {
+      // Store on element for roll handler to read
+      broadcastChk.__npcBroadcast = true;
+    }
   }
 
   // Phase 6: Place at Table / Show HP toggles
@@ -808,8 +940,9 @@ async function renderCharDetail() {
       addLog('gm.roll', res.description);
       addRollLogEntry(res);
       lastGmRollTime = Date.now();
-      // Broadcast via WS
-      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      // Broadcast via WS (respect NPC broadcast toggle)
+      const shouldBroadcast = c.is_npc ? (area.querySelector('#npc-broadcast-rolls')?.checked || false) : true;
+      if (shouldBroadcast && ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
         ws.ws.send(JSON.stringify({ type: 'roll.characteristic', ...res }));
       }
     } catch (e) {
