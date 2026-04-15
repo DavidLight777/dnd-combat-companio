@@ -43,6 +43,9 @@ def _serialize_char(c: Character) -> dict:
         "gold": c.gold,
         "gold_copper": c.wealth_bronze,
         "wealth_bronze": c.wealth_bronze,
+        "mana_current": c.mana_current,
+        "mana_max": c.mana_max,
+        "mana_regen_per_turn": c.mana_regen_per_turn,
         "can_edit_own_items": c.can_edit_own_items,
         "turn_count": c.turn_count,
         "status_effects": c.status_effects,
@@ -118,6 +121,42 @@ async def patch_hp(char_id: int, body: HpPatch, db: AsyncSession = Depends(get_s
     await db.commit()
     await db.refresh(c)
     return {"current_hp": c.current_hp, "max_hp": c.max_hp, "is_alive": c.is_alive}
+
+
+# ── Mana restore ────────────────────────────────────────────
+@router.post("/characters/{char_id}/restore-mana")
+async def restore_mana_endpoint(char_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    from app.game_mechanics import restore_mana, get_effective_mana_max
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    eff_max = get_effective_mana_max(c.mana_max)
+    if body.get("full"):
+        c.mana_current = restore_mana(c.mana_current, eff_max, full=True)
+    else:
+        amount = body.get("amount", 0)
+        c.mana_current = restore_mana(c.mana_current, eff_max, amount=amount)
+    await db.commit()
+    await db.refresh(c)
+    return {"mana_current": c.mana_current, "mana_max": c.mana_max, "effective_mana_max": eff_max}
+
+
+# ── Mana spend ──────────────────────────────────────────────
+@router.post("/characters/{char_id}/spend-mana")
+async def spend_mana_endpoint(char_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    from app.game_mechanics import spend_mana, get_effective_mana_max
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    cost = body.get("cost", 0)
+    eff_max = get_effective_mana_max(c.mana_max)
+    result = spend_mana(c.mana_current, eff_max, cost)
+    if not result["success"]:
+        raise HTTPException(400, result)
+    c.mana_current = result["mana_current"]
+    await db.commit()
+    await db.refresh(c)
+    return {"mana_current": c.mana_current, "mana_max": c.mana_max, "effective_mana_max": eff_max}
 
 
 # ── Create NPC (GM) ─────────────────────────────────────────

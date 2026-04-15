@@ -131,6 +131,13 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                         "price_display": msg.get("price_display"),
                     })
 
+                elif msg_type == "mana.updated":
+                    await manager.broadcast_to_session(session_code, "mana.updated", {
+                        "character_id": msg.get("character_id"),
+                        "mana_current": msg.get("mana_current"),
+                        "mana_max": msg.get("mana_max"),
+                    })
+
                 # Stage 4: Status effect events
                 elif msg_type in ("status_effect.applied", "status_effect.removed", "status_effect.expired"):
                     await manager.broadcast_to_session(session_code, msg_type, {

@@ -235,6 +235,8 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
         effect_value=body.get("effect_value"),
         equippable=body.get("equippable", False),
         consumable=body.get("consumable", False),
+        mana_cost=body.get("mana_cost", 0),
+        use_effect=json.dumps(body["use_effect"]) if isinstance(body.get("use_effect"), (dict, list)) else body.get("use_effect"),
         tags=body.get("tags", "[]") if isinstance(body.get("tags", "[]"), str) else json.dumps(body.get("tags", [])),
         created_by_ai=body.get("created_by_ai", False),
     )
@@ -275,7 +277,7 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
         raise HTTPException(404, detail={"error": True, "code": "NOT_FOUND", "message": "Item not found"})
     for k in ["name", "description", "category", "category_id", "rarity", "base_price",
               "base_price_bronze", "weight", "effect_type", "effect_value", "equippable",
-              "consumable", "created_by_ai"]:
+              "consumable", "mana_cost", "created_by_ai"]:
         if k in body:
             setattr(item, k, body[k])
     # Accept legacy base_price_copper key
@@ -283,6 +285,9 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
         item.base_price_bronze = body["base_price_copper"]
     if "tags" in body:
         item.tags = body["tags"] if isinstance(body["tags"], str) else json.dumps(body["tags"])
+    if "use_effect" in body:
+        ue = body["use_effect"]
+        item.use_effect = json.dumps(ue) if isinstance(ue, (dict, list)) else ue
     # Sync legacy base_price ↔ base_price_bronze
     if "base_price_bronze" in body and "base_price" not in body:
         item.base_price = body["base_price_bronze"] // 100
@@ -389,6 +394,8 @@ def _item_dict(i: Item) -> dict:
         "weight": i.weight,
         "effect_type": i.effect_type, "effect_value": i.effect_value,
         "equippable": i.equippable, "consumable": i.consumable,
+        "mana_cost": i.mana_cost or 0,
+        "use_effect": json.loads(i.use_effect) if i.use_effect else None,
         "tags": tags_parsed, "created_by_ai": i.created_by_ai,
         "bonuses": [_bonus_dict(b) for b in (i.bonuses or [])],
         "weapon_stats": None,

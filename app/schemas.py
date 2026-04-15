@@ -64,6 +64,9 @@ class CharacterUpdate(BaseModel):
     gold: Optional[int] = None
     gold_copper: Optional[int] = None  # legacy alias
     wealth_bronze: Optional[int] = None
+    mana_current: Optional[int] = None
+    mana_max: Optional[int] = None
+    mana_regen_per_turn: Optional[int] = None
     can_edit_own_items: Optional[bool] = None
     level: Optional[int] = None
     experience: Optional[int] = None

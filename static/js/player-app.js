@@ -141,6 +141,22 @@ function renderHP() {
   $('#hp-bar').style.width = `${pct}%`;
   $('#hp-bar').style.background = color;
   $('#kd-display').textContent = c.armor_class;
+  // Mana
+  renderMana();
+}
+
+function renderMana() {
+  const c = char; if (!c) return;
+  const card = $('#mana-card');
+  if (!card) return;
+  if (!c.mana_max || c.mana_max <= 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const pct = c.mana_max > 0 ? (c.mana_current / c.mana_max * 100) : 0;
+  $('#mana-display').textContent = `${c.mana_current} / ${c.mana_max}`;
+  $('#mana-bar').style.width = `${pct}%`;
+  const rb = $('#mana-regen-badge');
+  if (c.mana_regen_per_turn > 0) { rb.style.display = ''; rb.textContent = `+${c.mana_regen_per_turn}/turn`; }
+  else rb.style.display = 'none';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1235,6 +1251,10 @@ ws.on('session.status_change', d => {
 // Stage 3: Economy WS events
 ws.on('currency.updated', d => {
   if (d.character_id == CHAR_ID) loadCurrency();
+});
+// Phase 3: Mana WS events
+ws.on('mana.updated', d => {
+  if (d.character_id == CHAR_ID) { loadChar(); }
 });
 ws.on('trade.initiated', d => {
   if (d.player_id == CHAR_ID) {

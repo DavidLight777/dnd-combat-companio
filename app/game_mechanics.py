@@ -178,6 +178,7 @@ def get_all_active_bonuses(equipped_items: list[Any]) -> dict:
         "damage_dice_count": 0,
         "damage_dice_type": 0,
         "hp_bonus": 0,
+        "mana_bonus": 0,
         "initiative_bonus": 0,
         "speed_bonus": 0,
         "breakdown": [],
@@ -255,6 +256,48 @@ def calculate_item_price(base_price_bronze: int, reputation: int = 0,
 
 
 # ══════════════════════════════════════════════════════════════
+# MANA SYSTEM (Phase 3)
+# ══════════════════════════════════════════════════════════════
+def get_effective_mana_max(base_mana_max: int, mana_bonus: int = 0) -> int:
+    """Calculate effective max mana including item/status bonuses."""
+    return max(0, base_mana_max + mana_bonus)
+
+
+def spend_mana(current: int, effective_max: int, cost: int) -> dict:
+    """
+    Attempt to spend mana. Pure function — caller handles DB update.
+    Returns {"success": bool, "mana_current": int, "mana_max": int, ...}
+    """
+    if cost <= 0:
+        return {"success": True, "mana_current": current, "mana_max": effective_max}
+    if current < cost:
+        return {
+            "success": False,
+            "error": "NOT_ENOUGH_MANA",
+            "message": f"Need {cost} mana, have {current}/{effective_max}",
+            "mana_current": current,
+            "mana_max": effective_max,
+        }
+    return {"success": True, "mana_current": current - cost, "mana_max": effective_max}
+
+
+def restore_mana(current: int, effective_max: int, amount: int | None = None, full: bool = False) -> int:
+    """
+    Restore mana. If full=True, set to max. Otherwise add amount.
+    Returns new mana_current value.
+    """
+    if full:
+        return effective_max
+    return min(effective_max, current + (amount or 0))
+
+
+def apply_mana_regen(current: int, effective_max: int, regen: int, mana_change_per_turn: int = 0) -> int:
+    """Apply per-turn mana regen and status effect mana changes. Returns new mana_current."""
+    new_val = current + regen + mana_change_per_turn
+    return max(0, min(effective_max, new_val))
+
+
+# ══════════════════════════════════════════════════════════════
 # STATUS EFFECT PENALTIES (Stage 4)
 # ══════════════════════════════════════════════════════════════
 def aggregate_status_penalties(active_effects_json_list: list[list[dict]]) -> dict:
@@ -270,6 +313,7 @@ def aggregate_status_penalties(active_effects_json_list: list[list[dict]]) -> di
         "damage_reduction_penalty": 0.0,
         "skip_turn": False,
         "hp_change_per_turn": 0,
+        "mana_change_per_turn": 0,
         "custom_notes": [],
         "forced_advantage": False,
         "forced_disadvantage": False,
@@ -291,6 +335,8 @@ def aggregate_status_penalties(active_effects_json_list: list[list[dict]]) -> di
                     result["skip_turn"] = True
             elif etype == "hp_change_per_turn":
                 result["hp_change_per_turn"] += val
+            elif etype == "mana_change_per_turn":
+                result["mana_change_per_turn"] += val
             elif etype == "damage_reduction_penalty":
                 result["damage_reduction_penalty"] += val
             elif etype == "custom_note":

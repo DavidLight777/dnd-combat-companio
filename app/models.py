@@ -75,6 +75,9 @@ class Character(Base):
     is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
     gold: Mapped[int] = mapped_column(Integer, default=0)
     wealth_bronze: Mapped[int] = mapped_column(Integer, default=0)  # total wealth in bronze
+    mana_current: Mapped[int] = mapped_column(Integer, default=0)
+    mana_max: Mapped[int] = mapped_column(Integer, default=0)
+    mana_regen_per_turn: Mapped[int] = mapped_column(Integer, default=0)
     can_edit_own_items: Mapped[bool] = mapped_column(Boolean, default=False)
 
     race_id: Mapped[int | None] = mapped_column(ForeignKey("races.id", ondelete="SET NULL"), nullable=True)
@@ -292,6 +295,8 @@ class Item(Base):
     effect_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     equippable: Mapped[bool] = mapped_column(Boolean, default=False)
     consumable: Mapped[bool] = mapped_column(Boolean, default=False)
+    mana_cost: Mapped[int] = mapped_column(Integer, default=0)
+    use_effect: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {"effects": [...]}
     tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
     created_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
 

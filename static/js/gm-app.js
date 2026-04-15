@@ -273,6 +273,26 @@ async function renderCharDetail() {
           <button class="btn btn-ghost btn-xs" id="gm-hp-set">Set</button>
         </div>
 
+        <!-- Mana (Phase 3) -->
+        ${c.mana_max > 0 ? (() => {
+          const manaPct = c.mana_max > 0 ? (c.mana_current / c.mana_max * 100) : 0;
+          return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+            <span style="font-size:1.1rem;font-weight:700;color:#60a5fa;font-variant-numeric:tabular-nums">🔮 ${c.mana_current} / ${c.mana_max}</span>
+            ${c.mana_regen_per_turn ? `<span style="font-size:0.7rem;color:var(--text-muted)">+${c.mana_regen_per_turn}/turn</span>` : ''}
+            <div style="flex:1;height:8px;border-radius:4px;background:var(--bg-surface-2);overflow:hidden"><div style="width:${manaPct}%;height:100%;background:#60a5fa;border-radius:4px;transition:width .3s"></div></div>
+          </div>
+          <div class="action-row" style="margin-bottom:8px">
+            <button class="btn btn-ghost btn-xs" data-mana-delta="5">+5</button>
+            <button class="btn btn-ghost btn-xs" data-mana-delta="10">+10</button>
+            <button class="btn btn-ghost btn-xs" data-mana-delta="20">+20</button>
+            <button class="btn btn-ghost btn-xs" data-mana-full="1" style="color:#60a5fa">Full</button>
+            <span style="width:8px"></span>
+            <button class="btn btn-ghost btn-xs" data-mana-delta="-5">-5</button>
+            <button class="btn btn-ghost btn-xs" data-mana-delta="-10">-10</button>
+            <button class="btn btn-ghost btn-xs" data-mana-delta="-20">-20</button>
+          </div>`;
+        })() : ''}
+
         <hr class="section-divider">
 
         <!-- Permanent Bonuses (Phase 1 fix: Race/Class bonuses visible to GM) -->
@@ -321,6 +341,14 @@ async function renderCharDetail() {
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
             <span style="font-size:0.6rem;color:var(--text-muted)">MaxHP</span>
             <input type="number" value="${c.max_hp}" data-gm-stat="max_hp" style="width:48px;font-size:0.78rem;padding:3px">
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <span style="font-size:0.6rem;color:#60a5fa">MaxMP</span>
+            <input type="number" value="${c.mana_max}" data-gm-stat="mana_max" style="width:48px;font-size:0.78rem;padding:3px">
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <span style="font-size:0.6rem;color:#60a5fa">MP/T</span>
+            <input type="number" value="${c.mana_regen_per_turn}" data-gm-stat="mana_regen_per_turn" style="width:48px;font-size:0.78rem;padding:3px">
           </div>
         </div>
 
@@ -466,6 +494,28 @@ async function renderCharDetail() {
   $('#gm-hp-add').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:v}); await refreshChars(); addLog('gm.hp',`${c.name}: +${v}`); });
   $('#gm-hp-sub').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:-v}); await refreshChars(); addLog('gm.hp',`${c.name}: -${v}`); });
   $('#gm-hp-set').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{set:v}); await refreshChars(); addLog('gm.hp',`${c.name}: set ${v}`); });
+
+  // Mana delta buttons
+  area.querySelectorAll('[data-mana-delta]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const d = parseInt(btn.dataset.manaDelta);
+      if (d > 0) await api.post(`/api/characters/${c.id}/restore-mana`, { amount: d });
+      else await api.post(`/api/characters/${c.id}/spend-mana`, { cost: -d });
+      await refreshChars();
+      addLog('gm.mana', `${c.name}: ${d>0?'+'+d:d} Mana`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+        ws.ws.send(JSON.stringify({ type: 'mana.updated', character_id: c.id, mana_current: null, mana_max: c.mana_max }));
+    });
+  });
+  area.querySelectorAll('[data-mana-full]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api.post(`/api/characters/${c.id}/restore-mana`, { full: true });
+      await refreshChars();
+      addLog('gm.mana', `${c.name}: Full Mana`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+        ws.ws.send(JSON.stringify({ type: 'mana.updated', character_id: c.id, mana_current: null, mana_max: c.mana_max }));
+    });
+  });
 
   // Stat edits
   area.querySelectorAll('[data-gm-stat]').forEach(inp => {
@@ -1907,6 +1957,7 @@ const BONUS_TYPES = [
   {value: 'damage_dice_count', label: 'Damage Dice Count'},
   {value: 'damage_dice_type', label: 'Damage Dice Type'},
   {value: 'hp_bonus', label: 'HP Bonus'},
+  {value: 'mana_bonus', label: 'Mana Bonus'},
   {value: 'initiative_bonus', label: 'Initiative Bonus'},
   {value: 'speed_bonus', label: 'Speed Bonus'},
   {value: 'custom', label: 'Custom'},
@@ -1989,6 +2040,7 @@ function renderItemGrid() {
           ${item.weight ? `<span>${item.weight}lb</span>` : ''}
           ${item.equippable ? '<span>📎 Equip</span>' : ''}
           ${item.consumable ? '<span>🧪 Use</span>' : ''}
+          ${item.mana_cost ? `<span style="color:#60a5fa">🔮${item.mana_cost}</span>` : ''}
         </div>
         ${weaponLine}
         <div class="ic-bonuses">${bonusTags}${tags}</div>
@@ -2024,6 +2076,7 @@ function openItemEditor(itemId = null) {
     $('#item-ed-weight').value = item.weight || 0;
     $('#item-ed-equippable').checked = item.equippable;
     $('#item-ed-consumable').checked = item.consumable;
+    $('#item-ed-mana-cost').value = item.mana_cost || 0;
     $('#item-ed-tags').value = (item.tags || []).join(', ');
     // Weapon stats
     const isWeapon = !!item.weapon_stats;
@@ -2046,6 +2099,7 @@ function openItemEditor(itemId = null) {
     $('#item-ed-weight').value = 0;
     $('#item-ed-equippable').checked = false;
     $('#item-ed-consumable').checked = false;
+    $('#item-ed-mana-cost').value = 0;
     $('#item-ed-tags').value = '';
     $('#item-ed-is-weapon').checked = false;
     $('#weapon-stats-section').classList.add('hidden');
@@ -2120,6 +2174,7 @@ async function saveItem() {
     weight: parseFloat($('#item-ed-weight').value) || 0,
     equippable: $('#item-ed-equippable').checked,
     consumable: $('#item-ed-consumable').checked,
+    mana_cost: parseInt($('#item-ed-mana-cost').value) || 0,
     tags: JSON.stringify(tags),
     bonuses: tempBonuses.map(b => ({
       bonus_type: b.bonus_type,

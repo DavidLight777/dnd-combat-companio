@@ -500,12 +500,15 @@ async def _process_participant_turn_end(character_id: int, db: AsyncSession) -> 
 
     events = []
     hp_changes = []
+    mana_changes = []
 
     for eff in effects:
         eff_data = json.loads(eff.effects) if eff.effects else []
         for e in eff_data:
             if e.get("type") == "hp_change_per_turn":
                 hp_changes.append({"name": eff.name, "value": e["value"]})
+            elif e.get("type") == "mana_change_per_turn":
+                mana_changes.append({"name": eff.name, "value": e["value"]})
 
         if eff.remaining_turns is not None:
             eff.remaining_turns -= 1
@@ -532,6 +535,28 @@ async def _process_participant_turn_end(character_id: int, db: AsyncSession) -> 
             "new_hp": char.current_hp,
             "sources": hp_changes,
         })
+
+    # Mana regen + status mana changes
+    total_mana_change = sum(m["value"] for m in mana_changes)
+    regen = char.mana_regen_per_turn or 0
+    if (regen != 0 or total_mana_change != 0) and char.mana_max > 0:
+        from app.game_mechanics import apply_mana_regen, get_effective_mana_max
+        eff_max = get_effective_mana_max(char.mana_max)
+        old_mana = char.mana_current
+        char.mana_current = apply_mana_regen(char.mana_current, eff_max, regen, total_mana_change)
+        if char.mana_current != old_mana:
+            sources = []
+            if regen: sources.append({"name": "Regen", "value": regen})
+            sources.extend(mana_changes)
+            events.append({
+                "type": "mana.updated",
+                "character_id": character_id,
+                "character_name": char.name,
+                "mana_change": char.mana_current - old_mana,
+                "mana_current": char.mana_current,
+                "mana_max": eff_max,
+                "sources": sources,
+            })
     return events
 
 
