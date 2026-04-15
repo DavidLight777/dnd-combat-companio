@@ -124,6 +124,13 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                         "character_id": msg.get("character_id"),
                     })
 
+                elif msg_type == "inventory.gm_buyback" and role == "gm":
+                    await manager.broadcast_to_session(session_code, "inventory.gm_buyback", {
+                        "character_id": msg.get("character_id"),
+                        "item_name": msg.get("item_name"),
+                        "price_display": msg.get("price_display"),
+                    })
+
                 # Stage 4: Status effect events
                 elif msg_type in ("status_effect.applied", "status_effect.removed", "status_effect.expired"):
                     await manager.broadcast_to_session(session_code, msg_type, {
@@ -177,6 +184,12 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                 elif msg_type == "gm.timer_stop":
                     await manager.broadcast_to_session(session_code, "gm.timer_stop", {
                         "character_id": msg.get("character_id"),
+                    })
+
+                # Stage 11: Combat action events
+                elif msg_type in ("combat.attack_result", "combat.defend", "combat.character_killed"):
+                    await manager.broadcast_to_session(session_code, msg_type, {
+                        k: v for k, v in msg.items() if k != "type"
                     })
 
                 # Stage 10: Announcements & timer events

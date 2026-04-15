@@ -212,6 +212,56 @@ async def remove_status_effect(effect_id: int, db: AsyncSession = Depends(get_se
 
 
 # ══════════════════════════════════════════════════════════════
+# GM QUICK ADVANTAGE / DISADVANTAGE TOGGLE
+# ══════════════════════════════════════════════════════════════
+@router.post("/characters/{character_id}/set-advantage")
+async def set_advantage(character_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    """
+    GM convenience endpoint to grant/remove forced advantage or disadvantage.
+    body: { "mode": "advantage" | "disadvantage" | "normal" }
+    "normal" removes any existing forced adv/disadv effects.
+    """
+    char = await db.get(Character, character_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+
+    mode = body.get("mode", "normal")
+    if mode not in ("normal", "advantage", "disadvantage"):
+        raise HTTPException(400, "mode must be normal/advantage/disadvantage")
+
+    # Remove any existing forced advantage/disadvantage effects
+    result = await db.execute(
+        select(CharacterStatusEffect).where(CharacterStatusEffect.character_id == character_id)
+    )
+    for eff in result.scalars().all():
+        try:
+            effects_json = json.loads(eff.effects) if eff.effects else []
+        except Exception:
+            effects_json = []
+        for e in effects_json:
+            if e.get("type") in ("forced_advantage", "forced_disadvantage"):
+                await db.delete(eff)
+                break
+
+    if mode != "normal":
+        effect_type = f"forced_{mode}"
+        eff = CharacterStatusEffect(
+            character_id=character_id,
+            template_id=None,
+            name=f"{'Advantage' if mode == 'advantage' else 'Disadvantage'} (GM)",
+            icon="🎲" if mode == "advantage" else "🎯",
+            color="#50c878" if mode == "advantage" else "#dc5050",
+            effects=json.dumps([{"type": effect_type, "value": 1}]),
+            remaining_turns=None,
+            applied_by_id=None,
+        )
+        db.add(eff)
+
+    await db.commit()
+    return {"ok": True, "character_id": character_id, "advantage_mode": mode}
+
+
+# ══════════════════════════════════════════════════════════════
 # STATUS PENALTIES AGGREGATION ENDPOINT
 # ══════════════════════════════════════════════════════════════
 @router.get("/characters/{character_id}/status-penalties")

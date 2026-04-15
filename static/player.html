@@ -58,22 +58,29 @@
       <div class="stats-grid" id="stats-grid"></div>
 
       <!-- ── CHARACTERISTIC ROLL ─────────────────────────────── -->
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
-        <span style="font-size:0.82rem;font-weight:700">🎲</span>
-        <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
-          <option value="strength">Strength</option>
-          <option value="dexterity">Dexterity</option>
-          <option value="constitution">Constitution</option>
-          <option value="intelligence">Intelligence</option>
-          <option value="wisdom">Wisdom</option>
-          <option value="charisma">Charisma</option>
-        </select>
-        <select id="player-roll-type" style="font-size:0.78rem;width:115px">
-          <option value="ability_check">Ability Check</option>
-          <option value="saving_throw">Saving Throw</option>
-          <option value="skill_check">Skill Check</option>
-        </select>
-        <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+      <div style="margin:8px 0;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:0.82rem;font-weight:700">🎲</span>
+          <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
+            <option value="strength">Strength</option>
+            <option value="dexterity">Dexterity</option>
+            <option value="constitution">Constitution</option>
+            <option value="intelligence">Intelligence</option>
+            <option value="wisdom">Wisdom</option>
+            <option value="charisma">Charisma</option>
+          </select>
+          <select id="player-roll-type" style="font-size:0.78rem;width:115px">
+            <option value="ability_check">Ability Check</option>
+            <option value="saving_throw">Saving Throw</option>
+            <option value="skill_check">Skill Check</option>
+          </select>
+          <div class="adv-toggle" id="char-roll-adv-toggle">
+            <button data-mode="normal" class="active">Normal</button>
+            <button data-mode="advantage">ADV</button>
+            <button data-mode="disadvantage">DISADV</button>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+        </div>
         <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
       </div>
 
@@ -118,7 +125,7 @@
               <span class="curr-plat" id="curr-plat" style="display:none">💎 <strong>0</strong>P</span>
               <span class="curr-gold" id="curr-gold">🪙 <strong>0</strong>G</span>
               <span class="curr-silver" id="curr-silver">🥈 <strong>0</strong>S</span>
-              <span class="curr-copper" id="curr-copper">🟤 <strong>0</strong>C</span>
+              <span class="curr-copper" id="curr-copper">🟤 <strong>0</strong>B</span>
             </span>
             <span style="font-size:0.78rem;color:var(--text-muted)">Weight: <strong id="weight-display">0</strong></span>
             <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>

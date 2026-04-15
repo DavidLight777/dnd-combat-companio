@@ -20,7 +20,84 @@ Flat reductions subtracted after percent.
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
+
+
+# ══════════════════════════════════════════════════════════════
+# ADVANTAGE / DISADVANTAGE (cross-cutting)
+# ══════════════════════════════════════════════════════════════
+@dataclass
+class AdvantageResult:
+    """Result of applying advantage/disadvantage to any roll."""
+    chosen_total: int         # The total that was ultimately used
+    all_totals: list          # [total1, total2] (or [total] for normal)
+    chosen_index: int         # 0 or 1 — which roll was chosen
+    all_details: list         # [detail1, detail2] — full details for each roll
+    mode: str                 # "normal" | "advantage" | "disadvantage"
+
+
+def apply_advantage(roll_func: Callable, mode: str = "normal") -> AdvantageResult:
+    """
+    Wraps any roll function with advantage/disadvantage logic.
+    roll_func: callable returning (total: int, details: Any)
+    mode: "normal" | "advantage" | "disadvantage"
+    Returns AdvantageResult.
+    """
+    if mode not in ("normal", "advantage", "disadvantage"):
+        mode = "normal"
+
+    total1, details1 = roll_func()
+    if mode == "normal":
+        return AdvantageResult(
+            chosen_total=total1, all_totals=[total1],
+            chosen_index=0, all_details=[details1], mode=mode,
+        )
+
+    total2, details2 = roll_func()
+    if mode == "advantage":
+        chosen = 0 if total1 >= total2 else 1
+    else:  # disadvantage
+        chosen = 0 if total1 <= total2 else 1
+
+    return AdvantageResult(
+        chosen_total=[total1, total2][chosen],
+        all_totals=[total1, total2],
+        chosen_index=chosen,
+        all_details=[details1, details2],
+        mode=mode,
+    )
+
+
+def resolve_advantage_mode(player_choice: str, penalties: dict | None) -> str:
+    """
+    Resolve effective advantage mode considering player choice + forced status effects.
+    If both forced_advantage and forced_disadvantage are active, they cancel out → normal.
+    Forced status overrides player choice.
+    """
+    if not penalties:
+        return player_choice if player_choice in ("normal", "advantage", "disadvantage") else "normal"
+
+    forced_adv = penalties.get("forced_advantage", False)
+    forced_disadv = penalties.get("forced_disadvantage", False)
+
+    if forced_adv and forced_disadv:
+        return "normal"  # cancel out
+    if forced_adv:
+        return "advantage"
+    if forced_disadv:
+        return "disadvantage"
+
+    return player_choice if player_choice in ("normal", "advantage", "disadvantage") else "normal"
+
+
+def format_advantage_breakdown(mode: str, all_totals: list, chosen_index: int,
+                                 base_label: str = "D20") -> str:
+    """Format advantage/disadvantage prefix for breakdown strings."""
+    if mode == "normal" or len(all_totals) < 2:
+        return ""
+    label = "ADV" if mode == "advantage" else "DISADV"
+    chosen = all_totals[chosen_index]
+    return f"{label}: {base_label}[{all_totals[0]}, {all_totals[1]}] took {chosen}"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -127,36 +204,52 @@ def get_all_active_bonuses(equipped_items: list[Any]) -> dict:
 # ══════════════════════════════════════════════════════════════
 # CURRENCY HELPERS
 # ══════════════════════════════════════════════════════════════
-DEFAULT_RATES = {"platinum": 1000, "gold": 100, "silver": 10, "copper": 1}
+DEFAULT_RATES = {"platinum": 1000, "gold": 100, "silver": 10, "bronze": 1}
 
 
-def copper_to_display(copper: int, rates: dict | None = None) -> dict:
-    """Convert a total copper value into multi-currency breakdown."""
+def bronze_to_display(bronze: int, rates: dict | None = None) -> dict:
+    """Convert a total bronze value into multi-currency breakdown."""
     r = rates or DEFAULT_RATES
-    remainder = max(0, copper)
+    remainder = max(0, bronze)
     platinum = remainder // r["platinum"]
     remainder %= r["platinum"]
     gold = remainder // r["gold"]
     remainder %= r["gold"]
     silver = remainder // r["silver"]
     remainder %= r["silver"]
-    return {"platinum": platinum, "gold": gold, "silver": silver, "copper": remainder}
+    return {"platinum": platinum, "gold": gold, "silver": silver, "bronze": remainder}
 
 
-def display_to_copper(platinum: int = 0, gold: int = 0, silver: int = 0, copper: int = 0,
+def display_to_bronze(platinum: int = 0, gold: int = 0, silver: int = 0, bronze: int = 0,
                       rates: dict | None = None) -> int:
-    """Convert multi-currency amounts to total copper."""
+    """Convert multi-currency amounts to total bronze."""
     r = rates or DEFAULT_RATES
-    return platinum * r["platinum"] + gold * r["gold"] + silver * r["silver"] + copper * r["copper"]
+    return platinum * r["platinum"] + gold * r["gold"] + silver * r["silver"] + bronze * r.get("bronze", r.get("copper", 1))
 
 
-def calculate_item_price(base_price_copper: int, reputation: int = 0,
+def format_currency(bronze: int, rates: dict | None = None) -> str:
+    """Format bronze amount as human-readable string e.g. '3G 5S 2B'."""
+    d = bronze_to_display(bronze, rates)
+    parts = []
+    if d["platinum"]: parts.append(f"{d['platinum']}P")
+    if d["gold"]:     parts.append(f"{d['gold']}G")
+    if d["silver"]:   parts.append(f"{d['silver']}S")
+    if d["bronze"]:   parts.append(f"{d['bronze']}B")
+    return " ".join(parts) if parts else "0B"
+
+
+# Backward-compat aliases
+copper_to_display = bronze_to_display
+display_to_copper = display_to_bronze
+
+
+def calculate_item_price(base_price_bronze: int, reputation: int = 0,
                          price_override: int | None = None) -> int:
     """
     Calculate item price adjusted by NPC reputation.
     reputation: -100 = prices doubled, 0 = normal, +100 = 50% discount
     """
-    base = price_override if price_override is not None else base_price_copper
+    base = price_override if price_override is not None else base_price_bronze
     multiplier = 1.0 - (reputation / 200.0)  # range: 1.5x to 0.5x
     return max(1, int(base * multiplier))
 
@@ -178,6 +271,8 @@ def aggregate_status_penalties(active_effects_json_list: list[list[dict]]) -> di
         "skip_turn": False,
         "hp_change_per_turn": 0,
         "custom_notes": [],
+        "forced_advantage": False,
+        "forced_disadvantage": False,
     }
     for effects in active_effects_json_list:
         for eff in effects:
@@ -200,6 +295,10 @@ def aggregate_status_penalties(active_effects_json_list: list[list[dict]]) -> di
                 result["damage_reduction_penalty"] += val
             elif etype == "custom_note":
                 result["custom_notes"].append(eff.get("text", ""))
+            elif etype == "forced_advantage":
+                result["forced_advantage"] = True
+            elif etype == "forced_disadvantage":
+                result["forced_disadvantage"] = True
     return result
 
 
@@ -435,3 +534,224 @@ def calculate_enemy_damage(
         "base_damage": round(damage_rolled * multiplier, 2),
         "final_damage": final,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 6. STAGE 11 — COMBAT TARGETING: ROLL DICE STRING
+# ══════════════════════════════════════════════════════════════
+def roll_dice(dice_str: str) -> tuple[list[int], int]:
+    """Roll a dice string like '2d6' or '1d8+2'. Returns (individual_rolls, total)."""
+    import re
+    dice_str = dice_str.strip().lower()
+    bonus = 0
+    # Handle +/- bonus at end
+    m = re.match(r'^(\d+)d(\d+)([+-]\d+)?$', dice_str)
+    if not m:
+        return [0], 0
+    count = int(m.group(1))
+    die = int(m.group(2))
+    if m.group(3):
+        bonus = int(m.group(3))
+    rolls = [random.randint(1, die) for _ in range(max(1, count))]
+    return rolls, sum(rolls) + bonus
+
+
+def stat_modifier(stat_value: int) -> int:
+    """D&D-style ability score modifier: (stat - 10) // 2."""
+    return (stat_value - 10) // 2
+
+
+# ══════════════════════════════════════════════════════════════
+# 7. STAGE 11 — COMBAT ATTACK ROLL (targeting system)
+# ══════════════════════════════════════════════════════════════
+@dataclass
+class CombatAttackResult:
+    d20: int
+    stat_mod: int
+    weapon_bonus: int
+    item_bonuses: int
+    status_penalty: int
+    total: int
+    hit: bool
+    critical: bool
+    fumble: bool
+    target_ac: int
+    # Advantage/disadvantage fields
+    advantage_mode: str = "normal"
+    all_d20s: list = field(default_factory=list)  # [d20_1, d20_2] or [d20]
+    chosen_d20_index: int = 0
+    advantage_breakdown: str = ""
+
+
+def _resolve_weapon_props(weapon):
+    """Extract stat_mod and weapon_bonus from weapon dict."""
+    if weapon:
+        props = weapon.get("weapon_properties", [])
+        if isinstance(props, str):
+            import json
+            try:
+                props = json.loads(props)
+            except Exception:
+                props = []
+        wrange = weapon.get("weapon_range", "melee")
+        return props, wrange, weapon.get("attack_bonus", 0)
+    return [], "melee", 0
+
+
+def _calc_attack_stat_mod(attacker_stats, weapon):
+    """Determine the stat modifier for an attack roll."""
+    if weapon:
+        props, wrange, _ = _resolve_weapon_props(weapon)
+        if wrange == "ranged" or "finesse" in props:
+            if "finesse" in props:
+                return max(stat_modifier(attacker_stats.get("dexterity", 10)),
+                           stat_modifier(attacker_stats.get("strength", 10)))
+            return stat_modifier(attacker_stats.get("dexterity", 10))
+        return stat_modifier(attacker_stats.get("strength", 10))
+    return stat_modifier(attacker_stats.get("strength", 10))
+
+
+def calculate_combat_attack(
+    attacker_stats: dict,  # {strength, dexterity, ...}
+    target_ac: int,
+    weapon: dict | None = None,  # {attack_bonus, weapon_range, weapon_properties, ...}
+    item_atk_bonus: int = 0,
+    status_atk_penalty: int = 0,
+    advantage_mode: str = "normal",
+) -> CombatAttackResult:
+    """
+    Full D&D-style attack roll with advantage/disadvantage support.
+    advantage_mode: "normal" | "advantage" | "disadvantage"
+    """
+    sm = _calc_attack_stat_mod(attacker_stats, weapon)
+    _, _, wb = _resolve_weapon_props(weapon) if weapon else ([], "melee", 0)
+
+    def _single_roll():
+        d = random.randint(1, 20)
+        t = d + sm + wb + item_atk_bonus - status_atk_penalty
+        return t, d
+
+    adv = apply_advantage(_single_roll, advantage_mode)
+    chosen_d20 = adv.all_details[adv.chosen_index]
+    total = adv.chosen_total
+
+    fumble = (chosen_d20 == 1)
+    critical = (chosen_d20 == 20)
+    hit = False if fumble else (critical or total >= target_ac)
+
+    adv_breakdown = format_advantage_breakdown(
+        advantage_mode, [d for d in adv.all_details], adv.chosen_index, "D20"
+    )
+
+    return CombatAttackResult(
+        d20=chosen_d20, stat_mod=sm, weapon_bonus=wb,
+        item_bonuses=item_atk_bonus, status_penalty=status_atk_penalty,
+        total=total, hit=hit, critical=critical, fumble=fumble,
+        target_ac=target_ac,
+        advantage_mode=advantage_mode,
+        all_d20s=list(adv.all_details),
+        chosen_d20_index=adv.chosen_index,
+        advantage_breakdown=adv_breakdown,
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# 8. STAGE 11 — COMBAT DAMAGE ROLL (targeting system)
+# ══════════════════════════════════════════════════════════════
+@dataclass
+class CombatDamageResult:
+    dice_rolls: list
+    base_damage: int
+    stat_mod: int
+    weapon_damage_bonus: int
+    item_damage_bonus: int
+    status_penalty: int
+    raw_damage: int
+    target_reduction: int
+    final_damage: int
+    target_new_hp: int
+    target_killed: bool
+    # Advantage/disadvantage fields
+    advantage_mode: str = "normal"
+    all_rolls: list = field(default_factory=list)  # [[rolls1], [rolls2]] or [[rolls]]
+    all_totals: list = field(default_factory=list)
+    chosen_index: int = 0
+    advantage_breakdown: str = ""
+
+
+def _calc_damage_stat_mod(attacker_stats, weapon):
+    """Determine the stat modifier for a damage roll."""
+    if weapon:
+        props, wrange, _ = _resolve_weapon_props(weapon)
+        if wrange == "ranged" or "finesse" in props:
+            if "finesse" in props:
+                return max(stat_modifier(attacker_stats.get("dexterity", 10)),
+                           stat_modifier(attacker_stats.get("strength", 10)))
+            return stat_modifier(attacker_stats.get("dexterity", 10))
+        return stat_modifier(attacker_stats.get("strength", 10))
+    return stat_modifier(attacker_stats.get("strength", 10))
+
+
+def _single_damage_roll(dc, dt, critical):
+    """Roll damage dice once, with crit doubling."""
+    dice_rolls = [random.randint(1, dt) for _ in range(max(1, dc))]
+    base_damage = sum(dice_rolls)
+    if critical:
+        crit_rolls = [random.randint(1, dt) for _ in range(max(1, dc))]
+        dice_rolls.extend(crit_rolls)
+        base_damage += sum(crit_rolls)
+    return base_damage, dice_rolls
+
+
+def calculate_combat_damage(
+    attacker_stats: dict,
+    target_hp: int,
+    target_max_hp: int,
+    weapon: dict | None = None,  # {dice_count, dice_type, damage_bonus, weapon_range, weapon_properties}
+    critical: bool = False,
+    item_dmg_bonus: int = 0,
+    status_dmg_penalty: int = 0,
+    target_damage_reduction: int = 0,
+    advantage_mode: str = "normal",
+) -> CombatDamageResult:
+    """Full damage roll after a successful attack hit, with advantage/disadvantage."""
+    if weapon:
+        dc = weapon.get("dice_count", 1)
+        dt = weapon.get("dice_type", 6)
+        weapon_damage_bonus = weapon.get("damage_bonus", 0)
+    else:
+        dc, dt = 1, 4
+        weapon_damage_bonus = 0
+
+    sm = _calc_damage_stat_mod(attacker_stats, weapon)
+
+    def _roll_once():
+        base, rolls = _single_damage_roll(dc, dt, critical)
+        raw = max(0, base + sm + weapon_damage_bonus + item_dmg_bonus - status_dmg_penalty)
+        return raw, rolls
+
+    adv = apply_advantage(_roll_once, advantage_mode)
+    chosen_rolls = adv.all_details[adv.chosen_index]
+    base_damage = sum(chosen_rolls)
+    raw_damage = adv.chosen_total
+    final_damage = max(0, raw_damage - target_damage_reduction)
+    target_new_hp = max(0, target_hp - final_damage)
+    target_killed = target_new_hp <= 0
+
+    adv_breakdown = format_advantage_breakdown(
+        advantage_mode, adv.all_totals, adv.chosen_index, "Dmg"
+    )
+
+    return CombatDamageResult(
+        dice_rolls=chosen_rolls, base_damage=base_damage,
+        stat_mod=sm, weapon_damage_bonus=weapon_damage_bonus,
+        item_damage_bonus=item_dmg_bonus, status_penalty=status_dmg_penalty,
+        raw_damage=raw_damage, target_reduction=target_damage_reduction,
+        final_damage=final_damage, target_new_hp=target_new_hp,
+        target_killed=target_killed,
+        advantage_mode=advantage_mode,
+        all_rolls=list(adv.all_details),
+        all_totals=list(adv.all_totals),
+        chosen_index=adv.chosen_index,
+        advantage_breakdown=adv_breakdown,
+    )

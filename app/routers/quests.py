@@ -18,7 +18,7 @@ class QuestTemplateBody(BaseModel):
     title: str
     description: str = ""
     source_npc_id: int | None = None
-    reward_gold_copper: int = 0
+    reward_gold_bronze: int = 0
     reward_item_ids: list = []
     reward_description: str = ""
     reward_is_hidden: bool = False
@@ -33,7 +33,7 @@ class AssignBody(BaseModel):
     title: str | None = None
     description: str | None = None
     source_npc_name: str | None = None
-    reward_gold_copper: int = 0
+    reward_gold_bronze: int = 0
     reward_item_ids: list = []
     reward_description: str = ""
     reward_is_hidden: bool = False
@@ -53,7 +53,7 @@ def _ser_template(t: QuestTemplate) -> dict:
         "title": t.title,
         "description": t.description,
         "source_npc_id": t.source_npc_id,
-        "reward_gold_copper": t.reward_gold_copper,
+        "reward_gold_bronze": t.reward_gold_bronze,
         "reward_item_ids": json.loads(t.reward_item_ids) if t.reward_item_ids else [],
         "reward_description": t.reward_description,
         "reward_is_hidden": t.reward_is_hidden,
@@ -73,7 +73,7 @@ def _ser_quest(q: CharacterQuest) -> dict:
         "status": q.status,
         "current_stage": q.current_stage,
         "stages_completed": json.loads(q.stages_completed) if q.stages_completed else [],
-        "reward_gold_copper": q.reward_gold_copper,
+        "reward_gold_bronze": q.reward_gold_bronze,
         "reward_item_ids": json.loads(q.reward_item_ids) if q.reward_item_ids else [],
         "reward_description": q.reward_description,
         "reward_is_hidden": q.reward_is_hidden,
@@ -101,7 +101,7 @@ async def create_template(body: QuestTemplateBody, db: AsyncSession = Depends(ge
         title=body.title,
         description=body.description,
         source_npc_id=body.source_npc_id,
-        reward_gold_copper=body.reward_gold_copper,
+        reward_gold_bronze=body.reward_gold_bronze,
         reward_item_ids=json.dumps(body.reward_item_ids),
         reward_description=body.reward_description,
         reward_is_hidden=body.reward_is_hidden,
@@ -122,7 +122,7 @@ async def update_template(template_id: int, body: QuestTemplateBody, db: AsyncSe
     t.title = body.title
     t.description = body.description
     t.source_npc_id = body.source_npc_id
-    t.reward_gold_copper = body.reward_gold_copper
+    t.reward_gold_bronze = body.reward_gold_bronze
     t.reward_item_ids = json.dumps(body.reward_item_ids)
     t.reward_description = body.reward_description
     t.reward_is_hidden = body.reward_is_hidden
@@ -159,7 +159,7 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
         title = t.title
         description = t.description
         stages = json.loads(t.stages) if t.stages else []
-        reward_gold = t.reward_gold_copper
+        reward_gold = t.reward_gold_bronze
         reward_items = t.reward_item_ids
         reward_desc = t.reward_description
         reward_hidden = t.reward_is_hidden
@@ -176,7 +176,7 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
         title = body.title
         description = body.description or ""
         stages = body.stages
-        reward_gold = body.reward_gold_copper
+        reward_gold = body.reward_gold_bronze
         reward_items = json.dumps(body.reward_item_ids)
         reward_desc = body.reward_description
         reward_hidden = body.reward_is_hidden
@@ -197,7 +197,7 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
             status="active",
             current_stage=0,
             stages_completed="[]",
-            reward_gold_copper=reward_gold,
+            reward_gold_bronze=reward_gold,
             reward_item_ids=reward_items if isinstance(reward_items, str) else json.dumps(reward_items),
             reward_description=reward_desc,
             reward_is_hidden=reward_hidden,
@@ -268,8 +268,8 @@ async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session))
     char = await db.get(Character, q.character_id)
     if char:
         # Gold
-        if q.reward_gold_copper > 0:
-            char.gold_copper = (char.gold_copper or 0) + q.reward_gold_copper
+        if q.reward_gold_bronze > 0:
+            char.wealth_bronze = (char.wealth_bronze or 0) + q.reward_gold_bronze
 
         # Items
         item_ids = json.loads(q.reward_item_ids) if q.reward_item_ids else []

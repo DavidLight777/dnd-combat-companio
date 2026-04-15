@@ -16,6 +16,26 @@ $('#session-code').textContent = SESSION_CODE;
 // ── State ────────────────────────────────────────────────────
 let characters = [];
 let selectedCharId = null;
+let _gmAdvModes = {};  // per-panel advantage mode
+
+// ── Advantage Toggle helper ──────────────────────────────────
+function makeAdvToggle(panelKey) {
+  _gmAdvModes[panelKey] = _gmAdvModes[panelKey] || 'normal';
+  const cur = _gmAdvModes[panelKey];
+  return `<div class="adv-toggle" data-adv-panel="${panelKey}">
+    <button data-mode="normal" class="${cur==='normal'?'active':''}">Normal</button>
+    <button data-mode="advantage" class="${cur==='advantage'?'active':''}">ADV</button>
+    <button data-mode="disadvantage" class="${cur==='disadvantage'?'active':''}">DISADV</button>
+  </div>`;
+}
+function bindAdvToggle(container, panelKey) {
+  const btns = container.querySelectorAll(`.adv-toggle[data-adv-panel="${panelKey}"] button`);
+  btns.forEach(b => b.addEventListener('click', () => {
+    _gmAdvModes[panelKey] = b.dataset.mode;
+    btns.forEach(x => x.classList.toggle('active', x === b));
+  }));
+}
+function getAdvMode(panelKey) { return _gmAdvModes[panelKey] || 'normal'; }
 
 // ── API helper ───────────────────────────────────────────────
 const api = {
@@ -255,13 +275,40 @@ async function renderCharDetail() {
 
         <hr class="section-divider">
 
-        <!-- Stats -->
+        <!-- Permanent Bonuses (Phase 1 fix: Race/Class bonuses visible to GM) -->
+        ${(() => {
+          const raceMods = (c.stat_modifiers || []).filter(m => m.source === 'race');
+          const classMods = (c.stat_modifiers || []).filter(m => m.source === 'class');
+          if (!raceMods.length && !classMods.length) return '';
+          let html = '<div style="margin-bottom:8px">';
+          html += '<h3 style="font-size:0.82rem;margin-bottom:6px">🏷️ Permanent Bonuses</h3>';
+          if (raceMods.length) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
+            html += raceMods.map(m => `<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:#fbbf2420;border:1px solid #fbbf24;color:#fbbf24">${m.name || m.stat_name}: ${m.value > 0 ? '+' : ''}${m.value}</span>`).join('');
+            html += '</div>';
+          }
+          if (classMods.length) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
+            html += classMods.map(m => `<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:#60a5fa20;border:1px solid #60a5fa;color:#60a5fa">${m.name || m.stat_name}: ${m.value > 0 ? '+' : ''}${m.value}</span>`).join('');
+            html += '</div>';
+          }
+          html += '</div>';
+          return html;
+        })()}
+
+        <!-- Stats (effective = base + all modifiers) -->
         <div class="stats-inline">
-          ${stats.map((s,i) => `<div class="stat-inline"><div class="sl">${labels[i]}</div><div class="sv">${c[s]}</div></div>`).join('')}
+          ${stats.map((s,i) => {
+            const base = c[s];
+            const modSum = (c.stat_modifiers || []).filter(m => m.stat_name === s && m.is_active).reduce((a, m) => a + m.value, 0);
+            const eff = base + modSum;
+            const modLabel = modSum !== 0 ? ` <span style="font-size:0.55rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">(${modSum > 0 ? '+' : ''}${modSum})</span>` : '';
+            return `<div class="stat-inline"><div class="sl">${labels[i]}</div><div class="sv">${eff}${modLabel}</div></div>`;
+          }).join('')}
           <div class="stat-inline"><div class="sl">KD</div><div class="sv" style="color:var(--accent)">${c.armor_class}</div></div>
         </div>
 
-        <!-- Edit stats row -->
+        <!-- Edit stats row (base values) -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
           ${stats.map((s,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
             <span style="font-size:0.6rem;color:var(--text-muted)">${labels[i]}</span>
@@ -291,6 +338,14 @@ async function renderCharDetail() {
           <button class="btn btn-ghost btn-xs" id="btn-gm-status-library">📚 Library</button>
         </div>
         <div id="gm-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:0.72rem;color:var(--text-muted)">Force Adv/Disadv:</span>
+          <div class="adv-toggle" id="gm-force-adv-toggle">
+            <button data-mode="normal" class="active">Normal</button>
+            <button data-mode="advantage">ADV</button>
+            <button data-mode="disadvantage">DISADV</button>
+          </div>
+        </div>
 
         ${!c.is_npc ? `
         <!-- Timer (Player only) -->
@@ -311,7 +366,10 @@ async function renderCharDetail() {
 
         <!-- Characteristic Roll -->
         <hr class="section-divider">
-        <h3 style="font-size:0.82rem;margin-bottom:6px">🎲 Characteristic Roll</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="font-size:0.82rem;margin:0">🎲 Characteristic Roll</h3>
+          ${makeAdvToggle('gm_char_roll')}
+        </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
           <select id="gm-roll-stat" style="font-size:0.78rem;width:110px">
             <option value="strength">Strength</option>
@@ -332,7 +390,9 @@ async function renderCharDetail() {
 
         <!-- Damage calc -->
         <hr class="section-divider">
-        <h3 style="font-size:0.82rem;margin-bottom:6px">Apply Damage to ${c.name}</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="font-size:0.82rem;margin:0">Apply Damage to ${c.name}</h3>
+        </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <label style="font-size:0.78rem;color:var(--text-muted)">Enemy Roll:</label>
           <input type="number" id="gm-di-enemy" style="width:56px">
@@ -350,13 +410,13 @@ async function renderCharDetail() {
           <span style="font-size:0.7rem;color:#e0c97f">P:</span><input type="number" id="gm-give-plat" value="0" style="width:42px;font-size:0.75rem" min="0">
           <span style="font-size:0.7rem;color:#fbbf24">G:</span><input type="number" id="gm-give-gold" value="0" style="width:42px;font-size:0.75rem" min="0">
           <span style="font-size:0.7rem;color:#94a3b8">S:</span><input type="number" id="gm-give-silver" value="0" style="width:42px;font-size:0.75rem" min="0">
-          <span style="font-size:0.7rem;color:#b87333">C:</span><input type="number" id="gm-give-copper" value="0" style="width:42px;font-size:0.75rem" min="0">
+          <span style="font-size:0.7rem;color:#b87333">B:</span><input type="number" id="gm-give-bronze" value="0" style="width:42px;font-size:0.75rem" min="0">
           <button class="btn btn-primary btn-xs" id="btn-gm-give-currency">+ Give</button>
           <button class="btn btn-ghost btn-xs" id="btn-gm-take-currency">- Take</button>
         </div>
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
-          <span style="font-size:0.7rem;color:var(--text-muted)">Set total copper:</span>
-          <input type="number" id="gm-gold-copper" value="${c.gold_copper || 0}" style="width:80px;font-size:0.75rem">
+          <span style="font-size:0.7rem;color:var(--text-muted)">Set total bronze:</span>
+          <input type="number" id="gm-wealth-bronze" value="${c.wealth_bronze || c.gold_copper || 0}" style="width:80px;font-size:0.75rem">
           <button class="btn btn-ghost btn-xs" id="btn-gm-set-gold">Set</button>
           <button class="btn btn-ghost btn-xs" id="btn-gm-tx-history" style="margin-left:auto">📜 History</button>
         </div>
@@ -439,12 +499,18 @@ async function renderCharDetail() {
   }
 
   // Characteristic Roll
+  bindAdvToggle(area, 'gm_char_roll');
   $('#btn-gm-roll-char').addEventListener('click', async () => {
     const stat = $('#gm-roll-stat').value;
     const rollType = $('#gm-roll-type').value;
     try {
-      const res = await api.post(`/api/characters/${c.id}/roll-characteristic`, { stat, roll_type: rollType });
-      $('#gm-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>`;
+      const res = await api.post(`/api/characters/${c.id}/roll-characteristic`, {
+        stat, roll_type: rollType, advantage_mode: getAdvMode('gm_char_roll'),
+      });
+      let advTag = '';
+      if (res.advantage_mode === 'advantage') advTag = ' <span class="adv-badge advantage">ADV</span>';
+      else if (res.advantage_mode === 'disadvantage') advTag = ' <span class="adv-badge disadvantage">DISADV</span>';
+      $('#gm-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>${advTag}`;
       addLog('gm.roll', res.description);
       addRollLogEntry(res);
       lastGmRollTime = Date.now();
@@ -470,8 +536,8 @@ async function renderCharDetail() {
     const text = res.hit_diff <= 0
       ? `<span style="color:var(--text-muted);font-weight:700">MISS</span> (diff: ${res.hit_diff})`
       : `${res.tier_label} → <strong style="color:var(--accent-red)">${res.final_damage} damage</strong> applied`;
-    $('#gm-dmg-result').innerHTML = text;
-    addLog('gm.damage', `${c.name}: ${er} vs KD${c.armor_class} → ${res.final_damage} dmg`);
+    $('#gm-dmg-result').innerHTML = text + (res.breakdown ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">${res.breakdown}</div>` : '');
+    addLog('gm.damage', `${c.name}: ${res.breakdown || `${er} vs KD${c.armor_class} → ${res.final_damage} dmg`}`);
   });
 
   // ── Detail Timer wiring (player only) ──
@@ -531,6 +597,35 @@ async function renderCharDetail() {
   $('#btn-gm-add-status').addEventListener('click', () => openAddStatusModal(c.id, c.name));
   $('#btn-gm-status-library').addEventListener('click', () => openStatusLibraryModal());
 
+  // ── Force Advantage toggle wiring ──
+  (async () => {
+    // Detect current forced adv/disadv from status penalties
+    try {
+      const pen = await api.get(`/api/characters/${c.id}/status-penalties`);
+      let curMode = 'normal';
+      if (pen.forced_advantage) curMode = 'advantage';
+      else if (pen.forced_disadvantage) curMode = 'disadvantage';
+      const btns = area.querySelectorAll('#gm-force-adv-toggle button');
+      btns.forEach(b => b.classList.toggle('active', b.dataset.mode === curMode));
+    } catch {}
+  })();
+  area.querySelectorAll('#gm-force-adv-toggle button').forEach(b => {
+    b.addEventListener('click', async () => {
+      const mode = b.dataset.mode;
+      try {
+        await api.post(`/api/characters/${c.id}/set-advantage`, { mode });
+        area.querySelectorAll('#gm-force-adv-toggle button').forEach(x => x.classList.toggle('active', x === b));
+        loadStatusBadges(c.id);
+        addLog('gm.status', `Set ${c.name} → ${mode === 'normal' ? 'Normal' : mode.toUpperCase()}`);
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'status_effect.applied', character_id: c.id, name: `Forced ${mode}` }));
+        }
+      } catch (e) {
+        showToast('Failed: ' + e.message);
+      }
+    });
+  });
+
   // ── Currency wiring ──
   // Load and display currency
   (async () => {
@@ -541,8 +636,8 @@ async function renderCharDetail() {
       if (d.platinum) parts.push(`<span style="color:#e0c97f">${d.platinum}P</span>`);
       if (d.gold) parts.push(`<span style="color:#fbbf24">${d.gold}G</span>`);
       if (d.silver) parts.push(`<span style="color:#94a3b8">${d.silver}S</span>`);
-      parts.push(`<span style="color:#b87333">${d.copper}C</span>`);
-      $('#gm-currency-display').innerHTML = parts.join(' ') + ` <span style="font-size:0.7rem;color:var(--text-muted)">(${cur.total_copper}cp)</span>`;
+      parts.push(`<span style="color:#b87333">${d.bronze}B</span>`);
+      $('#gm-currency-display').innerHTML = parts.join(' ') + ` <span style="font-size:0.7rem;color:var(--text-muted)">(${cur.total_bronze}b)</span>`;
     } catch {}
   })();
 
@@ -551,11 +646,11 @@ async function renderCharDetail() {
     const p = parseInt($('#gm-give-plat').value) || 0;
     const g = parseInt($('#gm-give-gold').value) || 0;
     const s = parseInt($('#gm-give-silver').value) || 0;
-    const co = parseInt($('#gm-give-copper').value) || 0;
+    const co = parseInt($('#gm-give-bronze').value) || 0;
     if (!p && !g && !s && !co) return;
-    await api.post(`/api/characters/${c.id}/give-gold`, { platinum: p, gold: g, silver: s, copper: co });
+    await api.post(`/api/characters/${c.id}/give-gold`, { platinum: p, gold: g, silver: s, bronze: co });
     await refreshChars();
-    addLog('gm.gold', `Gave ${c.name}: ${p}P ${g}G ${s}S ${co}C`);
+    addLog('gm.gold', `Gave ${c.name}: ${p}P ${g}G ${s}S ${co}B`);
   });
 
   // Take currency (negative give)
@@ -563,19 +658,19 @@ async function renderCharDetail() {
     const p = parseInt($('#gm-give-plat').value) || 0;
     const g = parseInt($('#gm-give-gold').value) || 0;
     const s = parseInt($('#gm-give-silver').value) || 0;
-    const co = parseInt($('#gm-give-copper').value) || 0;
+    const co = parseInt($('#gm-give-bronze').value) || 0;
     if (!p && !g && !s && !co) return;
-    await api.post(`/api/characters/${c.id}/give-gold`, { platinum: -p, gold: -g, silver: -s, copper: -co, note: 'GM deduction' });
+    await api.post(`/api/characters/${c.id}/give-gold`, { platinum: -p, gold: -g, silver: -s, bronze: -co, note: 'GM deduction' });
     await refreshChars();
-    addLog('gm.gold', `Took from ${c.name}: ${p}P ${g}G ${s}S ${co}C`);
+    addLog('gm.gold', `Took from ${c.name}: ${p}P ${g}G ${s}S ${co}B`);
   });
 
-  // Set total copper
+  // Set total bronze
   $('#btn-gm-set-gold').addEventListener('click', async () => {
-    const v = parseInt($('#gm-gold-copper').value) || 0;
-    await api.put(`/api/characters/${c.id}`, { gold_copper: v });
+    const v = parseInt($('#gm-wealth-bronze').value) || 0;
+    await api.put(`/api/characters/${c.id}`, { wealth_bronze: v });
     await refreshChars();
-    addLog('gm.gold', `${c.name}: gold_copper = ${v}`);
+    addLog('gm.gold', `${c.name}: wealth_bronze = ${v}`);
   });
 
   // Transaction history
@@ -629,6 +724,7 @@ async function loadGmCharInventory(charId) {
         <span style="font-size:0.7rem;color:var(--text-muted)">x${i.quantity}${slotLbl}</span>
         ${bonusesStr ? `<span style="font-size:0.65rem;color:var(--accent-green)">${bonusesStr}</span>` : ''}
         <button class="btn btn-ghost btn-xs" data-gm-equip="${i.inventory_id}" data-gm-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>
+        <button class="btn btn-ghost btn-xs" data-gm-buyback="${i.inventory_id}" data-gm-buyback-price="${i.base_price_bronze||i.base_price_copper||0}" data-gm-buyback-name="${i.name}" title="Buy from player">💰</button>
         <button class="btn-icon danger" data-gm-remove-inv="${i.inventory_id}" title="Remove">🗑</button>
       </div>`;
     }).join('');
@@ -654,7 +750,71 @@ async function loadGmCharInventory(charId) {
         loadGmCharInventory(charId);
       });
     });
+    // Buyback
+    container.querySelectorAll('[data-gm-buyback]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const invId = parseInt(btn.dataset.gmBuyback);
+        const basePrice = parseInt(btn.dataset.gmBuybackPrice) || 0;
+        const itemName = btn.dataset.gmBuybackName;
+        openGmBuybackModal(invId, itemName, basePrice, charId);
+      });
+    });
   } catch(e) { container.innerHTML = '<span class="text-muted">Error loading inventory.</span>'; }
+}
+
+// ── GM Buyback Modal ─────────────────────────────────────────
+function openGmBuybackModal(invId, itemName, basePrice, charId) {
+  let rem = basePrice;
+  const sp = Math.floor(rem / 1000); rem %= 1000;
+  const sg = Math.floor(rem / 100); rem %= 100;
+  const ss = Math.floor(rem / 10); rem %= 10;
+  const sb = rem;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:85%;max-width:360px;padding:20px">
+      <h3 style="margin-bottom:10px">💰 Buy from Player: ${itemName}</h3>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px">Base price: ${bronzeToDisplay(basePrice)}</p>
+      <p style="font-size:0.75rem;margin-bottom:6px">Set buyback price:</p>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:12px">
+        <span style="font-size:0.7rem;color:#e0c97f">P</span><input type="number" id="bb-p" value="${sp}" min="0" style="width:48px;font-size:0.75rem">
+        <span style="font-size:0.7rem;color:#fbbf24">G</span><input type="number" id="bb-g" value="${sg}" min="0" style="width:48px;font-size:0.75rem">
+        <span style="font-size:0.7rem;color:#94a3b8">S</span><input type="number" id="bb-s" value="${ss}" min="0" style="width:48px;font-size:0.75rem">
+        <span style="font-size:0.7rem;color:#b87333">B</span><input type="number" id="bb-b" value="${sb}" min="0" style="width:48px;font-size:0.75rem">
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" id="bb-confirm">Confirm Buyback</button>
+        <button class="btn btn-ghost btn-sm" id="bb-cancel">Cancel</button>
+      </div>
+      <div id="bb-result" style="margin-top:8px;font-size:0.8rem"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#bb-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#bb-confirm').addEventListener('click', async () => {
+    const p = parseInt(overlay.querySelector('#bb-p').value) || 0;
+    const g = parseInt(overlay.querySelector('#bb-g').value) || 0;
+    const s = parseInt(overlay.querySelector('#bb-s').value) || 0;
+    const b = parseInt(overlay.querySelector('#bb-b').value) || 0;
+    try {
+      const res = await api.post('/api/inventory/gm-buyback', {
+        inventory_item_id: invId, platinum: p, gold: g, silver: s, bronze: b
+      });
+      overlay.querySelector('#bb-result').innerHTML = `<span style="color:var(--accent-green)">Bought ${res.item_name} for ${res.price_display}!</span>`;
+      addLog('gm.economy', `GM bought ${res.item_name} from ${res.character_name} for ${res.price_display}`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({ type: 'inventory.gm_buyback', character_id: charId, item_name: res.item_name, price_display: res.price_display }));
+      }
+      setTimeout(() => { overlay.remove(); loadGmCharInventory(charId); }, 800);
+    } catch (e) {
+      let msg = 'Buyback failed';
+      try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
+      overlay.querySelector('#bb-result').innerHTML = `<span style="color:var(--accent-red)">${msg}</span>`;
+    }
+  });
 }
 
 // ── Give Item Modal ─────────────────────────────────────────
@@ -738,7 +898,7 @@ async function openTxHistoryModal(charId, charName) {
       const dir = t.to_character_id === charId ? '+' : '-';
       const color = dir === '+' ? 'var(--accent-green)' : 'var(--accent-red)';
       const c = t.currency;
-      const amt = [c.platinum && c.platinum+'P', c.gold && c.gold+'G', c.silver && c.silver+'S', c.copper && c.copper+'C'].filter(Boolean).join(' ') || t.amount_copper+'cp';
+      const amt = [c.platinum && c.platinum+'P', c.gold && c.gold+'G', c.silver && c.silver+'S', c.bronze && c.bronze+'B'].filter(Boolean).join(' ') || t.amount_bronze+'b';
       return `<div style="display:flex;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)">
         <span style="color:${color};font-weight:700;width:18px">${dir}</span>
         <span style="flex:1">${amt}</span>
@@ -812,9 +972,9 @@ async function openMerchantSettingsModal(npcId, npcName) {
       <div style="display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
         <span class="rarity-${si.rarity}" style="flex:1;font-weight:600;font-size:0.82rem">${si.name}</span>
         <span style="font-size:0.7rem;color:var(--text-muted)">Stock: ${si.stock === null ? '∞' : si.stock}</span>
-        <span style="font-size:0.7rem">Base: ${si.base_price_copper}cp</span>
+        <span style="font-size:0.7rem">Base: ${si.base_price_bronze || si.base_price_copper}b</span>
         <input type="number" data-merch-stock="${si.shop_item_id}" value="${si.stock === null ? '' : si.stock}" placeholder="∞" style="width:50px;font-size:0.7rem" title="Stock">
-        <input type="number" data-merch-price="${si.shop_item_id}" value="${si.final_price_copper}" placeholder="auto" style="width:60px;font-size:0.7rem" title="Price override (cp)">
+        <input type="number" data-merch-price="${si.shop_item_id}" value="${si.final_price_bronze || si.final_price_copper}" placeholder="auto" style="width:60px;font-size:0.7rem" title="Price override (bronze)">
         <button class="btn btn-ghost btn-xs" data-merch-save="${si.shop_item_id}">💾</button>
         <button class="btn-icon danger" data-merch-del="${si.shop_item_id}" title="Remove">🗑</button>
       </div>
@@ -828,7 +988,7 @@ async function openMerchantSettingsModal(npcId, npcName) {
         const price = el.querySelector(`[data-merch-price="${sid}"]`).value;
         await api.patch(`/api/npc/${npcId}/shop/${sid}`, {
           stock: stock === '' ? null : parseInt(stock),
-          price_override_copper: price === '' ? null : parseInt(price),
+          price_override_bronze: price === '' ? null : parseInt(price),
         });
         loadShopList();
       });
@@ -932,7 +1092,7 @@ function openMerchAddItemModal(npcId, onDone) {
     el.innerHTML = filtered.map(i => `
       <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)">
         <span class="rarity-${i.rarity}" style="flex:1;font-size:0.8rem;font-weight:600">${i.name}</span>
-        <span style="font-size:0.7rem;color:var(--text-muted)">${i.base_price_copper}cp</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">${i.base_price_bronze || i.base_price_copper}b</span>
         <button class="btn btn-primary btn-xs" data-add-shop="${i.id}">Add</button>
       </div>
     `).join('');
@@ -944,7 +1104,7 @@ function openMerchAddItemModal(npcId, onDone) {
         await api.post(`/api/npc/${npcId}/shop`, {
           item_id: parseInt(btn.dataset.addShop),
           stock: stock === '' ? null : parseInt(stock),
-          price_override_copper: price === '' ? null : parseInt(price),
+          price_override_bronze: price === '' ? null : parseInt(price),
         });
         overlay.remove();
         if (onDone) onDone();
@@ -1754,9 +1914,9 @@ const BONUS_TYPES = [
 
 const STAT_NAMES = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
 
-function copperToDisplay(copper) {
-  if (!copper || copper === 0) return '0';
-  let r = copper;
+function bronzeToDisplay(bronze) {
+  if (!bronze || bronze === 0) return '0';
+  let r = bronze;
   const p = Math.floor(r / 1000); r %= 1000;
   const g = Math.floor(r / 100); r %= 100;
   const s = Math.floor(r / 10); r %= 10;
@@ -1764,9 +1924,10 @@ function copperToDisplay(copper) {
   if (p) parts.push(`<span style="color:#e0c97f">${p}P</span>`);
   if (g) parts.push(`<span class="price-gold">${g}G</span>`);
   if (s) parts.push(`<span class="price-silver">${s}S</span>`);
-  if (r) parts.push(`<span class="price-copper">${r}C</span>`);
+  if (r) parts.push(`<span class="price-bronze">${r}B</span>`);
   return parts.join(' ') || '0';
 }
+const copperToDisplay = bronzeToDisplay;
 
 async function loadCategories() {
   try {
@@ -1824,7 +1985,7 @@ function renderItemGrid() {
         </div>
         <div class="ic-desc">${item.description || ''}</div>
         <div class="ic-meta">
-          <span class="ic-price price-display">${copperToDisplay(item.base_price_copper)}</span>
+          <span class="ic-price price-display">${bronzeToDisplay(item.base_price_bronze || item.base_price_copper)}</span>
           ${item.weight ? `<span>${item.weight}lb</span>` : ''}
           ${item.equippable ? '<span>📎 Equip</span>' : ''}
           ${item.consumable ? '<span>🧪 Use</span>' : ''}
@@ -1853,7 +2014,13 @@ function openItemEditor(itemId = null) {
     $('#item-ed-desc').value = item.description || '';
     if (item.category_id) $('#item-ed-category').value = item.category_id;
     $('#item-ed-rarity').value = item.rarity;
-    $('#item-ed-price').value = item.base_price_copper || 0;
+    const _bp = item.base_price_bronze || item.base_price_copper || 0;
+    let _rem = _bp;
+    $('#item-ed-price-p').value = Math.floor(_rem / 1000); _rem %= 1000;
+    $('#item-ed-price-g').value = Math.floor(_rem / 100); _rem %= 100;
+    $('#item-ed-price-s').value = Math.floor(_rem / 10); _rem %= 10;
+    $('#item-ed-price-b').value = _rem;
+    $('#item-ed-price').value = _bp;
     $('#item-ed-weight').value = item.weight || 0;
     $('#item-ed-equippable').checked = item.equippable;
     $('#item-ed-consumable').checked = item.consumable;
@@ -1949,7 +2116,7 @@ async function saveItem() {
     category_id: parseInt($('#item-ed-category').value) || null,
     category: (allCategories.find(c => c.id === parseInt($('#item-ed-category').value))?.name || 'Misc').toLowerCase(),
     rarity: $('#item-ed-rarity').value,
-    base_price_copper: parseInt($('#item-ed-price').value) || 0,
+    base_price_bronze: (parseInt($('#item-ed-price-p').value)||0)*1000 + (parseInt($('#item-ed-price-g').value)||0)*100 + (parseInt($('#item-ed-price-s').value)||0)*10 + (parseInt($('#item-ed-price-b').value)||0),
     weight: parseFloat($('#item-ed-weight').value) || 0,
     equippable: $('#item-ed-equippable').checked,
     consumable: $('#item-ed-consumable').checked,
@@ -2431,12 +2598,37 @@ function renderActiveCombat(panel) {
           ` : ''}
         </div>
 
-        <!-- Next Turn Button -->
-        <button class="btn btn-primary" id="btn-combat-next-turn" style="width:100%;margin-bottom:12px;font-size:1rem;padding:10px">⏭ Next Turn</button>
+        <!-- Action Panel (NPC turn = GM controls) -->
+        ${currentP && currentP.is_npc ? `
+        <div style="padding:10px;margin-bottom:12px;border-radius:var(--r-md);background:var(--bg-dark);border:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:0.75rem;color:var(--text-muted)">⚔️ Actions for ${currentP.name}</span>
+            ${makeAdvToggle('gm_combat')}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-danger btn-sm" id="btn-combat-attack">⚔️ Attack</button>
+            <button class="btn btn-accent btn-sm" id="btn-combat-defend">🛡️ Defend</button>
+            <button class="btn btn-primary btn-sm" id="btn-combat-next-turn" style="flex:1;min-width:120px;font-size:1rem;padding:10px">⏭ Next Turn</button>
+          </div>
+          <div id="combat-target-panel" style="display:none;margin-top:10px"></div>
+          <div id="combat-action-result" style="margin-top:8px;font-size:0.85rem"></div>
+        </div>
+        ` : `
+        <!-- Player turn: just next turn button -->
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+          <button class="btn btn-primary" id="btn-combat-next-turn" style="flex:1;font-size:1rem;padding:10px">⏭ Next Turn</button>
+        </div>
+        `}
 
         <!-- Turn Order -->
         <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px">Turn Order:</div>
         <div id="combat-turn-order">${renderParticipantRows(c)}</div>
+
+        <!-- Combat Action Log -->
+        <div style="margin-top:12px">
+          <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px">⚔️ Battle Log</div>
+          <div id="combat-action-log" style="max-height:200px;overflow-y:auto;font-size:0.78rem;background:var(--bg-dark);border-radius:var(--r-sm);padding:6px"></div>
+        </div>
 
         <!-- Turn Events -->
         <div id="combat-events" style="margin-top:8px;font-size:0.78rem"></div>
@@ -2510,6 +2702,145 @@ function renderActiveCombat(panel) {
     // Restore timer if one was running
     restoreGmCombatTimer();
   }
+
+  // Bind combat advantage toggle
+  bindAdvToggle(panel, 'gm_combat');
+
+  // Wire Attack Button (NPC turn)
+  const atkBtn = panel.querySelector('#btn-combat-attack');
+  if (atkBtn && currentP) {
+    atkBtn.addEventListener('click', async () => {
+      const targetPanel = panel.querySelector('#combat-target-panel');
+      if (!targetPanel) return;
+      try {
+        const targets = await api.get(`/api/combat/${c.id}/targets/${currentP.character_id}`);
+        if (!targets.length) { showToast('No valid targets'); return; }
+        targetPanel.style.display = 'block';
+        targetPanel.innerHTML = `
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:6px">Select Target:</div>
+          ${targets.map(t => `
+            <div class="combat-target-card" data-id="${t.character_id}" style="cursor:pointer;padding:8px;margin-bottom:4px;border-radius:var(--r-sm);border:1px solid var(--border);display:flex;align-items:center;gap:8px;transition:background 0.2s">
+              <div style="width:20px;height:20px;border-radius:50%;background:${t.token_color}"></div>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:0.85rem">${t.name}${t.is_npc ? ' <span style="color:var(--text-muted);font-size:0.6rem">NPC</span>' : ''}</div>
+                <div style="font-size:0.7rem;color:var(--text-muted)">HP: ${t.current_hp}/${t.max_hp} | AC: ${t.armor_class}</div>
+              </div>
+              <div style="width:60px;height:6px;background:var(--bg-dark);border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:${Math.round(t.current_hp/t.max_hp*100)}%;background:${t.current_hp/t.max_hp > 0.5 ? 'var(--hp-high)' : t.current_hp/t.max_hp > 0.25 ? 'var(--hp-mid)' : 'var(--hp-low)'}"></div>
+              </div>
+            </div>
+          `).join('')}
+        `;
+        targetPanel.querySelectorAll('.combat-target-card').forEach(card => {
+          card.addEventListener('mouseenter', () => card.style.background = 'var(--accent)15');
+          card.addEventListener('mouseleave', () => card.style.background = '');
+          card.addEventListener('click', async () => {
+            const targetId = parseInt(card.dataset.id);
+            try {
+              const result = await api.post(`/api/combat/${c.id}/attack`, {
+                attacker_id: currentP.character_id, target_id: targetId,
+                advantage_mode: getAdvMode('gm_combat'),
+              });
+              targetPanel.style.display = 'none';
+              const resEl = panel.querySelector('#combat-action-result');
+              if (resEl) {
+                const atk = result.attack_roll;
+                const dmg = result.damage_roll;
+                let html = `<div style="padding:8px;border-radius:var(--r-sm);border:1px solid `;
+                if (atk.critical) html += `gold;background:#ffd70020"><b style="color:gold">🎯 CRITICAL!</b>`;
+                else if (atk.fumble) html += `var(--accent-red);background:var(--accent-red)10"><b style="color:var(--accent-red)">💨 FUMBLE!</b>`;
+                else if (atk.hit) html += `var(--accent-green);background:var(--accent-green)10"><b style="color:var(--accent-green)">⚔️ HIT!</b>`;
+                else html += `var(--text-muted);background:var(--bg-dark)"><b style="color:var(--text-muted)">🛡️ MISS</b>`;
+                html += `<div style="font-size:0.75rem;margin-top:4px">d20: ${atk.d20} + STR: ${atk.stat_mod} + Wpn: ${atk.weapon_bonus} + Items: ${atk.item_bonuses} = ${atk.total} vs AC ${atk.target_ac}</div>`;
+                if (dmg) {
+                  html += `<div style="font-size:0.75rem;margin-top:2px">Damage: [${dmg.dice_rolls.join(',')}] + STR: ${dmg.stat_mod} + Wpn: ${dmg.weapon_damage_bonus} = ${dmg.final_damage} damage</div>`;
+                  html += `<div style="font-size:0.75rem">${result.target_name}: ${result.target_current_hp}/${result.target_max_hp} HP</div>`;
+                  if (result.target_killed) html += `<div style="color:var(--accent-red);font-weight:700;margin-top:4px">💀 ${result.target_name} SLAIN!</div>`;
+                }
+                html += `</div>`;
+                resEl.innerHTML = html;
+              }
+              // Add to log & broadcast
+              addLog('gm.combat', result.description);
+              appendCombatLogEntry(result);
+              if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+                ws.ws.send(JSON.stringify({ type: 'combat.attack_result', data: result }));
+                if (result.target_killed) {
+                  ws.ws.send(JSON.stringify({ type: 'combat.character_killed', data: {
+                    character_id: targetId, character_name: result.target_name, killed_by: currentP.name
+                  }}));
+                }
+              }
+              // Refresh turn order HP bars
+              const state = await api.get(`/api/combat/${c.id}/state`);
+              activeCombat = state;
+              const toEl = panel.querySelector('#combat-turn-order');
+              if (toEl) toEl.innerHTML = renderParticipantRows(activeCombat);
+            } catch (e) { showToast('Attack error: ' + e.message); }
+          });
+        });
+      } catch (e) { showToast('Error loading targets: ' + e.message); }
+    });
+  }
+
+  // Wire Defend Button (NPC turn)
+  const defBtn = panel.querySelector('#btn-combat-defend');
+  if (defBtn && currentP) {
+    defBtn.addEventListener('click', async () => {
+      try {
+        const result = await api.post(`/api/combat/${c.id}/defend`, { character_id: currentP.character_id });
+        const resEl = panel.querySelector('#combat-action-result');
+        if (resEl) {
+          resEl.innerHTML = `<div style="padding:8px;border-radius:var(--r-sm);border:1px solid var(--accent);background:var(--accent)10">
+            <b style="color:var(--accent)">🛡️ DEFENDING</b>
+            <div style="font-size:0.75rem;margin-top:4px">${result.description}</div>
+            <div style="font-size:0.75rem">New AC: ${result.new_ac}</div>
+          </div>`;
+        }
+        addLog('gm.combat', result.description);
+        appendCombatLogEntry({ description: result.description, attack_roll: { defend: true } });
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'combat.defend', data: result }));
+        }
+      } catch (e) { showToast('Defend error: ' + e.message); }
+    });
+  }
+
+  // Load battle log
+  loadCombatActionLog(c.id);
+}
+
+async function loadCombatActionLog(combatId) {
+  const logEl = document.querySelector('#combat-action-log');
+  if (!logEl) return;
+  try {
+    const actions = await api.get(`/api/combat/${combatId}/actions`);
+    logEl.innerHTML = actions.length ? actions.map(a => {
+      let color = 'var(--text-muted)';
+      if (a.attack_roll?.critical) color = 'gold';
+      else if (a.attack_roll?.hit) color = 'var(--accent-green)';
+      else if (a.attack_roll?.fumble) color = 'var(--accent-red)';
+      else if (a.action_type === 'defend') color = 'var(--accent)';
+      return `<div style="padding:3px 0;border-bottom:1px solid var(--border);color:${color}">
+        <span style="color:var(--text-muted);font-size:0.65rem">R${a.round_number}</span> ${a.description}
+      </div>`;
+    }).join('') : '<div style="color:var(--text-muted)">No actions yet</div>';
+  } catch(e) { logEl.innerHTML = ''; }
+}
+
+function appendCombatLogEntry(result) {
+  const logEl = document.querySelector('#combat-action-log');
+  if (!logEl) return;
+  let color = 'var(--text-muted)';
+  const atk = result.attack_roll;
+  if (atk?.critical) color = 'gold';
+  else if (atk?.hit) color = 'var(--accent-green)';
+  else if (atk?.fumble) color = 'var(--accent-red)';
+  else if (atk?.defend) color = 'var(--accent)';
+  const entry = document.createElement('div');
+  entry.style.cssText = `padding:3px 0;border-bottom:1px solid var(--border);color:${color}`;
+  entry.innerHTML = `<span style="color:var(--text-muted);font-size:0.65rem">R${activeCombat?.round_number || '?'}</span> ${result.description}`;
+  logEl.prepend(entry);
 }
 
 function formatGmTimer(totalSeconds) {
@@ -2863,6 +3194,27 @@ ws.on('combat.initiative_submitted', d => {
   if (activeCombat) {
     showToast(`${d.character_id} submitted initiative: ${d.roll} (total: ${d.final})`);
     loadCombatPanel();
+  }
+});
+
+// Stage 11: Combat action WS events for GM
+ws.on('combat.attack_result', d => {
+  if (activeCombat) {
+    showToast(`⚔️ ${d.attacker_name} → ${d.target_name}: ${d.attack_roll?.hit ? 'HIT' : 'MISS'}`);
+    appendCombatLogEntry(d);
+    loadCombatPanel();
+  }
+});
+ws.on('combat.defend', d => {
+  if (activeCombat) {
+    showToast(`🛡️ ${d.character_name} defends`);
+    appendCombatLogEntry({ description: d.description, attack_roll: { defend: true } });
+    loadCombatPanel();
+  }
+});
+ws.on('combat.character_killed', d => {
+  if (activeCombat) {
+    showToast(`💀 ${d.character_name} has been slain!`);
   }
 });
 

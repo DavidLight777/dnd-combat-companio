@@ -20,6 +20,26 @@ let charData = null;      // Alias for shop access
 let calcLog = [];         // Calc log entries
 let rollHistory = [];     // Roll history entries
 let _atkD20Result = null; // Last d20 roll
+let _advantageModes = {};  // per-panel advantage mode: { attack: 'normal', damage: 'normal', heal: 'normal', char_roll: 'normal' }
+
+// ── Advantage Toggle helper ──────────────────────────────────
+function makeAdvToggle(panelKey) {
+  _advantageModes[panelKey] = _advantageModes[panelKey] || 'normal';
+  const cur = _advantageModes[panelKey];
+  return `<div class="adv-toggle" data-adv-panel="${panelKey}">
+    <button data-mode="normal" class="${cur==='normal'?'active':''}">Normal</button>
+    <button data-mode="advantage" class="${cur==='advantage'?'active':''}">ADV</button>
+    <button data-mode="disadvantage" class="${cur==='disadvantage'?'active':''}">DISADV</button>
+  </div>`;
+}
+function bindAdvToggle(container, panelKey) {
+  const btns = container.querySelectorAll(`.adv-toggle[data-adv-panel="${panelKey}"] button`);
+  btns.forEach(b => b.addEventListener('click', () => {
+    _advantageModes[panelKey] = b.dataset.mode;
+    btns.forEach(x => x.classList.toggle('active', x === b));
+  }));
+}
+function getAdvMode(panelKey) { return _advantageModes[panelKey] || 'normal'; }
 
 // ── API helper ───────────────────────────────────────────────
 const api = {
@@ -135,10 +155,14 @@ function renderStats() {
   grid.innerHTML = stats.map((s, i) => {
     const base = c[s];
     const mods = (c.stat_modifiers || []).filter(m => m.stat_name === s && m.is_active);
-    const total = base + mods.reduce((a, m) => a + m.value, 0);
-    return `<div class="stat-cell">
+    const modSum = mods.reduce((a, m) => a + m.value, 0);
+    const total = base + modSum;
+    const modLabel = modSum !== 0 ? `<span style="font-size:0.55rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">(${modSum > 0 ? '+' : ''}${modSum})</span>` : '';
+    const tooltipParts = mods.map(m => `${m.name || m.source || '?'}: ${m.value > 0 ? '+' : ''}${m.value}`);
+    const tooltip = tooltipParts.length ? ` title="${tooltipParts.join(', ')}"` : '';
+    return `<div class="stat-cell"${tooltip}>
       <div class="stat-name">${labels[i]}</div>
-      <div class="stat-val">${total}</div>
+      <div class="stat-val">${total} ${modLabel}</div>
       <input type="number" value="${base}" data-stat="${s}" style="margin-top:4px">
     </div>`;
   }).join('') + `
@@ -204,7 +228,10 @@ function renderAttack() {
     </div>`).join('');
 
   body.innerHTML = `
-    <h3 style="font-size:0.82rem;margin-bottom:6px">🎲 Attack Roll</h3>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:0.82rem;margin:0">🎲 Attack Roll</h3>
+      ${makeAdvToggle('attack')}
+    </div>
     <div class="field-group">
       <label>D20:</label>
       <input type="number" id="atk-d20" value="${_atkD20Result||''}" min="1" max="20" style="width:52px">
@@ -218,7 +245,10 @@ function renderAttack() {
 
     <hr class="section-divider">
 
-    <h3 style="font-size:0.82rem;margin-bottom:6px">💥 Damage Roll</h3>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:0.82rem;margin:0">💥 Damage Roll</h3>
+      ${makeAdvToggle('damage')}
+    </div>
     <div id="dmg-dice-groups">${diceHtml}</div>
     <div style="display:flex;gap:6px;margin:6px 0">
       <button class="btn btn-ghost btn-xs" id="btn-add-dice-group">+ Add Dice</button>
@@ -234,6 +264,10 @@ function renderAttack() {
     <button class="btn btn-ghost btn-xs" id="btn-add-dmg-mod" style="margin:4px 0">+ Damage Modifier</button>
     <div class="result-box" id="dmg-result"><span class="text-muted">Roll damage to calculate</span></div>
   `;
+
+  // ── Bind advantage toggles ──
+  bindAdvToggle(body, 'attack');
+  bindAdvToggle(body, 'damage');
 
   // ── Wire attack events ──
   $('#atk-d20-roll').addEventListener('click', async () => {
@@ -291,21 +325,23 @@ function renderAttack() {
     const res = await api.post('/api/calc/damage-roll', {
       dice_groups: groups, weapon_bonus: weaponBonus,
       attack_bonus: atkBonus, modifier_values: mods.map(m => m.value),
-      character_id: CHAR_ID,
+      character_id: CHAR_ID, advantage_mode: getAdvMode('damage'),
     });
     flash($('#dmg-roll-btn'), 'dice-shake');
 
     const gd = (res.group_results||[]).map(g => `${g.count}d${g.die}[${g.rolls.join(',')}]=${g.subtotal}`).join(' + ');
     addRollHistory('damage', `${gd} = ${res.total}`, res.total);
 
-    let text = '';
-    for (const g of (res.group_results||[])) text += `<span class="text-muted">${g.count}d${g.die}:</span> [${g.rolls.join(', ')}]=${g.subtotal} `;
-    if (weaponBonus) text += ` + W(${weaponBonus})`;
-    if (atkBonus) text += ` + A(${atkBonus})`;
-    mods.forEach(m => { text += ` + ${m.name}(${m.value>0?'+':''}${m.value})`; });
+    let text = res.breakdown || '';
+    if (!text) {
+      for (const g of (res.group_results||[])) text += `<span class="text-muted">${g.count}d${g.die}:</span> [${g.rolls.join(', ')}]=${g.subtotal} `;
+      if (weaponBonus) text += ` + W(${weaponBonus})`;
+      if (atkBonus) text += ` + A(${atkBonus})`;
+      mods.forEach(m => { text += ` + ${m.name}(${m.value>0?'+':''}${m.value})`; });
+    }
     text += `<br>= <strong class="damage-num">${res.total} damage</strong>`;
     $('#dmg-result').innerHTML = text;
-    addLog(`[Damage] ${gd} + W(${weaponBonus}) + A(${atkBonus}) = ${res.total}`);
+    addLog(`[Damage] ${res.breakdown || `${gd} = ${res.total}`}`);
   });
 
   // Damage modifier events
@@ -342,14 +378,13 @@ async function calcAttack() {
   const mods = (char.attack_modifiers||[]).filter(m => m.is_active);
   const res = await api.post('/api/calc/attack-roll', {
     d20, base_mod: baseMod, modifier_values: mods.map(m => m.value),
-    character_id: CHAR_ID,
+    character_id: CHAR_ID, advantage_mode: getAdvMode('attack'),
   });
-  let t = `D20(${res.d20}) + Base(${res.base_mod})`;
-  mods.forEach(m => { t += ` + ${m.name}(${m.value>0?'+':''}${m.value})`; });
-  t += ` = <strong>${res.total}</strong> → Attack Bonus: <span class="value">${res.attack_bonus}</span>`;
-  $('#atk-result').innerHTML = t;
+  let t = res.breakdown || `D20(${res.d20}) + Base(${res.base_mod}) = ${res.total}`;
+  t += ` → Attack Bonus: <span class="value">${res.attack_bonus}</span>`;
+  $('#atk-result').innerHTML = `<strong>${t}</strong>`;
   $('#dmg-atk-bonus').textContent = res.attack_bonus;
-  addLog(`[Attack] d20(${res.d20})+base(${res.base_mod})=${res.total} → AtkBonus ${res.attack_bonus}`);
+  addLog(`[Attack] ${res.breakdown || `d20(${res.d20})+base(${res.base_mod})=${res.total}`} → AtkBonus ${res.attack_bonus}`);
 }
 
 // ── Dice Groups (localStorage) ──────────────────────────────
@@ -431,6 +466,7 @@ function renderHeal() {
   const c = char; if (!c) return;
   const body = $('#heal-body');
   body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:4px">${makeAdvToggle('heal')}</div>
     <div class="field-group">
       <label>Dice:</label><input type="number" id="heal-count" value="${c.hp_dice_count}" min="1" style="width:44px">
       <label>d</label><input type="number" id="heal-die" value="${c.hp_dice_type}" min="1" style="width:44px">
@@ -446,20 +482,22 @@ function renderHeal() {
       <button class="btn btn-ghost btn-xs" id="btn-set-hp">Set</button>
     </div>
   `;
+  bindAdvToggle(body, 'heal');
   $('#btn-roll-heal').addEventListener('click', async () => {
     const cnt = parseInt($('#heal-count').value)||2;
     const die = parseInt($('#heal-die').value)||12;
     const mod = parseInt($('#heal-mod').value)||0;
     const res = await api.post('/api/calc/hp-recovery', {
       character_id: CHAR_ID, dice_count: cnt, die_type: die, modifier: mod,
+      advantage_mode: getAdvMode('heal'),
     });
     char = await api.get(`/api/characters/${CHAR_ID}`);
     flash($('#hp-card'), 'flash-heal');
     renderHP();
-    const text = `Rolled: [${res.rolls.join(', ')}] + ${mod} = <strong class="heal-num">+${res.total_heal} HP</strong> → ${res.new_hp}/${res.max_hp}`;
+    const text = `${res.breakdown || `Rolled: [${res.rolls.join(', ')}] + ${mod} = +${res.total_heal} HP`} → <strong class="heal-num">${res.new_hp}/${res.max_hp}</strong>`;
     $('#heal-result').innerHTML = text;
     addRollHistory('heal', `${cnt}d${die}+${mod} = +${res.total_heal}`, res.total_heal);
-    addLog(`[Heal] ${cnt}d${die}+${mod}=[${res.rolls.join(',')}] → +${res.total_heal} HP`);
+    addLog(`[Heal] ${res.breakdown || `${cnt}d${die}+${mod}=[${res.rolls.join(',')}] → +${res.total_heal} HP`}`);
   });
   $('#btn-add-hp').addEventListener('click', async () => {
     const v = parseInt($('#manual-hp').value)||0;
@@ -694,7 +732,7 @@ function updateCurrencyDisplay(c) {
   else { pe.style.display = 'none'; }
   $('#curr-gold').querySelector('strong').textContent = c.gold;
   $('#curr-silver').querySelector('strong').textContent = c.silver;
-  $('#curr-copper').querySelector('strong').textContent = c.copper;
+  $('#curr-copper').querySelector('strong').textContent = c.bronze || c.copper;
 }
 
 function renderEquipmentSlots(items) {
@@ -1005,9 +1043,9 @@ async function loadCurrency() {
     if (d.platinum) parts.push(`${d.platinum}P`);
     if (d.gold) parts.push(`${d.gold}G`);
     if (d.silver) parts.push(`${d.silver}S`);
-    parts.push(`${d.copper}C`);
+    parts.push(`${d.bronze || d.copper}B`);
     $('#player-currency').innerHTML = `💰 ${parts.join(' ')}`;
-    $('#player-currency').dataset.totalCopper = data.total_copper;
+    $('#player-currency').dataset.totalBronze = data.total_bronze || data.total_copper;
   } catch {}
 }
 
@@ -1025,7 +1063,7 @@ function openTransferModal() {
         <span style="font-size:0.7rem;color:#e0c97f">P:</span><input type="number" id="tx-plat" value="0" style="width:42px;font-size:0.75rem" min="0">
         <span style="font-size:0.7rem;color:#fbbf24">G:</span><input type="number" id="tx-gold" value="0" style="width:42px;font-size:0.75rem" min="0">
         <span style="font-size:0.7rem;color:#94a3b8">S:</span><input type="number" id="tx-silver" value="0" style="width:42px;font-size:0.75rem" min="0">
-        <span style="font-size:0.7rem;color:#b87333">C:</span><input type="number" id="tx-copper" value="0" style="width:42px;font-size:0.75rem" min="0">
+        <span style="font-size:0.7rem;color:#b87333">B:</span><input type="number" id="tx-bronze" value="0" style="width:42px;font-size:0.75rem" min="0">
       </div>
       <div style="display:flex;gap:6px">
         <button class="btn btn-primary btn-sm" id="tx-send">Send</button>
@@ -1060,15 +1098,15 @@ function openTransferModal() {
     const p = parseInt(overlay.querySelector('#tx-plat').value) || 0;
     const g = parseInt(overlay.querySelector('#tx-gold').value) || 0;
     const s = parseInt(overlay.querySelector('#tx-silver').value) || 0;
-    const co = parseInt(overlay.querySelector('#tx-copper').value) || 0;
-    const totalCopper = p * 1000 + g * 100 + s * 10 + co;
-    if (totalCopper <= 0) return;
+    const co = parseInt(overlay.querySelector('#tx-bronze').value) || 0;
+    const totalBronze = p * 1000 + g * 100 + s * 10 + co;
+    if (totalBronze <= 0) return;
 
     try {
-      const res = await api.post('/api/currency/transfer', { from_id: CHAR_ID, to_id: toId, copper_amount: totalCopper });
-      overlay.querySelector('#tx-result').innerHTML = `<span style="color:var(--accent-green)">Sent ${p}P ${g}G ${s}S ${co}C to ${res.to.name}!</span>`;
+      const res = await api.post('/api/currency/transfer', { from_id: CHAR_ID, to_id: toId, bronze_amount: totalBronze });
+      overlay.querySelector('#tx-result').innerHTML = `<span style="color:var(--accent-green)">Sent ${p}P ${g}G ${s}S ${co}B to ${res.to.name}!</span>`;
       loadCurrency();
-      addLog(`[Transfer] Sent ${totalCopper}cp to ${res.to.name}`);
+      addLog(`[Transfer] Sent ${totalBronze}b to ${res.to.name}`);
       setTimeout(() => overlay.remove(), 1500);
     } catch (e) {
       let msg = 'Transfer failed';
@@ -1105,7 +1143,7 @@ function openTradeModal(tradeId, npcId, npcName) {
     try {
       const cur = await api.get(`/api/characters/${CHAR_ID}/currency`);
       const d = cur.currency;
-      const bal = [d.platinum && d.platinum+'P', d.gold && d.gold+'G', d.silver && d.silver+'S', d.copper+'C'].filter(Boolean).join(' ');
+      const bal = [d.platinum && d.platinum+'P', d.gold && d.gold+'G', d.silver && d.silver+'S', (d.bronze||d.copper)+'B'].filter(Boolean).join(' ');
       overlay.querySelector('#trade-balance').textContent = `💰 ${bal}`;
 
       const shop = await api.get(`/api/npc/${npcId}/shop?player_id=${CHAR_ID}`);
@@ -1114,7 +1152,7 @@ function openTradeModal(tradeId, npcId, npcName) {
 
       el.innerHTML = shop.items.map(si => {
         const fp = si.final_price;
-        const priceStr = [fp.platinum && fp.platinum+'P', fp.gold && fp.gold+'G', fp.silver && fp.silver+'S', fp.copper && fp.copper+'C'].filter(Boolean).join(' ') || si.final_price_copper+'cp';
+        const priceStr = [fp.platinum && fp.platinum+'P', fp.gold && fp.gold+'G', fp.silver && fp.silver+'S', (fp.bronze||fp.copper) && (fp.bronze||fp.copper)+'B'].filter(Boolean).join(' ') || (si.final_price_bronze||si.final_price_copper)+'b';
         const stockStr = si.stock === null ? '' : `(${si.stock} left)`;
         const canBuy = si.stock === null || si.stock > 0;
         return `<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
@@ -1133,7 +1171,7 @@ function openTradeModal(tradeId, npcId, npcName) {
           const sid = parseInt(btn.dataset.tradeBuy);
           try {
             const res = await api.post(`/api/trade/${tradeId}/buy`, { shop_item_id: sid, quantity: 1 });
-            overlay.querySelector('#trade-result').innerHTML = `<span style="color:var(--accent-green)">Bought ${res.item_name} for ${res.total_cost_copper}cp!</span>`;
+            overlay.querySelector('#trade-result').innerHTML = `<span style="color:var(--accent-green)">Bought ${res.item_name} for ${res.total_cost_bronze||res.total_cost_copper}b!</span>`;
             loadCurrency();
             loadInventory();
             loadTradeShop();
@@ -1276,9 +1314,122 @@ function renderCombatBanner() {
         ${isMyTurn ? '🗡️ YOUR TURN!' : `${currentP ? currentP.name + "'s Turn" : '—'}`}
       </div>
       <div id="player-combat-timer" style="text-align:center;font-size:1.8rem;font-weight:700;color:var(--accent-orange);display:none;margin-top:4px"></div>
+      ${isMyTurn ? `
+      <div style="display:flex;gap:6px;margin-top:8px;justify-content:center;flex-wrap:wrap;align-items:center">
+        ${makeAdvToggle('player_combat')}
+        <button class="btn btn-danger btn-sm" id="btn-player-attack">⚔️ Attack</button>
+        <button class="btn btn-accent btn-sm" id="btn-player-defend">🛡️ Defend</button>
+      </div>
+      <div id="player-target-panel" style="display:none;margin-top:8px"></div>
+      <div id="player-action-result" style="margin-top:8px;font-size:0.85rem"></div>
+      ` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;justify-content:center">${turnList}</div>
+      <div id="player-battle-log" style="max-height:150px;overflow-y:auto;margin-top:8px;font-size:0.75rem"></div>
     </div>
   `;
+
+  // Wire player attack/defend if it's my turn
+  if (isMyTurn) {
+    bindAdvToggle(banner, 'player_combat');
+    const atkBtn = banner.querySelector('#btn-player-attack');
+    const defBtn = banner.querySelector('#btn-player-defend');
+
+    if (atkBtn) {
+      atkBtn.addEventListener('click', async () => {
+        const tp = banner.querySelector('#player-target-panel');
+        if (!tp) return;
+        try {
+          const targets = await api.get(`/api/combat/${c.id}/targets/${CHAR_ID}`);
+          if (!targets.length) { showToast('No valid targets'); return; }
+          tp.style.display = 'block';
+          tp.innerHTML = `
+            <div style="font-size:0.75rem;font-weight:600;margin-bottom:4px">Select Target:</div>
+            ${targets.map(t => `
+              <div class="player-target-card" data-id="${t.character_id}" style="cursor:pointer;padding:6px;margin-bottom:3px;border-radius:var(--r-sm);border:1px solid var(--border);display:flex;align-items:center;gap:6px">
+                <div style="width:16px;height:16px;border-radius:50%;background:${t.token_color}"></div>
+                <div style="flex:1;font-size:0.8rem;font-weight:600">${t.name}</div>
+                <div style="font-size:0.7rem;color:var(--text-muted)">${t.show_hp_to_players ? t.current_hp + '/' + t.max_hp + ' HP' : '???'} | ${t.show_ac_to_players ? 'AC ' + t.armor_class : 'AC ???'}</div>
+              </div>
+            `).join('')}
+          `;
+          tp.querySelectorAll('.player-target-card').forEach(card => {
+            card.addEventListener('click', async () => {
+              const targetId = parseInt(card.dataset.id);
+              try {
+                const result = await api.post(`/api/combat/${c.id}/attack`, {
+                  attacker_id: CHAR_ID, target_id: targetId,
+                  advantage_mode: getAdvMode('player_combat'),
+                });
+                tp.style.display = 'none';
+                const resEl = banner.querySelector('#player-action-result');
+                if (resEl) {
+                  const atk = result.attack_roll;
+                  const dmg = result.damage_roll;
+                  let html = '<div style="padding:6px;border-radius:var(--r-sm);border:1px solid ';
+                  if (atk.critical) html += 'gold;background:#ffd70020"><b style="color:gold">🎯 CRITICAL!</b>';
+                  else if (atk.fumble) html += 'var(--accent-red);background:var(--accent-red)10"><b style="color:var(--accent-red)">💨 FUMBLE!</b>';
+                  else if (atk.hit) html += 'var(--accent-green);background:var(--accent-green)10"><b style="color:var(--accent-green)">⚔️ HIT!</b>';
+                  else html += 'var(--text-muted);background:var(--bg-dark)"><b style="color:var(--text-muted)">🛡️ MISS</b>';
+                  html += `<div style="font-size:0.7rem;margin-top:3px">d20: ${atk.d20} + ${atk.stat_mod} + ${atk.weapon_bonus} = ${atk.total} vs AC ${atk.target_ac}</div>`;
+                  if (dmg) {
+                    html += `<div style="font-size:0.7rem">${dmg.final_damage} damage → ${result.target_name} ${result.target_current_hp}/${result.target_max_hp} HP</div>`;
+                    if (result.target_killed) html += '<div style="color:var(--accent-red);font-weight:700">💀 Target slain!</div>';
+                  }
+                  html += '</div>';
+                  resEl.innerHTML = html;
+                }
+                if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+                  ws.ws.send(JSON.stringify({ type: 'combat.attack_result', data: result }));
+                  if (result.target_killed) {
+                    ws.ws.send(JSON.stringify({ type: 'combat.character_killed', data: {
+                      character_id: targetId, character_name: result.target_name
+                    }}));
+                  }
+                }
+              } catch (e) { showToast('Attack error: ' + e.message); }
+            });
+          });
+        } catch (e) { showToast('Error: ' + e.message); }
+      });
+    }
+
+    if (defBtn) {
+      defBtn.addEventListener('click', async () => {
+        try {
+          const result = await api.post(`/api/combat/${c.id}/defend`, { character_id: CHAR_ID });
+          const resEl = banner.querySelector('#player-action-result');
+          if (resEl) {
+            resEl.innerHTML = `<div style="padding:6px;border-radius:var(--r-sm);border:1px solid var(--accent);background:var(--accent)10">
+              <b style="color:var(--accent)">🛡️ DEFENDING</b>
+              <div style="font-size:0.7rem;margin-top:3px">${result.description}</div>
+            </div>`;
+          }
+          if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+            ws.ws.send(JSON.stringify({ type: 'combat.defend', data: result }));
+          }
+        } catch (e) { showToast('Defend error: ' + e.message); }
+      });
+    }
+  }
+
+  // Load mini battle log
+  loadPlayerBattleLog(c.id, banner);
+}
+
+async function loadPlayerBattleLog(combatId, container) {
+  const logEl = container ? container.querySelector('#player-battle-log') : null;
+  if (!logEl) return;
+  try {
+    const actions = await api.get(`/api/combat/${combatId}/actions`);
+    logEl.innerHTML = actions.slice(0, 10).map(a => {
+      let color = 'var(--text-muted)';
+      if (a.attack_roll?.critical) color = 'gold';
+      else if (a.attack_roll?.hit) color = 'var(--accent-green)';
+      else if (a.attack_roll?.fumble) color = 'var(--accent-red)';
+      else if (a.action_type === 'defend') color = 'var(--accent)';
+      return `<div style="padding:2px 0;color:${color}">${a.description}</div>`;
+    }).join('') || '<div style="color:var(--text-muted)">No actions yet</div>';
+  } catch(e) {}
 }
 
 function showInitiativeRollModal(combatId, bonus) {
@@ -1485,15 +1636,44 @@ ws.on('gm.timer_stop', d => {
   }
 });
 
+// Stage 11: Combat action WS events
+ws.on('combat.attack_result', d => {
+  showToast(`⚔️ ${d.attacker_name} → ${d.target_name}: ${d.attack_roll?.hit ? (d.attack_roll?.critical ? 'CRITICAL!' : 'HIT!') : 'MISS'}`);
+  if (d.target_killed && d.target_name) showToast(`💀 ${d.target_name} has been slain!`);
+  loadCombatBanner();
+});
+ws.on('combat.defend', d => {
+  showToast(`🛡️ ${d.character_name} takes a defensive stance`);
+  loadCombatBanner();
+});
+ws.on('combat.character_killed', d => {
+  if (d.character_id == CHAR_ID) {
+    showToast('💀 You have been slain!');
+  }
+});
+
 // ══════════════════════════════════════════════════════════════
 // CHARACTERISTIC ROLL (Stage 7)
 // ══════════════════════════════════════════════════════════════
+// Wire char-roll advantage toggle
+let _charRollAdvMode = 'normal';
+document.querySelectorAll('#char-roll-adv-toggle button').forEach(b => {
+  b.addEventListener('click', () => {
+    _charRollAdvMode = b.dataset.mode;
+    document.querySelectorAll('#char-roll-adv-toggle button').forEach(x => x.classList.toggle('active', x === b));
+  });
+});
 $('#btn-player-roll')?.addEventListener('click', async () => {
   const stat = $('#player-roll-stat').value;
   const rollType = $('#player-roll-type').value;
   try {
-    const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, { stat, roll_type: rollType });
-    $('#player-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>`;
+    const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, {
+      stat, roll_type: rollType, advantage_mode: _charRollAdvMode,
+    });
+    let advTag = '';
+    if (res.advantage_mode === 'advantage') advTag = ' <span class="adv-badge advantage">ADV</span>';
+    else if (res.advantage_mode === 'disadvantage') advTag = ' <span class="adv-badge disadvantage">DISADV</span>';
+    $('#player-roll-result').innerHTML = `<span style="color:var(--accent)">${res.description}</span>${advTag}`;
     // Broadcast to GM
     if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
       ws.ws.send(JSON.stringify({ type: 'roll.characteristic', ...res }));

@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models import (
     Session, Character, CharacterEffect, StatModifier,
-    AttackModifier, DamageModifier, TurnTimer,
+    AttackModifier, DamageModifier, TurnTimer, InventoryItem,
+    CharacterStatusEffect,
 )
 from app.schemas import CharacterCreate, CharacterUpdate, HpPatch, ModifierCreate, EffectCreate, TimerCreate
+from app.game_mechanics import get_all_active_bonuses, aggregate_status_penalties, apply_advantage, format_advantage_breakdown, resolve_advantage_mode
 
 router = APIRouter(prefix="/api", tags=["characters"])
 
@@ -39,7 +41,8 @@ def _serialize_char(c: Character) -> dict:
         "token_color": c.token_color,
         "is_alive": c.is_alive,
         "gold": c.gold,
-        "gold_copper": c.gold_copper,
+        "gold_copper": c.wealth_bronze,
+        "wealth_bronze": c.wealth_bronze,
         "can_edit_own_items": c.can_edit_own_items,
         "turn_count": c.turn_count,
         "status_effects": c.status_effects,
@@ -91,6 +94,10 @@ async def update_character(char_id: int, body: CharacterUpdate, db: AsyncSession
     if not c:
         raise HTTPException(404, "Character not found")
     for field, val in body.model_dump(exclude_unset=True).items():
+        # Map legacy gold_copper → wealth_bronze
+        if field == "gold_copper":
+            c.wealth_bronze = val
+            continue
         setattr(c, field, val)
     await db.commit()
     await db.refresh(c)
@@ -301,6 +308,7 @@ class CharacteristicRollBody(BaseModel):
     stat: str  # strength, dexterity, etc.
     roll_type: str = "ability_check"  # ability_check, saving_throw, skill_check
     skill_name: str | None = None
+    advantage_mode: str = "normal"  # normal / advantage / disadvantage
 
 
 STAT_MAP = {
@@ -325,18 +333,82 @@ async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: As
         raise HTTPException(400, f"Invalid stat: {body.stat}")
 
     base_val = getattr(c, stat_key, 10)
-    # Add active stat modifiers
+    # Add active stat modifiers (race/class/gm)
     stat_mods = [m for m in c.stat_modifiers if m.stat_name == stat_key and m.is_active]
-    total_stat = base_val + sum(m.value for m in stat_mods)
+    mod_from_mods = sum(m.value for m in stat_mods)
+
+    # Item bonuses (stat_bonus_<stat>)
+    equipped_result = await db.execute(
+        select(InventoryItem).where(
+            InventoryItem.character_id == char_id,
+            InventoryItem.is_equipped == True,
+        )
+    )
+    equipped = equipped_result.scalars().all()
+    item_bonuses = get_all_active_bonuses(equipped)
+    item_stat_bonus = int(item_bonuses.get(f"stat_bonus_{stat_key}", 0))
+
+    # Status penalties (stat_penalties)
+    import json as _json
+    status_result = await db.execute(
+        select(CharacterStatusEffect).where(
+            CharacterStatusEffect.character_id == char_id,
+            CharacterStatusEffect.remaining_turns != 0,  # active effects
+        )
+    )
+    active_effects = status_result.scalars().all()
+    effects_list = []
+    for se in active_effects:
+        try:
+            effects_list.append(_json.loads(se.effects) if se.effects else [])
+        except Exception:
+            effects_list.append([])
+    penalties = aggregate_status_penalties(effects_list)
+    stat_penalty = penalties.get("stat_penalties", {}).get(stat_key, 0)
+
+    total_stat = base_val + mod_from_mods + item_stat_bonus + stat_penalty
     mod = _stat_modifier(total_stat)
 
-    d20 = random.randint(1, 20)
-    total = d20 + mod
+    # Apply advantage/disadvantage
+    def _single_roll():
+        d = random.randint(1, 20)
+        t = d + mod
+        return t, d
 
+    effective_adv = resolve_advantage_mode(body.advantage_mode or "normal", penalties)
+    adv = apply_advantage(_single_roll, effective_adv)
+    d20 = adv.all_details[adv.chosen_index]
+    total = adv.chosen_total
+    adv_breakdown = format_advantage_breakdown(
+        effective_adv, list(adv.all_details), adv.chosen_index, "D20"
+    )
+
+    # Build detailed breakdown
     roll_label = body.roll_type.replace("_", " ").title()
     stat_label = stat_key.capitalize()
     skill_part = f" ({body.skill_name})" if body.skill_name else ""
-    description = f"{c.name} rolled {stat_label} {roll_label}{skill_part}: D20({d20}) + {stat_label} mod({mod:+d}) = {total}"
+
+    breakdown_parts = [f"D20({d20})"]
+    breakdown_parts.append(f"{stat_label} mod({mod:+d})")
+    # Sources for the mod
+    source_details = []
+    if mod_from_mods:
+        race_class = [m for m in stat_mods if m.source in ('race', 'class')]
+        for m in race_class:
+            source_details.append(f"{m.name or m.source.title()}({m.value:+d})")
+    if item_stat_bonus:
+        for b in item_bonuses.get("breakdown", []):
+            if b.get("bonus_type") == "stat_bonus" and b.get("stat_name") == stat_key:
+                source_details.append(f"{b['source']}({int(b['value']):+d})")
+    if stat_penalty:
+        source_details.append(f"Status({stat_penalty:+d})")
+
+    detail_str = ", ".join(source_details)
+    if detail_str:
+        detail_str = f" [{detail_str}]"
+
+    adv_prefix = f" ({adv_breakdown})" if adv_breakdown else ""
+    description = f"{c.name} {stat_label} {roll_label}{skill_part}{adv_prefix}: {' + '.join(breakdown_parts)}{detail_str} = {total}"
 
     return {
         "character_id": c.id,
@@ -349,4 +421,17 @@ async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: As
         "roll_type": body.roll_type,
         "skill_name": body.skill_name,
         "description": description,
+        "advantage_mode": effective_adv,
+        "all_d20s": list(adv.all_details),
+        "chosen_d20_index": adv.chosen_index,
+        "advantage_breakdown": adv_breakdown,
+        "breakdown": {
+            "base_stat": base_val,
+            "modifier_bonus": mod_from_mods,
+            "item_stat_bonus": item_stat_bonus,
+            "status_penalty": stat_penalty,
+            "effective_stat": total_stat,
+            "stat_modifier": mod,
+            "sources": source_details,
+        },
     }

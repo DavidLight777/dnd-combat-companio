@@ -263,3 +263,22 @@ textarea { resize: vertical; width: 100%; }
   animation: divineShimmer 2s ease-in-out infinite;
   border-color: rgba(240,224,96,0.3);
 }
+
+/* ── Advantage / Disadvantage Toggle ─────────────────────── */
+.adv-toggle {
+  display: inline-flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); font-size: 0.68rem; height: 26px;
+}
+.adv-toggle button {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 8px; cursor: pointer; font-size: 0.68rem; font-family: var(--font-body);
+  transition: all .15s ease;
+}
+.adv-toggle button:hover { background: var(--bg-surface-3); }
+.adv-toggle button.active { font-weight: 600; }
+.adv-toggle button[data-mode="normal"].active { background: var(--bg-surface-3); color: var(--text-primary); }
+.adv-toggle button[data-mode="advantage"].active { background: rgba(80,200,120,0.20); color: #50c878; }
+.adv-toggle button[data-mode="disadvantage"].active { background: rgba(220,80,80,0.20); color: #dc5050; }
+.adv-badge { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.adv-badge.advantage { background: rgba(80,200,120,0.15); color: #50c878; }
+.adv-badge.disadvantage { background: rgba(220,80,80,0.15); color: #dc5050; }

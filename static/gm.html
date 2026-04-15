@@ -130,8 +130,14 @@
                 </select>
               </div>
               <div class="form-group">
-                <label>Price (copper)</label>
-                <input type="number" id="item-ed-price" value="0" min="0">
+                <label>Price</label>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <span style="font-size:0.75rem;color:#e0c97f">P</span><input type="number" id="item-ed-price-p" value="0" min="0" style="width:52px">
+                  <span style="font-size:0.75rem;color:#fbbf24">G</span><input type="number" id="item-ed-price-g" value="0" min="0" style="width:52px">
+                  <span style="font-size:0.75rem;color:#94a3b8">S</span><input type="number" id="item-ed-price-s" value="0" min="0" style="width:52px">
+                  <span style="font-size:0.75rem;color:#b87333">B</span><input type="number" id="item-ed-price-b" value="0" min="0" style="width:52px">
+                </div>
+                <input type="hidden" id="item-ed-price" value="0">
               </div>
               <div class="form-group">
                 <label>Weight</label>

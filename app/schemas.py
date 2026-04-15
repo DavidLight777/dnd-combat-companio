@@ -62,7 +62,8 @@ class CharacterUpdate(BaseModel):
     notes: Optional[str] = None
     turn_count: Optional[int] = None
     gold: Optional[int] = None
-    gold_copper: Optional[int] = None
+    gold_copper: Optional[int] = None  # legacy alias
+    wealth_bronze: Optional[int] = None
     can_edit_own_items: Optional[bool] = None
     level: Optional[int] = None
     experience: Optional[int] = None
@@ -88,6 +89,7 @@ class HpRecoveryRequest(BaseModel):
     dice_count: int = 2
     die_type: int = 12
     modifier: int = 0
+    advantage_mode: str = "normal"  # normal / advantage / disadvantage
 
 
 # ── Modifiers / Effects ─────────────────────────────────────

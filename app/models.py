@@ -74,7 +74,7 @@ class Character(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
     gold: Mapped[int] = mapped_column(Integer, default=0)
-    gold_copper: Mapped[int] = mapped_column(Integer, default=0)  # total wealth in copper
+    wealth_bronze: Mapped[int] = mapped_column(Integer, default=0)  # total wealth in bronze
     can_edit_own_items: Mapped[bool] = mapped_column(Boolean, default=False)
 
     race_id: Mapped[int | None] = mapped_column(ForeignKey("races.id", ondelete="SET NULL"), nullable=True)
@@ -286,7 +286,7 @@ class Item(Base):
     category_id: Mapped[int | None] = mapped_column(ForeignKey("item_categories.id", ondelete="SET NULL"), nullable=True)
     rarity: Mapped[str] = mapped_column(String(20), default="common")  # common/uncommon/rare/epic/legendary/mythic/divine
     base_price: Mapped[int] = mapped_column(Integer, default=0)  # legacy gold price
-    base_price_copper: Mapped[int] = mapped_column(Integer, default=0)
+    base_price_bronze: Mapped[int] = mapped_column(Integer, default=0)
     weight: Mapped[float] = mapped_column(Float, default=0.0)
     effect_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # legacy single effect
     effect_value: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -323,6 +323,8 @@ class ItemWeaponStats(Base):
     dice_type: Mapped[int] = mapped_column(Integer, default=6)
     damage_type: Mapped[str] = mapped_column(String(20), default="physical")
     range: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weapon_range: Mapped[str] = mapped_column(String(10), default="melee")  # melee / ranged
+    weapon_properties: Mapped[str] = mapped_column(Text, default="[]")  # JSON: ["finesse","two-handed","light",...]
 
     item: Mapped["Item"] = relationship(back_populates="weapon_stats")
 
@@ -363,7 +365,7 @@ class CurrencyTransaction(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
     from_character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)  # NULL = GM grant
     to_character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
-    amount_copper: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_bronze: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str] = mapped_column(Text, default="")
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -388,7 +390,7 @@ class NpcShopInventory(Base):
     npc_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     stock: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL = unlimited
-    price_override_copper: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL = use item base_price
+    price_override_bronze: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL = use item base_price
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
 
     item: Mapped["Item"] = relationship(lazy="selectin")
@@ -485,6 +487,28 @@ class CombatParticipant(Base):
 
     combat_event: Mapped["CombatEvent"] = relationship(back_populates="participants")
     character: Mapped["Character"] = relationship(lazy="selectin")
+
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 11 — COMBAT ACTIONS
+# ══════════════════════════════════════════════════════════════
+class CombatAction(Base):
+    __tablename__ = "combat_actions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    combat_event_id: Mapped[int] = mapped_column(ForeignKey("combat_events.id", ondelete="CASCADE"))
+    round_number: Mapped[int] = mapped_column(Integer, default=0)
+    attacker_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    target_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+    action_type: Mapped[str] = mapped_column(String(20), default="attack")  # attack, defend, spell, item, other
+    weapon_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"), nullable=True)
+    attack_roll: Mapped[str] = mapped_column(Text, default="{}")  # JSON: {d20, modifiers, total, hit, critical, fumble}
+    damage_roll: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {base, modifiers, total, reduction, final}
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    attacker: Mapped["Character"] = relationship(foreign_keys=[attacker_id], lazy="selectin")
+    target: Mapped["Character | None"] = relationship(foreign_keys=[target_id], lazy="selectin")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -587,7 +611,7 @@ class QuestTemplate(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     source_npc_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
-    reward_gold_copper: Mapped[int] = mapped_column(Integer, default=0)
+    reward_gold_bronze: Mapped[int] = mapped_column(Integer, default=0)
     reward_item_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
     reward_description: Mapped[str] = mapped_column(Text, default="")
     reward_is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -607,7 +631,7 @@ class CharacterQuest(Base):
     status: Mapped[str] = mapped_column(Text, default="active")  # active, completed, failed
     current_stage: Mapped[int] = mapped_column(Integer, default=0)
     stages_completed: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of completed stage indices
-    reward_gold_copper: Mapped[int] = mapped_column(Integer, default=0)
+    reward_gold_bronze: Mapped[int] = mapped_column(Integer, default=0)
     reward_item_ids: Mapped[str] = mapped_column(Text, default="[]")
     reward_description: Mapped[str] = mapped_column(Text, default="")
     reward_is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)

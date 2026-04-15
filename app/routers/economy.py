@@ -14,13 +14,13 @@ from app.models import (
     Character, Session, Item, InventoryItem,
     CurrencyTransaction, NpcReputation, NpcShopInventory, TradeSession,
 )
-from app.game_mechanics import copper_to_display, display_to_copper, calculate_item_price
+from app.game_mechanics import bronze_to_display, display_to_bronze, format_currency, calculate_item_price
 
 router = APIRouter(prefix="/api", tags=["economy"])
 
 # ── Load currency rates from config ──────────────────────────
 _config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.json")
-_rates = {"platinum": 1000, "gold": 100, "silver": 10, "copper": 1}
+_rates = {"platinum": 1000, "gold": 100, "silver": 10, "bronze": 1}
 try:
     with open(_config_path, "r") as f:
         _cfg = json.load(f)
@@ -36,14 +36,14 @@ class GiveGoldBody(BaseModel):
     platinum: int = 0
     gold: int = 0
     silver: int = 0
-    copper: int = 0
+    bronze: int = 0
     note: str = "GM grant"
 
 
 class TransferBody(BaseModel):
     from_id: int
     to_id: int
-    copper_amount: int
+    bronze_amount: int
     note: str = ""
 
 
@@ -58,12 +58,12 @@ class ReputationAdjustBody(BaseModel):
 class ShopItemAddBody(BaseModel):
     item_id: int
     stock: int | None = None
-    price_override_copper: int | None = None
+    price_override_bronze: int | None = None
 
 
 class ShopItemPatchBody(BaseModel):
     stock: int | None = None
-    price_override_copper: int | None = None
+    price_override_bronze: int | None = None
     is_available: bool | None = None
 
 
@@ -87,8 +87,8 @@ async def get_currency(char_id: int, db: AsyncSession = Depends(get_session)):
         raise HTTPException(404, "Character not found")
     return {
         "character_id": c.id,
-        "total_copper": c.gold_copper,
-        "currency": copper_to_display(c.gold_copper, _rates),
+        "total_bronze": c.wealth_bronze,
+        "currency": bronze_to_display(c.wealth_bronze, _rates),
         "rates": _rates,
     }
 
@@ -98,16 +98,16 @@ async def give_gold(char_id: int, body: GiveGoldBody, db: AsyncSession = Depends
     c = await db.get(Character, char_id)
     if not c:
         raise HTTPException(404, "Character not found")
-    amount = display_to_copper(body.platinum, body.gold, body.silver, body.copper, _rates)
+    amount = display_to_bronze(body.platinum, body.gold, body.silver, body.bronze, _rates)
     if amount == 0:
         raise HTTPException(400, "Amount must be non-zero")
-    c.gold_copper = max(0, c.gold_copper + amount)
+    c.wealth_bronze = max(0, c.wealth_bronze + amount)
     # Log transaction
     tx = CurrencyTransaction(
         session_id=c.session_id,
         from_character_id=None,  # GM grant
         to_character_id=c.id,
-        amount_copper=amount,
+        amount_bronze=amount,
         note=body.note,
     )
     db.add(tx)
@@ -115,8 +115,8 @@ async def give_gold(char_id: int, body: GiveGoldBody, db: AsyncSession = Depends
     await db.refresh(c)
     return {
         "ok": True,
-        "total_copper": c.gold_copper,
-        "currency": copper_to_display(c.gold_copper, _rates),
+        "total_bronze": c.wealth_bronze,
+        "currency": bronze_to_display(c.wealth_bronze, _rates),
         "amount_given": amount,
     }
 
@@ -125,7 +125,7 @@ async def give_gold(char_id: int, body: GiveGoldBody, db: AsyncSession = Depends
 async def transfer_currency(body: TransferBody, db: AsyncSession = Depends(get_session)):
     if body.from_id == body.to_id:
         raise HTTPException(400, "Cannot transfer to yourself")
-    if body.copper_amount <= 0:
+    if body.bronze_amount <= 0:
         raise HTTPException(400, "Amount must be positive")
 
     sender = await db.get(Character, body.from_id)
@@ -134,21 +134,21 @@ async def transfer_currency(body: TransferBody, db: AsyncSession = Depends(get_s
         raise HTTPException(404, "Sender not found")
     if not receiver:
         raise HTTPException(404, "Receiver not found")
-    if sender.gold_copper < body.copper_amount:
+    if sender.wealth_bronze < body.bronze_amount:
         raise HTTPException(400, detail={
             "error": True,
             "code": "INSUFFICIENT_FUNDS",
-            "message": f"Not enough currency. Has {sender.gold_copper}cp, needs {body.copper_amount}cp",
+            "message": f"Not enough currency. Has {format_currency(sender.wealth_bronze, _rates)}, needs {format_currency(body.bronze_amount, _rates)}",
         })
 
-    sender.gold_copper -= body.copper_amount
-    receiver.gold_copper += body.copper_amount
+    sender.wealth_bronze -= body.bronze_amount
+    receiver.wealth_bronze += body.bronze_amount
 
     tx = CurrencyTransaction(
         session_id=sender.session_id,
         from_character_id=sender.id,
         to_character_id=receiver.id,
-        amount_copper=body.copper_amount,
+        amount_bronze=body.bronze_amount,
         note=body.note or f"Transfer from {sender.name} to {receiver.name}",
     )
     db.add(tx)
@@ -157,11 +157,11 @@ async def transfer_currency(body: TransferBody, db: AsyncSession = Depends(get_s
     await db.refresh(receiver)
     return {
         "ok": True,
-        "from": {"id": sender.id, "name": sender.name, "total_copper": sender.gold_copper,
-                 "currency": copper_to_display(sender.gold_copper, _rates)},
-        "to": {"id": receiver.id, "name": receiver.name, "total_copper": receiver.gold_copper,
-               "currency": copper_to_display(receiver.gold_copper, _rates)},
-        "amount_copper": body.copper_amount,
+        "from": {"id": sender.id, "name": sender.name, "total_bronze": sender.wealth_bronze,
+                 "currency": bronze_to_display(sender.wealth_bronze, _rates)},
+        "to": {"id": receiver.id, "name": receiver.name, "total_bronze": receiver.wealth_bronze,
+               "currency": bronze_to_display(receiver.wealth_bronze, _rates)},
+        "amount_bronze": body.bronze_amount,
     }
 
 
@@ -182,8 +182,8 @@ async def get_transactions(char_id: int, db: AsyncSession = Depends(get_session)
             "id": t.id,
             "from_character_id": t.from_character_id,
             "to_character_id": t.to_character_id,
-            "amount_copper": t.amount_copper,
-            "currency": copper_to_display(abs(t.amount_copper), _rates),
+            "amount_bronze": t.amount_bronze,
+            "currency": bronze_to_display(abs(t.amount_bronze), _rates),
             "note": t.note,
             "timestamp": t.timestamp.isoformat(),
         }
@@ -303,8 +303,8 @@ async def get_npc_shop(npc_id: int, player_id: int = 0, db: AsyncSession = Depen
         item = si.item
         if not item:
             continue
-        base_price = si.price_override_copper if si.price_override_copper is not None else item.base_price_copper
-        final_price = calculate_item_price(base_price, reputation, si.price_override_copper)
+        base_price = si.price_override_bronze if si.price_override_bronze is not None else item.base_price_bronze
+        final_price = calculate_item_price(base_price, reputation, si.price_override_bronze)
         items.append({
             "shop_item_id": si.id,
             "item_id": item.id,
@@ -313,9 +313,9 @@ async def get_npc_shop(npc_id: int, player_id: int = 0, db: AsyncSession = Depen
             "category": item.category,
             "rarity": item.rarity,
             "weight": item.weight,
-            "base_price_copper": base_price,
-            "final_price_copper": final_price,
-            "final_price": copper_to_display(final_price, _rates),
+            "base_price_bronze": base_price,
+            "final_price_bronze": final_price,
+            "final_price": bronze_to_display(final_price, _rates),
             "stock": si.stock,
             "is_available": si.is_available,
             "equippable": item.equippable,
@@ -344,7 +344,7 @@ async def add_to_npc_shop(npc_id: int, body: ShopItemAddBody,
         npc_id=npc_id,
         item_id=body.item_id,
         stock=body.stock,
-        price_override_copper=body.price_override_copper,
+        price_override_bronze=body.price_override_bronze,
     )
     db.add(si)
     await db.commit()
@@ -360,8 +360,8 @@ async def patch_shop_item(npc_id: int, shop_item_id: int, body: ShopItemPatchBod
         raise HTTPException(404, "Shop item not found")
     if body.stock is not None:
         si.stock = body.stock
-    if body.price_override_copper is not None:
-        si.price_override_copper = body.price_override_copper
+    if body.price_override_bronze is not None:
+        si.price_override_bronze = body.price_override_bronze
     if body.is_available is not None:
         si.is_available = body.is_available
     await db.commit()
@@ -458,18 +458,18 @@ async def trade_buy(trade_id: int, body: TradeBuyBody, db: AsyncSession = Depend
     reputation = rep.reputation_value if rep else 0
 
     unit_price = calculate_item_price(
-        item.base_price_copper, reputation, si.price_override_copper
+        item.base_price_bronze, reputation, si.price_override_bronze
     )
     total_cost = unit_price * body.quantity
 
-    if player.gold_copper < total_cost:
+    if player.wealth_bronze < total_cost:
         raise HTTPException(400, detail={
             "error": True, "code": "INSUFFICIENT_FUNDS",
-            "message": f"Need {total_cost}cp, have {player.gold_copper}cp",
+            "message": f"Need {format_currency(total_cost, _rates)}, have {format_currency(player.wealth_bronze, _rates)}",
         })
 
     # Deduct currency
-    player.gold_copper -= total_cost
+    player.wealth_bronze -= total_cost
 
     # Reduce stock
     if si.stock is not None:
@@ -501,7 +501,7 @@ async def trade_buy(trade_id: int, body: TradeBuyBody, db: AsyncSession = Depend
         session_id=ts.session_id,
         from_character_id=ts.player_id,
         to_character_id=ts.npc_id,
-        amount_copper=total_cost,
+        amount_bronze=total_cost,
         note=f"Bought {body.quantity}x {item.name}",
     )
     db.add(tx)
@@ -513,11 +513,11 @@ async def trade_buy(trade_id: int, body: TradeBuyBody, db: AsyncSession = Depend
         "ok": True,
         "item_name": item.name,
         "quantity": body.quantity,
-        "unit_price_copper": unit_price,
-        "total_cost_copper": total_cost,
-        "total_cost": copper_to_display(total_cost, _rates),
-        "remaining_copper": player.gold_copper,
-        "remaining_currency": copper_to_display(player.gold_copper, _rates),
+        "unit_price_bronze": unit_price,
+        "total_cost_bronze": total_cost,
+        "total_cost": bronze_to_display(total_cost, _rates),
+        "remaining_bronze": player.wealth_bronze,
+        "remaining_currency": bronze_to_display(player.wealth_bronze, _rates),
     }
 
 
@@ -578,9 +578,69 @@ async def get_session_transactions(code: str, db: AsyncSession = Depends(get_ses
             "id": t.id,
             "from_name": from_name,
             "to_name": to_name,
-            "amount_copper": t.amount_copper,
-            "currency": copper_to_display(abs(t.amount_copper), _rates),
+            "amount_bronze": t.amount_bronze,
+            "currency": bronze_to_display(abs(t.amount_bronze), _rates),
             "note": t.note,
             "timestamp": t.timestamp.isoformat(),
         })
     return {"transactions": items}
+
+
+# ══════════════════════════════════════════════════════════════
+# GM BUYBACK (buy items FROM players)
+# ══════════════════════════════════════════════════════════════
+class GmBuybackBody(BaseModel):
+    inventory_item_id: int
+    platinum: int = 0
+    gold: int = 0
+    silver: int = 0
+    bronze: int = 0
+
+
+@router.post("/inventory/gm-buyback")
+async def gm_buyback(body: GmBuybackBody, db: AsyncSession = Depends(get_session)):
+    """GM purchases an item from a player at a custom price."""
+    inv = await db.get(InventoryItem, body.inventory_item_id)
+    if not inv:
+        raise HTTPException(404, "Inventory item not found")
+
+    char = await db.get(Character, inv.character_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+
+    item = await db.get(Item, inv.item_id)
+    item_name = item.name if item else "Unknown"
+
+    price_bronze = display_to_bronze(body.platinum, body.gold, body.silver, body.bronze, _rates)
+
+    # Give money to player
+    char.wealth_bronze = (char.wealth_bronze or 0) + price_bronze
+
+    # Remove item (or decrement quantity)
+    if inv.quantity > 1:
+        inv.quantity -= 1
+    else:
+        await db.delete(inv)
+
+    # Log transaction
+    tx = CurrencyTransaction(
+        session_id=char.session_id,
+        from_character_id=None,  # GM buyback
+        to_character_id=char.id,
+        amount_bronze=price_bronze,
+        note=f"GM bought {item_name}",
+    )
+    db.add(tx)
+    await db.commit()
+    await db.refresh(char)
+
+    return {
+        "ok": True,
+        "item_name": item_name,
+        "price_bronze": price_bronze,
+        "price_display": format_currency(price_bronze, _rates),
+        "character_id": char.id,
+        "character_name": char.name,
+        "remaining_bronze": char.wealth_bronze,
+        "remaining_currency": bronze_to_display(char.wealth_bronze, _rates),
+    }

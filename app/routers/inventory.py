@@ -122,7 +122,7 @@ async def _ensure_default_items(db: AsyncSession):
             category_id=cat_map.get(cat_name),
             rarity=spec.get("rarity", "common"),
             base_price=spec.get("price_copper", 0) // 100,  # legacy gold
-            base_price_copper=spec.get("price_copper", 0),
+            base_price_bronze=spec.get("price_copper", 0),
             weight=spec.get("weight", 0.0),
             equippable=spec.get("equippable", False),
             consumable=spec.get("consumable", False),
@@ -228,8 +228,8 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
         category=body.get("category", "misc"),
         category_id=body.get("category_id"),
         rarity=body.get("rarity", "common"),
-        base_price=body.get("base_price", body.get("base_price_copper", 0) // 100),
-        base_price_copper=body.get("base_price_copper", body.get("base_price", 0) * 100),
+        base_price=body.get("base_price", body.get("base_price_bronze", body.get("base_price_copper", 0)) // 100),
+        base_price_bronze=body.get("base_price_bronze", body.get("base_price_copper", body.get("base_price", 0) * 100)),
         weight=body.get("weight", 0.0),
         effect_type=body.get("effect_type"),
         effect_value=body.get("effect_value"),
@@ -253,12 +253,15 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
     # Add weapon stats
     ws = body.get("weapon_stats")
     if ws:
+        wp = ws.get("weapon_properties", [])
         db.add(ItemWeaponStats(
             item_id=item.id,
             dice_count=ws.get("dice_count", 1),
             dice_type=ws.get("dice_type", 6),
             damage_type=ws.get("damage_type", "physical"),
             range=ws.get("range"),
+            weapon_range=ws.get("weapon_range", "melee"),
+            weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
         ))
     await db.commit()
     await db.refresh(item)
@@ -271,26 +274,38 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
     if not item:
         raise HTTPException(404, detail={"error": True, "code": "NOT_FOUND", "message": "Item not found"})
     for k in ["name", "description", "category", "category_id", "rarity", "base_price",
-              "base_price_copper", "weight", "effect_type", "effect_value", "equippable",
+              "base_price_bronze", "weight", "effect_type", "effect_value", "equippable",
               "consumable", "created_by_ai"]:
         if k in body:
             setattr(item, k, body[k])
+    # Accept legacy base_price_copper key
+    if "base_price_copper" in body and "base_price_bronze" not in body:
+        item.base_price_bronze = body["base_price_copper"]
     if "tags" in body:
         item.tags = body["tags"] if isinstance(body["tags"], str) else json.dumps(body["tags"])
-    # Sync legacy base_price ↔ base_price_copper
-    if "base_price_copper" in body and "base_price" not in body:
-        item.base_price = body["base_price_copper"] // 100
-    elif "base_price" in body and "base_price_copper" not in body:
-        item.base_price_copper = body["base_price"] * 100
+    # Sync legacy base_price ↔ base_price_bronze
+    if "base_price_bronze" in body and "base_price" not in body:
+        item.base_price = body["base_price_bronze"] // 100
+    elif "base_price" in body and "base_price_bronze" not in body:
+        item.base_price_bronze = body["base_price"] * 100
     # Update weapon_stats if provided
     ws = body.get("weapon_stats")
     if ws is not None:
         if item.weapon_stats:
-            for k in ["dice_count", "dice_type", "damage_type", "range"]:
+            for k in ["dice_count", "dice_type", "damage_type", "range", "weapon_range"]:
                 if k in ws:
                     setattr(item.weapon_stats, k, ws[k])
+            if "weapon_properties" in ws:
+                wp = ws["weapon_properties"]
+                item.weapon_stats.weapon_properties = json.dumps(wp) if isinstance(wp, list) else (wp or "[]")
         else:
-            db.add(ItemWeaponStats(item_id=item.id, **{k: ws[k] for k in ["dice_count", "dice_type", "damage_type", "range"] if k in ws}))
+            wp = ws.get("weapon_properties", [])
+            db.add(ItemWeaponStats(
+                item_id=item.id,
+                **{k: ws[k] for k in ["dice_count", "dice_type", "damage_type", "range"] if k in ws},
+                weapon_range=ws.get("weapon_range", "melee"),
+                weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
+            ))
     await db.commit()
     await db.refresh(item)
     return _item_dict(item)
@@ -370,7 +385,7 @@ def _item_dict(i: Item) -> dict:
     d = {
         "id": i.id, "session_id": i.session_id, "name": i.name, "description": i.description,
         "category": i.category, "category_id": i.category_id, "rarity": i.rarity,
-        "base_price": i.base_price, "base_price_copper": i.base_price_copper,
+        "base_price": i.base_price, "base_price_copper": i.base_price_bronze, "base_price_bronze": i.base_price_bronze,
         "weight": i.weight,
         "effect_type": i.effect_type, "effect_value": i.effect_value,
         "equippable": i.equippable, "consumable": i.consumable,
@@ -385,6 +400,8 @@ def _item_dict(i: Item) -> dict:
         d["weapon_stats"] = {
             "id": ws.id, "dice_count": ws.dice_count, "dice_type": ws.dice_type,
             "damage_type": ws.damage_type, "range": ws.range,
+            "weapon_range": ws.weapon_range or "melee",
+            "weapon_properties": json.loads(ws.weapon_properties) if ws.weapon_properties else [],
         }
     return d
 
@@ -431,13 +448,14 @@ async def get_character_inventory(character_id: int, db: AsyncSession = Depends(
         items.append(d)
 
     # Currency display
-    gold_copper = char.gold_copper or 0
-    currency = _copper_to_display(gold_copper)
+    wb = char.wealth_bronze or 0
+    currency = _bronze_to_display(wb)
 
     return {
         "items": items,
         "total_weight": round(total_weight, 1),
-        "gold_copper": gold_copper,
+        "gold_copper": wb,
+        "wealth_bronze": wb,
         "currency": currency,
         "can_edit_own_items": char.can_edit_own_items,
         "equipment_slots": EQUIPMENT_SLOTS,
@@ -588,15 +606,18 @@ async def get_equipped_bonuses(character_id: int, db: AsyncSession = Depends(get
 
 
 # ── Currency helpers ─────────────────────────────────────────
-def _copper_to_display(copper: int) -> dict:
-    """Convert copper total to multi-currency display."""
-    platinum = copper // 1000
-    copper %= 1000
-    gold = copper // 100
-    copper %= 100
-    silver = copper // 10
-    copper %= 10
-    return {"platinum": platinum, "gold": gold, "silver": silver, "copper": copper}
+def _bronze_to_display(bronze: int) -> dict:
+    """Convert bronze total to multi-currency display."""
+    platinum = bronze // 1000
+    bronze %= 1000
+    gold = bronze // 100
+    bronze %= 100
+    silver = bronze // 10
+    bronze %= 10
+    return {"platinum": platinum, "gold": gold, "silver": silver, "bronze": bronze}
+
+
+_copper_to_display = _bronze_to_display  # backward compat
 
 
 # Currency endpoint moved to economy.py (Stage 3)
