@@ -105,6 +105,7 @@ async function loadChar() {
   $('#char-name').textContent = char.name;
   document.title = `${char.name} — Combat Companion`;
   renderAll();
+  renderCharSidebar();  // FIX 2
 
   // Load race/class badges
   const badges = [];
@@ -117,7 +118,84 @@ async function loadChar() {
   badges.push(`Lvl ${char.level || 1}`);
   const el = $('#char-rc-badges');
   if (el) el.textContent = badges.join(' · ');
+  // Update sidebar identity line with same info
+  const rcEl = $('#cs-rc');
+  if (rcEl) rcEl.textContent = badges.join(' · ');
 }
+
+// FIX 2: Populate left character sidebar from `char` state
+function renderCharSidebar() {
+  const c = char; if (!c) return;
+  const nameEl = $('#cs-name'); if (nameEl) nameEl.textContent = c.name || 'Character';
+  const initEl = $('#cs-avatar-initial'); if (initEl) initEl.textContent = (c.name || '?').trim().charAt(0).toUpperCase();
+  const avatar = $('#cs-avatar'); if (avatar && c.token_color) avatar.style.background = `linear-gradient(135deg, ${c.token_color} 0%, var(--bg-surface-3) 100%)`;
+
+  // HP
+  const hpPct = c.max_hp > 0 ? Math.min(100, Math.max(0, c.current_hp / c.max_hp * 100)) : 0;
+  const hpColor = hpPct > 50 ? 'var(--hp-high)' : hpPct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
+  const hpVal = $('#cs-hp-value'); if (hpVal) hpVal.textContent = `${c.current_hp} / ${c.max_hp}`;
+  const hpFill = $('#cs-hp-fill'); if (hpFill) { hpFill.style.width = hpPct + '%'; hpFill.style.background = hpColor; }
+  const kdEl = $('#cs-kd'); if (kdEl) kdEl.textContent = c.armor_class;
+
+  // Mana
+  const manaBlk = $('#cs-mana-block');
+  if (manaBlk) {
+    if (c.mana_max > 0) {
+      manaBlk.style.display = '';
+      const mp = c.mana_max > 0 ? Math.min(100, c.mana_current / c.mana_max * 100) : 0;
+      $('#cs-mana-value').textContent = `${c.mana_current} / ${c.mana_max}`;
+      $('#cs-mana-fill').style.width = mp + '%';
+    } else {
+      manaBlk.style.display = 'none';
+    }
+  }
+
+  // XP (level + experience). If no XP progress available, show XP raw + level hint.
+  const xpBlk = $('#cs-xp-block');
+  if (xpBlk) {
+    const level = c.level || 1;
+    const xp = c.experience || 0;
+    const xpVal = $('#cs-xp-value');
+    const xpFill = $('#cs-xp-fill');
+    // Fallback curve: each level needs level*100 xp
+    const nextThresh = level * 100;
+    const pct = Math.min(100, (xp / nextThresh) * 100);
+    if (xpVal) xpVal.textContent = `Lvl ${level} · ${xp}/${nextThresh}`;
+    if (xpFill) xpFill.style.width = pct + '%';
+  }
+}
+
+// FIX 2: Sidebar characteristic roll (wired once at init)
+let _csRollAdv = 'normal';
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.closest('#cs-roll-adv button')) {
+    const btn = e.target.closest('button');
+    _csRollAdv = btn.dataset.mode;
+    document.querySelectorAll('#cs-roll-adv button').forEach(b => b.classList.toggle('active', b === btn));
+  }
+});
+document.addEventListener('click', async (e) => {
+  if (e.target && e.target.id === 'btn-cs-roll') {
+    const stat = document.getElementById('cs-roll-stat').value;
+    const rollType = document.getElementById('cs-roll-type').value;
+    const resEl = document.getElementById('cs-roll-result');
+    try {
+      const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, {
+        stat, roll_type: rollType, advantage_mode: _csRollAdv,
+      });
+      let advTag = '';
+      if (res.advantage_mode === 'advantage') advTag = ' <span class="adv-badge advantage">ADV</span>';
+      else if (res.advantage_mode === 'disadvantage') advTag = ' <span class="adv-badge disadvantage">DISADV</span>';
+      resEl.innerHTML = `<span style="color:var(--accent)">${res.description}</span>${advTag}`;
+      addLog(`🎲 ${res.description}`);
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({ type: 'roll.characteristic', ...res }));
+      }
+    } catch {
+      if (resEl) resEl.textContent = 'Roll failed';
+    }
+  }
+});
 function renderAll() {
   renderHP();
   renderStats();
@@ -143,6 +221,8 @@ function renderHP() {
   $('#kd-display').textContent = c.armor_class;
   // Mana
   renderMana();
+  // FIX 2: keep left sidebar in sync
+  renderCharSidebar();
 }
 
 function renderMana() {
@@ -791,6 +871,8 @@ function renderEquipmentSlots(items) {
 function filterItems(items) {
   if (invFilter === 'all') return items;
   if (invFilter === 'equipped') return items.filter(i => i.is_equipped);
+  // FIX 6: potion filter matches both is_potion flag and legacy "potion" category
+  if (invFilter === 'potion') return items.filter(i => i.is_potion || i.category === 'potion');
   return items.filter(i => i.category === invFilter);
 }
 
@@ -802,7 +884,7 @@ function renderInventoryGrid(items) {
     return;
   }
   grid.innerHTML = filtered.map(i => {
-    const icon = CATEGORY_ICONS[i.category] || '📦';
+    const icon = (i.is_potion && i.potion_icon) ? i.potion_icon : (CATEGORY_ICONS[i.category] || '📦');
     const eq = i.is_equipped ? ' equipped' : '';
     // Bonuses summary
     let bonusText = '';
@@ -1077,6 +1159,15 @@ async function loadCurrency() {
     parts.push(`${d.bronze || d.copper}B`);
     $('#player-currency').innerHTML = `💰 ${parts.join(' ')}`;
     $('#player-currency').dataset.totalBronze = data.total_bronze || data.total_copper;
+    // FIX 2: mirror to left sidebar
+    const plat = $('#cs-curr-plat');
+    if (plat) {
+      if (d.platinum > 0) { plat.style.display = ''; plat.querySelector('span').textContent = d.platinum; }
+      else { plat.style.display = 'none'; }
+    }
+    const csGold   = $('#cs-curr-gold');   if (csGold)   csGold.textContent   = d.gold || 0;
+    const csSilver = $('#cs-curr-silver'); if (csSilver) csSilver.textContent = d.silver || 0;
+    const csBronze = $('#cs-curr-bronze'); if (csBronze) csBronze.textContent = d.bronze || d.copper || 0;
   } catch {}
 }
 
@@ -2144,9 +2235,16 @@ $$('.player-tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     $$('.player-tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    $$('.player-tab').forEach(t => t.classList.remove('active'));
+    // Hide every tab (force inline display:none to defeat any prior inline override)
+    $$('.player-tab').forEach(t => {
+      t.classList.remove('active');
+      t.style.display = 'none';
+    });
     const tab = document.getElementById(btn.dataset.tab);
-    if (tab) tab.classList.add('active');
+    if (tab) {
+      tab.classList.add('active');
+      tab.style.display = 'block';
+    }
     // Lazy-load tabs
     if (btn.dataset.tab === 'tab-abilities') loadAbilities();
     if (btn.dataset.tab === 'tab-memory') loadMemory();
@@ -2201,70 +2299,88 @@ function _currentTurnCharacterId() {
   return curP ? curP.character_id : null;
 }
 
-function renderTableView() {
-  const grid = $('#table-view-grid');
-  if (!grid) return;
-  if (!tableParticipants.length) {
-    grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No participants at table</span>';
-    return;
+function _renderTableCard(c, curTurnId) {
+  const sel = c.id === selectedTargetId ? 'selected' : '';
+  const isCurTurn = curTurnId === c.id;
+  const curCls = isCurTurn ? ' current-turn' : '';
+  const hpPct = c.max_hp > 0 ? Math.round(c.current_hp / c.max_hp * 100) : 0;
+  const hpColor = hpPct > 60 ? 'var(--hp-high)' : hpPct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
+  const token = c.token_color || 'var(--accent)';
+  // Role badge
+  let roleBadge = '';
+  if (!c.is_npc) {
+    roleBadge = `<span class="tc-badge" style="background:rgba(74,127,192,0.18);color:#7ba8d9;padding:1px 6px;border-radius:8px;font-size:0.60rem;font-weight:600">PLAYER</span>`;
+  } else if (c.is_merchant) {
+    roleBadge = `<span class="tc-badge" style="background:rgba(74,127,192,0.18);color:#7ba8d9;padding:1px 6px;border-radius:8px;font-size:0.60rem;font-weight:600">🛒</span>`;
+  } else if (_isNpcInActiveCombat(c)) {
+    roleBadge = `<span class="tc-badge" style="background:rgba(184,64,64,0.20);color:#e07878;padding:1px 6px;border-radius:8px;font-size:0.60rem;font-weight:600">⚔️</span>`;
+  } else {
+    roleBadge = `<span class="tc-badge" style="background:rgba(138,125,110,0.20);color:#b0a392;padding:1px 6px;border-radius:8px;font-size:0.60rem;font-weight:600">👤</span>`;
   }
+  // HP visibility: teammates always, NPCs only if show_hp_to_players
+  const showHp = !c.is_npc || c.show_hp_to_players;
+  // Circle avatar per diagram — 72x72 rounded token with initial letter
+  const initial = (c.name || '?').trim().charAt(0).toUpperCase();
+  const ringColor = isCurTurn ? 'var(--accent)' : (sel ? 'var(--accent)' : 'var(--border)');
+  const ringShadow = isCurTurn ? 'box-shadow:0 0 0 3px var(--accent-glow),0 0 12px var(--accent-glow);' : '';
+  const clickable = c.is_npc; // only NPCs are valid attack targets
+  const hpHtml = showHp
+    ? `<div style="display:flex;align-items:center;gap:3px;width:100%">
+        <span style="font-size:0.6rem;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:30px">${c.current_hp}/${c.max_hp}</span>
+        <div style="flex:1;height:3px;background:var(--bg-surface-3);border-radius:2px;overflow:hidden"><div style="width:${hpPct}%;height:100%;background:${hpColor};transition:width .3s"></div></div>
+      </div>`
+    : `<div style="font-size:0.58rem;color:var(--text-faint);text-align:center">HP hidden</div>`;
+  const statusIcons = _statusIconsHtml(c, 3);
+
+  return `<div class="table-card ${sel}${curCls}" data-target-id="${c.id}" data-is-npc="${c.is_npc ? '1' : '0'}"
+    style="display:flex;flex-direction:column;align-items:center;gap:4px;
+           width:92px;flex:0 0 auto;cursor:${clickable ? 'pointer' : 'default'};transition:transform .15s">
+    <div style="position:relative;width:64px;height:64px;border-radius:50%;
+                background:linear-gradient(135deg, ${token} 0%, var(--bg-surface-3) 100%);
+                border:3px solid ${ringColor};${ringShadow}
+                display:flex;align-items:center;justify-content:center;
+                font-weight:700;font-size:1.4rem;color:var(--text-primary);
+                ${!c.is_alive ? 'filter:grayscale(1);opacity:0.6;' : ''}">
+      ${initial}
+      ${roleBadge ? `<div style="position:absolute;top:-4px;right:-6px">${roleBadge}</div>` : ''}
+      ${!c.is_alive ? '<div style="position:absolute;bottom:-4px;right:-4px;font-size:0.9rem" title="Down">💀</div>' : ''}
+      ${isCurTurn ? '<div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:0.75rem" title="Current turn">▼</div>' : ''}
+    </div>
+    <div style="font-weight:600;font-size:0.74rem;text-align:center;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.name}">${c.name}</div>
+    ${c.level ? `<div style="font-size:0.6rem;color:var(--text-muted)">Lvl ${c.level}</div>` : ''}
+    ${hpHtml}
+    ${statusIcons ? `<div style="display:flex;gap:2px;flex-wrap:wrap;justify-content:center">${statusIcons}</div>` : ''}
+  </div>`;
+}
+
+function renderTableView() {
+  const tmEl = $('#table-view-teammates');
+  const npcEl = $('#table-view-npcs');
+  if (!tmEl || !npcEl) return;
+
   const curTurnId = _currentTurnCharacterId();
-  grid.innerHTML = tableParticipants.map(c => {
-    const sel = c.id === selectedTargetId ? 'selected' : '';
-    const isCurTurn = curTurnId === c.id;
-    const curCls = isCurTurn ? ' current-turn' : '';
-    const hpPct = c.max_hp > 0 ? Math.round(c.current_hp / c.max_hp * 100) : 0;
-    const hpColor = hpPct > 60 ? 'var(--hp-high)' : hpPct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
-    const token = c.token_color || 'var(--accent)';
-    // Role badge
-    let roleBadge = '';
-    if (!c.is_npc) {
-      roleBadge = `<span class="tc-badge badge-player" style="background:rgba(74,127,192,0.18);color:#7ba8d9;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">PLAYER</span>`;
-    } else if (c.is_merchant) {
-      roleBadge = `<span class="tc-badge badge-merchant" style="background:rgba(74,127,192,0.18);color:#7ba8d9;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">🛒 MERCHANT</span>`;
-    } else if (_isNpcInActiveCombat(c)) {
-      roleBadge = `<span class="tc-badge badge-enemy" style="background:rgba(184,64,64,0.20);color:#e07878;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">⚔️ ENEMY</span>`;
-    } else {
-      roleBadge = `<span class="tc-badge badge-npc" style="background:rgba(138,125,110,0.20);color:#b0a392;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">👤 NPC</span>`;
-    }
-    // HP visibility: teammates always, NPCs only if show_hp_to_players
-    const showHp = !c.is_npc || c.show_hp_to_players;
-    const hpHtml = showHp
-      ? `<div class="tc-hp-row" style="display:flex;align-items:center;gap:4px;margin-top:3px">
-          <span style="font-size:0.65rem;color:var(--text-muted);font-variant-numeric:tabular-nums">${c.current_hp}/${c.max_hp}</span>
-          <div class="tc-hp-bar" style="flex:1;height:4px;background:var(--bg-surface-3);border-radius:2px;overflow:hidden"><div class="tc-hp-fill" style="width:${hpPct}%;height:100%;background:${hpColor};transition:width .3s"></div></div>
-        </div>`
-      : `<div class="tc-hp-hidden" style="font-size:0.65rem;color:var(--text-faint);margin-top:3px">HP hidden</div>`;
+  const teammates = tableParticipants.filter(c => !c.is_npc);
+  const npcs      = tableParticipants.filter(c => c.is_npc);
 
-    const clickable = c.is_npc; // only NPCs are valid attack targets
-    return `<div class="table-card ${sel}${curCls}" data-target-id="${c.id}" data-is-npc="${c.is_npc ? '1' : '0'}"
-             style="min-width:140px;flex:0 0 auto;padding:6px 8px;border-radius:var(--r-md);
-                    background:var(--bg-surface);
-                    border:2px solid ${isCurTurn ? 'var(--accent)' : (sel ? 'var(--accent)' : 'var(--border)')};
-                    ${isCurTurn ? 'box-shadow:0 0 0 1px var(--accent-glow);' : ''}
-                    cursor:${clickable ? 'pointer' : 'default'};transition:all .15s">
-      <div class="tc-head" style="display:flex;align-items:center;gap:5px;margin-bottom:2px">
-        <span class="tc-token" style="width:10px;height:10px;border-radius:50%;background:${token};flex-shrink:0;border:1px solid var(--border)"></span>
-        <span class="tc-name" style="font-weight:600;font-size:0.8rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>
-        ${!c.is_alive ? '<span style="font-size:0.72rem" title="Down">💀</span>' : ''}
-      </div>
-      <div class="tc-meta" style="display:flex;align-items:center;gap:4px;justify-content:space-between">
-        ${roleBadge}
-        ${_statusIconsHtml(c, 3)}
-      </div>
-      ${hpHtml}
-    </div>`;
-  }).join('');
+  tmEl.innerHTML = teammates.length
+    ? teammates.map(c => _renderTableCard(c, curTurnId)).join('')
+    : '<span class="text-muted" style="font-size:0.78rem">No teammates</span>';
+  npcEl.innerHTML = npcs.length
+    ? npcs.map(c => _renderTableCard(c, curTurnId)).join('')
+    : '<span class="text-muted" style="font-size:0.78rem">GM hasn\'t placed anyone yet</span>';
 
-  grid.querySelectorAll('.table-card').forEach(card => {
-    const isNpc = card.dataset.isNpc === '1';
-    if (!isNpc) return; // teammates not selectable as targets
-    card.addEventListener('click', () => {
-      const tid = parseInt(card.dataset.targetId);
-      selectedTargetId = tid === selectedTargetId ? null : tid;
-      renderTableView();
-      updateTargetInfo();
-      renderActionMenu(); // refresh so Attack card reflects target availability
+  // Wire clicks — only NPCs are selectable
+  [tmEl, npcEl].forEach(container => {
+    container.querySelectorAll('.table-card').forEach(card => {
+      const isNpc = card.dataset.isNpc === '1';
+      if (!isNpc) return;
+      card.addEventListener('click', () => {
+        const tid = parseInt(card.dataset.targetId);
+        selectedTargetId = tid === selectedTargetId ? null : tid;
+        renderTableView();
+        updateTargetInfo();
+        renderActionMenu();
+      });
     });
   });
 }
@@ -2337,11 +2453,11 @@ function renderActionMenu() {
 
   // Attack: main_hand weapon equipped
   const wpn = items.find(i => i.is_equipped && i.equipped_slot === 'main_hand' && i.weapon_stats);
-  // Potion: any consumable in category potion
-  const potions = items.filter(i => i.consumable && (i.category || '').toLowerCase() === 'potion');
+  // Potion: any consumable flagged is_potion OR in category "potion" (backward compat)
+  const potions = items.filter(i => i.consumable && (i.is_potion || (i.category || '').toLowerCase() === 'potion'));
   // Use Item: non-consumable with use_effect defined (not a potion)
   const useables = items.filter(i =>
-    !i.consumable && i.use_effect && (i.category || '').toLowerCase() !== 'potion'
+    !i.consumable && i.use_effect && !i.is_potion && (i.category || '').toLowerCase() !== 'potion'
   );
   // Ability: ≥1 active/reaction ability not all on cooldown
   const activeAbs = (abilitiesData || []).filter(a =>
@@ -2632,11 +2748,16 @@ function openItemPicker(items, title, icon) {
     <div id="ip-list" style="display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto">
       ${items.map(it => {
         const rarityCls = it.rarity ? ` rarity-${it.rarity}` : '';
+        const rarityBorder = it.rarity ? `var(--rarity-${it.rarity}, var(--border))` : 'var(--border)';
         const effDesc = _summarizeUseEffect(it);
+        // FIX 6: per-item potion icon
+        const itIcon = (it.is_potion && it.potion_icon) ? it.potion_icon : '';
         return `<div class="ip-item" data-inv-id="${it.inventory_id}"
                  style="padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border);
+                        border-left:3px solid ${rarityBorder};
                         border-radius:var(--r-sm);cursor:pointer;transition:all .15s">
           <div style="display:flex;align-items:center;gap:6px">
+            ${itIcon ? `<span style="font-size:1rem">${itIcon}</span>` : ''}
             <strong class="${rarityCls}" style="flex:1;font-size:0.82rem">${it.name}</strong>
             <span style="font-size:0.7rem;color:var(--text-muted)">×${it.quantity}</span>
             ${it.mana_cost ? `<span style="font-size:0.7rem;color:#60a5fa">🔮${it.mana_cost}</span>` : ''}
@@ -2662,20 +2783,34 @@ function openItemPicker(items, title, icon) {
 
 function _summarizeUseEffect(it) {
   // Derive a short human description of what the item does
+  // Supports both new dice-based effect format (FIX 6) and legacy flat format.
   try {
     const ue = it.use_effect;
     if (!ue) {
-      // Legacy effect_type/effect_value
       if (it.effect_type && it.effect_value) return `${it.effect_type}: ${it.effect_value}`;
       return it.description || '';
     }
     const effs = Array.isArray(ue) ? ue : (ue.effects || []);
     const parts = effs.map(e => {
-      if (e.type === 'heal')         return `+${e.value} HP`;
-      if (e.type === 'damage')       return `-${e.value} HP`;
-      if (e.type === 'mana_restore') return `+${e.value} mana`;
+      // New dice-based formats
+      if (e.type === 'heal_hp') {
+        const dc = e.dice_count, dt = e.dice_type, fb = e.flat_bonus || 0;
+        if (dc && dt) return `+${dc}d${dt}${fb ? (fb > 0 ? '+' + fb : fb) : ''} HP`;
+        return e.value ? `+${e.value} HP` : '+HP';
+      }
+      if (e.type === 'damage') {
+        const dc = e.dice_count, dt = e.dice_type, fb = e.flat_bonus || 0;
+        if (dc && dt) return `-${dc}d${dt}${fb ? (fb > 0 ? '+' + fb : fb) : ''} HP`;
+        return e.value ? `-${e.value} HP` : '-HP';
+      }
+      if (e.type === 'restore_mana') return `+${e.amount ?? e.value ?? 0} mana`;
       if (e.type === 'stat_boost')   return `+${e.value} ${e.stat} (${e.duration_turns || '?'}t)`;
-      if (e.type === 'apply_status') return `apply status`;
+      if (e.type === 'apply_status') return `apply status${e.duration_turns ? ` (${e.duration_turns}t)` : ''}`;
+      if (e.type === 'remove_status') return `remove ${e.status_name || 'status'}`;
+      if (e.type === 'custom')       return e.description || 'custom effect';
+      // Legacy names
+      if (e.type === 'heal')         return `+${e.value} HP`;
+      if (e.type === 'mana_restore') return `+${e.value} mana`;
       return e.description || e.type || '';
     }).filter(Boolean);
     if (parts.length) return parts.join(' · ');
@@ -2714,7 +2849,9 @@ function _mountItemConfirm(panel, it) {
         out = `<div style="font-weight:700;margin-bottom:3px">HP: ${hpBefore} → ${hpAfter}</div>` + out;
       }
       resultEl.innerHTML = out;
-      results.forEach(r => addLog(`${(it.category||'').toLowerCase()==='potion'?'🧪':'🎒'} ${it.name}: ${r}`));
+      const logIcon = (it.is_potion && it.potion_icon) ? it.potion_icon
+                    : ((it.category||'').toLowerCase() === 'potion' ? '🧪' : '🎒');
+      results.forEach(r => addLog(`${logIcon} ${it.name}: ${r}`));
     } catch (e) {
       const d = e?.body?.detail;
       resultEl.innerHTML = `<span style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Failed')}</span>`;
@@ -3091,6 +3228,83 @@ ws.on('memory.entry_added', d => {
   loadMemory();
 });
 
+// FIX 4: Log OTHER players' free-rolls (own roll is logged locally by the widget to avoid duplication)
+ws.on('roll.free_roll', d => {
+  if (d.character_id == CHAR_ID) return;
+  addLog(`🎲 ${d.character_name || 'Someone'}: ${d.breakdown}`);
+});
+
+// ══════════════════════════════════════════════════════════════
+// FIX 4 — FREE DICE ROLL (any dice/count/adv, optional private)
+// ══════════════════════════════════════════════════════════════
+function _rollOne(die) { return Math.floor(Math.random() * die) + 1; }
+
+function initFreeRollWidget() {
+  const host = document.getElementById('free-roll-widget-host');
+  if (!host || typeof createDiceRollWidget !== 'function') return;
+
+  createDiceRollWidget(host, {
+    label: '',
+    defaultDiceCount: 1,
+    defaultDiceType:  20,
+    showDiceSelector: true,
+    showAdvantage:    true,
+    showRollButton:   true,
+    rollButtonText:   'Roll',
+    onRoll: async ({ diceCount, diceType, advantageMode }) => {
+      // Roll locally (free roll doesn't need a backend endpoint)
+      const rollSet = () => Array.from({ length: diceCount }, () => _rollOne(diceType));
+      let rolls = rollSet();
+      let chosen = rolls;
+      let allRolls = rolls.slice();
+
+      if (advantageMode !== 'normal') {
+        const second = rollSet();
+        allRolls = rolls.slice();
+        // Compare sums; pick winning set
+        const sumA = rolls.reduce((a, b) => a + b, 0);
+        const sumB = second.reduce((a, b) => a + b, 0);
+        if (advantageMode === 'advantage') chosen = sumA >= sumB ? rolls : second;
+        else                                chosen = sumA <= sumB ? rolls : second;
+        allRolls = allRolls.concat(second);
+      }
+
+      const total = chosen.reduce((a, b) => a + b, 0);
+      const diceLabel = `${diceCount}d${diceType}`;
+      let breakdown;
+      if (advantageMode === 'advantage') {
+        breakdown = `ADV: ${diceLabel}[${rolls.join(',')}] vs [${allRolls.slice(diceCount).join(',')}] → took [${chosen.join(',')}] = ${total}`;
+      } else if (advantageMode === 'disadvantage') {
+        breakdown = `DISADV: ${diceLabel}[${rolls.join(',')}] vs [${allRolls.slice(diceCount).join(',')}] → took [${chosen.join(',')}] = ${total}`;
+      } else {
+        breakdown = `${diceLabel}[${chosen.join(',')}] = ${total}`;
+      }
+
+      // WS broadcast — private toggle controls GM visibility
+      const isPrivate = !!document.getElementById('free-roll-private')?.checked;
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({
+          type: 'roll.free_roll',
+          character_id: CHAR_ID,
+          character_name: char?.name,
+          dice_count: diceCount,
+          dice_type:  diceType,
+          advantage_mode: advantageMode,
+          rolls: chosen,
+          total, breakdown,
+          private: isPrivate,
+        }));
+      }
+
+      // Log locally always
+      addLog(`🎲 ${breakdown}${isPrivate ? ' (private)' : ''}`);
+      addRollHistory('free', breakdown, total);
+
+      return { total, breakdown };
+    },
+  });
+}
+
 // ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
@@ -3107,4 +3321,5 @@ restoreGmTimer();
 loadTableView();
 renderBonusesPenalties();
 loadAbilities();  // FIX 2: load early so Action Menu (Main tab) knows abilities
+initFreeRollWidget();  // FIX 4
 ws.connect();

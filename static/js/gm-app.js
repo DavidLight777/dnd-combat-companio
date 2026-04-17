@@ -2503,6 +2503,10 @@ function openItemEditor(itemId = null) {
     $('#item-ed-is-weapon').checked = false;
     $('#weapon-stats-section').classList.add('hidden');
     $('#use-effects-section').classList.add('hidden');
+    // FIX 6: reset potion identity for new items
+    $('#item-ed-is-potion').checked = false;
+    $('#potion-identity-section').classList.add('hidden');
+    _setPotionIcon('🧪');
     tempBonuses = [];
     tempUseEffects = [];
     renderUseEffectEditor();
@@ -2586,6 +2590,11 @@ async function saveItem() {
       condition_description: b.condition_description || null,
     })),
   };
+  // FIX 6: potion identity fields
+  body.is_potion = $('#item-ed-is-potion').checked;
+  body.potion_icon = $('#item-ed-potion-icon').value || '🧪';
+  // Potions are always consumable (backend also enforces this, but set here for UI accuracy)
+  if (body.is_potion) body.consumable = true;
   if (tempUseEffects.length > 0) {
     body.use_effect = { effects: tempUseEffects };
   } else {
@@ -2635,6 +2644,51 @@ async function deleteItem() {
     closeItemModal();
     await loadItems();
   } catch (e) { showToast('Error: ' + e.message); }
+}
+
+// ── FIX 6: Potion Icon Picker ──
+const POTION_ICONS = ['🧪','🫧','💊','🍶','🧴','🔮','🌿','💉'];
+
+function _setPotionIcon(icon) {
+  const hidden = document.getElementById('item-ed-potion-icon');
+  if (hidden) hidden.value = icon || '🧪';
+  const picker = document.getElementById('potion-icon-picker');
+  if (!picker) return;
+  if (!picker.childElementCount) {
+    // Populate picker grid on first render
+    picker.innerHTML = POTION_ICONS.map(ic => `
+      <button type="button" class="potion-ic" data-ic="${ic}"
+              style="width:30px;height:30px;border-radius:var(--r-sm);
+                     background:var(--bg-surface);border:1px solid var(--border);
+                     cursor:pointer;font-size:1rem;padding:0;line-height:1">${ic}</button>`).join('');
+    picker.querySelectorAll('.potion-ic').forEach(btn => {
+      btn.addEventListener('click', () => _setPotionIcon(btn.dataset.ic));
+    });
+  }
+  // Highlight current selection
+  picker.querySelectorAll('.potion-ic').forEach(btn => {
+    const active = btn.dataset.ic === (icon || '🧪');
+    btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+    btn.style.background = active ? 'var(--bg-surface-3)' : 'var(--bg-surface)';
+  });
+}
+
+// Toggle potion identity section + auto-consumable when is_potion is checked
+const _ipChk = document.getElementById('item-ed-is-potion');
+if (_ipChk) {
+  _ipChk.addEventListener('change', e => {
+    const on = e.target.checked;
+    document.getElementById('potion-identity-section')?.classList.toggle('hidden', !on);
+    if (on) {
+      // Potions are always consumable — reflect immediately
+      const cons = document.getElementById('item-ed-consumable');
+      if (cons && !cons.checked) {
+        cons.checked = true;
+        document.getElementById('use-effects-section')?.classList.remove('hidden');
+      }
+      _setPotionIcon(document.getElementById('item-ed-potion-icon')?.value || '🧪');
+    }
+  });
 }
 
 // ── Use Effects Editor ──
@@ -3718,6 +3772,13 @@ ws.on('roll.characteristic', d => {
       addRollLogEntry(d);
     }
   }
+});
+
+// FIX 4: Free rolls from players appear in the GM's Roll Log
+// (server only forwards here when private=false)
+ws.on('roll.free_roll', d => {
+  const who = d.character_name || `Character #${d.character_id}`;
+  addLog('roll', `🎲 ${who}: ${d.breakdown}`);
 });
 
 // WS listeners for combat

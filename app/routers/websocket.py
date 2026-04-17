@@ -262,6 +262,27 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                         "description": msg.get("description"),
                     })
 
+                # FIX 4: Free dice roll — any dice/count/advantage; optional private
+                # If private=True → send only to the author's token (so GM does NOT see it).
+                # Otherwise broadcast to all (GM roll log shows it).
+                elif msg_type == "roll.free_roll":
+                    payload = {
+                        "character_id": msg.get("character_id"),
+                        "character_name": msg.get("character_name"),
+                        "dice_count": msg.get("dice_count"),
+                        "dice_type": msg.get("dice_type"),
+                        "advantage_mode": msg.get("advantage_mode", "normal"),
+                        "rolls": msg.get("rolls", []),
+                        "total": msg.get("total"),
+                        "breakdown": msg.get("breakdown", ""),
+                        "private": bool(msg.get("private", False)),
+                    }
+                    if payload["private"]:
+                        # Private → only echo back to sender
+                        await manager.send_to_token(session_code, token, "roll.free_roll", payload)
+                    else:
+                        await manager.broadcast_to_session(session_code, "roll.free_roll", payload)
+
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:
