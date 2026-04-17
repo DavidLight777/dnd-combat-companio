@@ -66,12 +66,24 @@
             <div class="cs-bar-head"><span class="cs-bar-lbl">⭐ XP</span><span class="cs-bar-val" id="cs-xp-value">0</span></div>
             <div class="cs-bar"><div class="cs-bar-fill" id="cs-xp-fill" style="background:#a78bfa"></div></div>
           </div>
-          <!-- Currency -->
+          <!-- Currency (4-type: Platinum, Gold, Silver, Bronze) -->
           <div class="cs-currency" id="cs-currency">
-            <span class="cs-curr-row" id="cs-curr-plat" style="display:none">💎 <span>0</span></span>
-            <span class="cs-curr-row">🪙 <span id="cs-curr-gold">0</span></span>
-            <span class="cs-curr-row">🥈 <span id="cs-curr-silver">0</span></span>
-            <span class="cs-curr-row">🟤 <span id="cs-curr-bronze">0</span></span>
+            <span class="cs-curr-row" id="cs-curr-plat" title="Platinum">
+              <span class="curr-icon" style="color:#e0e0ff">◆</span>
+              <span id="cs-curr-plat-val">0</span>
+            </span>
+            <span class="cs-curr-row" title="Gold">
+              <span class="curr-icon" style="color:#ffd700">●</span>
+              <span id="cs-curr-gold">0</span>
+            </span>
+            <span class="cs-curr-row" title="Silver">
+              <span class="curr-icon" style="color:#c0c0c0">●</span>
+              <span id="cs-curr-silver">0</span>
+            </span>
+            <span class="cs-curr-row" title="Bronze">
+              <span class="curr-icon" style="color:#cd7f32">●</span>
+              <span id="cs-curr-bronze">0</span>
+            </span>
           </div>
 
           <!-- Characteristics (STR/DEX/CON/INT/WIS/CHA) — visible to player -->
@@ -98,6 +110,20 @@
               <option value="saving_throw">Saving Throw</option>
               <option value="skill_check">Skill Check</option>
             </select>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;font-size:0.72rem">
+              <span style="color:var(--text-muted)">Dice:</span>
+              <input type="number" id="cs-roll-dice-count" value="1" min="1" max="10" style="width:40px;font-size:0.72rem">
+              <span style="color:var(--text-muted)">d</span>
+              <select id="cs-roll-dice-type" style="font-size:0.72rem;flex:1">
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12">12</option>
+                <option value="20" selected>20</option>
+                <option value="100">100</option>
+              </select>
+            </div>
             <div class="adv-toggle" id="cs-roll-adv" style="width:100%;margin-bottom:4px">
               <button data-mode="normal" class="active" style="flex:1">Normal</button>
               <button data-mode="advantage" style="flex:1">ADV</button>

@@ -2704,6 +2704,27 @@ const USE_EFFECT_TYPES = [
   {value:'custom', label:'Custom'},
 ];
 
+function _formatUseEffectPreview(e) {
+  if (e.type === 'heal_hp') {
+    const parts = [];
+    if (e.dice_count && e.dice_type) parts.push(`${e.dice_count}d${e.dice_type}`);
+    if (e.flat_bonus) parts.push(`${e.flat_bonus > 0 ? '+' : ''}${e.flat_bonus}`);
+    return `❤️ Heal ${parts.join(' ') || '0'} HP`;
+  }
+  if (e.type === 'damage') {
+    const parts = [];
+    if (e.dice_count && e.dice_type) parts.push(`${e.dice_count}d${e.dice_type}`);
+    if (e.flat_bonus) parts.push(`${e.flat_bonus > 0 ? '+' : ''}${e.flat_bonus}`);
+    return `💥 Damage ${parts.join(' ') || '0'}`;
+  }
+  if (e.type === 'restore_mana') return `🔮 Restore ${e.amount || 0} Mana`;
+  if (e.type === 'apply_status') return `✨ Apply status #${e.template_id || '?'} for ${e.duration_turns || 0} turns`;
+  if (e.type === 'stat_boost') return `📊 ${(e.stat || '?').toUpperCase()} ${e.value > 0 ? '+' : ''}${e.value || 0} for ${e.duration_turns || 0} turns`;
+  if (e.type === 'remove_status') return `🧹 Remove "${e.status_name || '?'}"`;
+  if (e.type === 'custom') return `📝 ${e.description || 'Custom effect'}`;
+  return e.type;
+}
+
 function renderUseEffectEditor() {
   const list = $('#use-effect-editor-list');
   if (!tempUseEffects.length) {
@@ -2729,10 +2750,18 @@ function renderUseEffectEditor() {
     } else if (e.type === 'custom') {
       fields = `<input type="text" data-ue-field="description" value="${e.description||''}" style="width:160px" placeholder="Effect description">`;
     }
-    return `<div class="ue-row" data-ue-idx="${i}" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-      <select class="ue-type-select">${typeOpts}</select>
-      ${fields}
-      <button class="btn-icon danger" data-remove-ue="${i}" title="Remove">🗑️</button>
+    const preview = _formatUseEffectPreview(e);
+    const isFirst = i === 0;
+    const isLast = i === tempUseEffects.length - 1;
+    return `<div class="ue-row" data-ue-idx="${i}" style="padding:6px;background:var(--bg-surface-2);border-radius:var(--r-sm);margin-bottom:6px;border-left:3px solid #a855f7">
+      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+        <select class="ue-type-select" style="font-size:0.75rem">${typeOpts}</select>
+        ${fields}
+        <button class="btn-icon" data-ue-up="${i}" title="Move up" ${isFirst?'disabled style="opacity:0.3"':''}>⬆️</button>
+        <button class="btn-icon" data-ue-down="${i}" title="Move down" ${isLast?'disabled style="opacity:0.3"':''}>⬇️</button>
+        <button class="btn-icon danger" data-remove-ue="${i}" title="Remove">🗑️</button>
+      </div>
+      <div style="font-size:0.7rem;color:var(--accent);padding-left:2px">→ ${preview}</div>
     </div>`;
   }).join('');
 
@@ -2747,10 +2776,22 @@ function renderUseEffectEditor() {
         const f = inp.dataset.ueField;
         const v = inp.type === 'number' ? (parseFloat(inp.value)||0) : inp.value;
         tempUseEffects[idx][f] = v;
+        renderUseEffectEditor();  // refresh preview
       });
     });
     const rmBtn = row.querySelector('[data-remove-ue]');
     if (rmBtn) rmBtn.addEventListener('click', () => { tempUseEffects.splice(idx,1); renderUseEffectEditor(); });
+    // Reorder
+    const upBtn = row.querySelector('[data-ue-up]');
+    if (upBtn && idx > 0) upBtn.addEventListener('click', () => {
+      [tempUseEffects[idx-1], tempUseEffects[idx]] = [tempUseEffects[idx], tempUseEffects[idx-1]];
+      renderUseEffectEditor();
+    });
+    const downBtn = row.querySelector('[data-ue-down]');
+    if (downBtn && idx < tempUseEffects.length - 1) downBtn.addEventListener('click', () => {
+      [tempUseEffects[idx], tempUseEffects[idx+1]] = [tempUseEffects[idx+1], tempUseEffects[idx]];
+      renderUseEffectEditor();
+    });
   });
 }
 

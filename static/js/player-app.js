@@ -178,10 +178,13 @@ document.addEventListener('click', async (e) => {
   if (e.target && e.target.id === 'btn-cs-roll') {
     const stat = document.getElementById('cs-roll-stat').value;
     const rollType = document.getElementById('cs-roll-type').value;
+    const diceCount = parseInt(document.getElementById('cs-roll-dice-count')?.value) || 1;
+    const diceType = parseInt(document.getElementById('cs-roll-dice-type')?.value) || 20;
     const resEl = document.getElementById('cs-roll-result');
     try {
       const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, {
         stat, roll_type: rollType, advantage_mode: _csRollAdv,
+        dice_count: diceCount, dice_type: diceType,
       });
       let advTag = '';
       if (res.advantage_mode === 'advantage') advTag = ' <span class="adv-badge advantage">ADV</span>';
@@ -1188,9 +1191,14 @@ async function loadCurrency() {
     $('#player-currency').dataset.totalBronze = data.total_bronze || data.total_copper;
     // FIX 2: mirror to left sidebar
     const plat = $('#cs-curr-plat');
+    const platVal = $('#cs-curr-plat-val');
     if (plat) {
-      if (d.platinum > 0) { plat.style.display = ''; plat.querySelector('span').textContent = d.platinum; }
-      else { plat.style.display = 'none'; }
+      if ((d.platinum || 0) > 0) {
+        plat.style.display = '';
+        if (platVal) platVal.textContent = d.platinum;
+      } else {
+        plat.style.display = 'none';
+      }
     }
     const csGold   = $('#cs-curr-gold');   if (csGold)   csGold.textContent   = d.gold || 0;
     const csSilver = $('#cs-curr-silver'); if (csSilver) csSilver.textContent = d.silver || 0;
@@ -3349,4 +3357,26 @@ loadTableView();
 renderBonusesPenalties();
 loadAbilities();  // FIX 2: load early so Action Menu (Main tab) knows abilities
 initFreeRollWidget();  // FIX 4
+
+// FIX 1: WS listeners for Table View updates
+ws.on('table.updated', () => {
+  loadTableView();
+});
+
+ws.on('character.hp_changed', d => {
+  if (!d || !d.character_id) return;
+  const cards = document.querySelectorAll(`[data-id="${d.character_id}"]`);
+  cards.forEach(card => {
+    const hpText = card.querySelector('.mini-hp-text');
+    const hpBar = card.querySelector('.mini-hp-bar');
+    if (hpText && d.current_hp !== undefined && d.max_hp !== undefined) {
+      hpText.textContent = `${d.current_hp}/${d.max_hp}`;
+    }
+    if (hpBar && d.current_hp !== undefined && d.max_hp !== undefined) {
+      const pct = d.max_hp > 0 ? Math.min(100, d.current_hp / d.max_hp * 100) : 0;
+      hpBar.style.width = pct + '%';
+    }
+  });
+});
+
 ws.connect();

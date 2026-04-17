@@ -63,6 +63,11 @@
   background: var(--bg-surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
 }
 .cs-curr-row { display: flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+.cs-curr-row .curr-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+  text-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
 .cs-char-roll {
   padding: 8px; background: var(--bg-surface-2); border: 1px solid var(--border);
   border-radius: var(--r-md); margin-top: 4px;

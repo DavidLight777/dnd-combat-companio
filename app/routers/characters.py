@@ -201,6 +201,7 @@ async def delete_character(char_id: int, db: AsyncSession = Depends(get_session)
 # ── Table visibility (FIX 1) ─────────────────────────────────
 class TableVisibilityBody(BaseModel):
     is_at_table: bool | None = None
+    place_at_table: bool | None = None  # alias for is_at_table
     show_hp_to_players: bool | None = None
 
 
@@ -226,8 +227,11 @@ async def patch_table_visibility(
     was_at_table = bool(c.place_at_table)
     transition_to_on = False
 
-    if body.is_at_table is not None:
-        c.place_at_table = bool(body.is_at_table)
+    # Accept either is_at_table or place_at_table (alias)
+    new_at_table = body.is_at_table if body.is_at_table is not None else body.place_at_table
+
+    if new_at_table is not None:
+        c.place_at_table = bool(new_at_table)
         transition_to_on = c.is_npc and (not was_at_table) and c.place_at_table
     if body.show_hp_to_players is not None:
         c.show_hp_to_players = bool(body.show_hp_to_players)
@@ -265,6 +269,7 @@ async def patch_table_visibility(
             await manager.broadcast_to_session(sess.code, "table.updated", {
                 "character_id": c.id,
                 "is_at_table": c.place_at_table,
+                "place_at_table": c.place_at_table,
                 "show_hp_to_players": c.show_hp_to_players,
             })
     except Exception:
@@ -435,6 +440,8 @@ class CharacteristicRollBody(BaseModel):
     roll_type: str = "ability_check"  # ability_check, saving_throw, skill_check
     skill_name: str | None = None
     advantage_mode: str = "normal"  # normal / advantage / disadvantage
+    dice_count: int = 1  # Number of dice to roll
+    dice_type: int = 20  # Die type (4, 6, 8, 10, 12, 20, 100)
 
 
 STAT_MAP = {
@@ -495,18 +502,26 @@ async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: As
     total_stat = base_val + mod_from_mods + item_stat_bonus + stat_penalty
     mod = _stat_modifier(total_stat)
 
-    # Apply advantage/disadvantage
+    # Apply advantage/disadvantage with configurable dice
+    dice_count = max(1, min(body.dice_count or 1, 20))
+    dice_type = body.dice_type or 20
+    if dice_type not in (4, 6, 8, 10, 12, 20, 100):
+        dice_type = 20
+
     def _single_roll():
-        d = random.randint(1, 20)
+        # Roll dice_count dice of dice_type, sum them, add modifier
+        rolls = [random.randint(1, dice_type) for _ in range(dice_count)]
+        d = sum(rolls)
         t = d + mod
-        return t, d
+        return t, rolls if dice_count > 1 else rolls[0]
 
     effective_adv = resolve_advantage_mode(body.advantage_mode or "normal", penalties)
     adv = apply_advantage(_single_roll, effective_adv)
     d20 = adv.all_details[adv.chosen_index]
     total = adv.chosen_total
+    dice_label = f"{dice_count}d{dice_type}" if dice_count > 1 else f"D{dice_type}"
     adv_breakdown = format_advantage_breakdown(
-        effective_adv, list(adv.all_details), adv.chosen_index, "D20"
+        effective_adv, list(adv.all_details), adv.chosen_index, dice_label
     )
 
     # Build detailed breakdown
@@ -514,7 +529,12 @@ async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: As
     stat_label = stat_key.capitalize()
     skill_part = f" ({body.skill_name})" if body.skill_name else ""
 
-    breakdown_parts = [f"D20({d20})"]
+    # Format dice result display
+    if isinstance(d20, list):
+        dice_display = f"{dice_label}[{','.join(str(r) for r in d20)}]={sum(d20)}"
+    else:
+        dice_display = f"{dice_label}({d20})"
+    breakdown_parts = [dice_display]
     breakdown_parts.append(f"{stat_label} mod({mod:+d})")
     # Sources for the mod
     source_details = []
@@ -543,6 +563,8 @@ async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: As
         "stat_value": total_stat,
         "modifier": mod,
         "d20": d20,
+        "dice_count": dice_count,
+        "dice_type": dice_type,
         "total": total,
         "roll_type": body.roll_type,
         "skill_name": body.skill_name,
