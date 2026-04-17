@@ -223,6 +223,33 @@ function renderHP() {
   renderMana();
   // FIX 2: keep left sidebar in sync
   renderCharSidebar();
+  renderCharStatsSidebar();  // Step 2: visible characteristics
+}
+
+function renderCharStatsSidebar() {
+  const c = char; if (!c) return;
+  const grid = document.getElementById('cs-stats-grid');
+  if (!grid) return;
+  const stats = [
+    { key: 'strength', label: 'STR' },
+    { key: 'dexterity', label: 'DEX' },
+    { key: 'constitution', label: 'CON' },
+    { key: 'intelligence', label: 'INT' },
+    { key: 'wisdom', label: 'WIS' },
+    { key: 'charisma', label: 'CHA' },
+  ];
+  grid.innerHTML = stats.map(s => {
+    const base = c[s.key] || 10;
+    const mods = (c.stat_modifiers || []).filter(m => m.stat_name === s.key && m.is_active);
+    const modSum = mods.reduce((a, m) => a + m.value, 0);
+    const total = base + modSum;
+    const modText = modSum !== 0 ? `<span style="font-size:0.6rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${modSum > 0 ? '+' : ''}${modSum}</span>` : '';
+    return `
+      <div style="padding:4px;background:var(--bg-surface);border-radius:var(--r-sm)">
+        <div style="font-size:0.65rem;color:var(--text-muted)">${s.label}</div>
+        <div style="font-weight:700">${total} ${modText}</div>
+      </div>`;
+  }).join('');
 }
 
 function renderMana() {

@@ -116,6 +116,7 @@ $('#session-code').addEventListener('click', () => {
 async function refreshChars() {
   characters = await api.get(`/api/sessions/${SESSION_CODE}/characters`);
   renderPartyList();
+  renderTableControls();  // FIX: GM At The Table panel
   $('#player-count').textContent = characters.filter(c => !c.is_npc).length;
   if (selectedCharId) renderCharDetail();
 }
@@ -5634,9 +5635,62 @@ if ($('#btn-new-ability')) {
   $('#btn-new-ability').addEventListener('click', () => showAbilityEditor());
 }
 
-// WS: table.updated → refresh player table views
+// ══════════════════════════════════════════════════════════════
+// FIX: GM "AT THE TABLE" Control Panel
+// ══════════════════════════════════════════════════════════════
+async function renderTableControls() {
+  const container = document.getElementById('gm-table-controls');
+  if (!container) return;
+
+  const npcs = characters.filter(c => c.is_npc);
+  if (!npcs.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:6px">No NPCs in session.</div>';
+    return;
+  }
+
+  container.innerHTML = npcs.map(c => {
+    const isPlaced = c.place_at_table || c.is_at_table;
+    const showHp = c.show_hp_to_players;
+    return `
+      <div style="display:flex;align-items:center;gap:6px;padding:6px;background:var(--bg-surface);border-radius:var(--r-sm);margin-bottom:4px">
+        <span style="font-size:1rem">${(c.token_color ? '●' : '○')}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>
+        <button class="btn btn-ghost btn-xs gm-table-toggle" data-char="${c.id}" data-field="place_at_table" style="${isPlaced ? 'background:var(--accent-green20);color:var(--accent-green)' : ''}">
+          ${isPlaced ? '✓ At Table' : 'Place'}
+        </button>
+        <button class="btn btn-ghost btn-xs gm-hp-toggle" data-char="${c.id}" data-field="show_hp_to_players" title="Show HP to players" style="${showHp ? 'background:var(--accent20);color:var(--accent)' : ''}">
+          ${showHp ? '👁️' : '🔒'}
+        </button>
+      </div>`;
+  }).join('');
+
+  // Wire toggle buttons
+  container.querySelectorAll('.gm-table-toggle, .gm-hp-toggle').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const charId = parseInt(btn.dataset.char);
+      const field = btn.dataset.field;
+      const char = characters.find(c => c.id === charId);
+      if (!char) return;
+
+      const newValue = !(char[field]);
+      try {
+        await api.patch(`/api/characters/${charId}/table-visibility`, {
+          [field]: newValue
+        });
+        char[field] = newValue;
+        renderTableControls();  // Re-render to show updated state
+        showToast(`${char.name}: ${field === 'place_at_table' ? (newValue ? 'placed at table' : 'removed from table') : (newValue ? 'HP visible' : 'HP hidden')}`);
+      } catch (e) {
+        showToast('Failed to update: ' + (e.message || ''));
+      }
+    });
+  });
+}
+
+// Wire table.updated WS event
 ws.on('table.updated', () => {
-  // GM doesn't need to do anything special, but players will reload
+  // Refresh GM controls when table is updated (e.g., by another GM or system)
+  renderTableControls();
 });
 
 // ══════════════════════════════════════════════════════════════
