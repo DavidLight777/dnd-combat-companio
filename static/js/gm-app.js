@@ -379,18 +379,15 @@ async function renderCharDetail() {
   const npcAttackHtml = c.is_npc ? `
     <hr class="section-divider">
     <h3 style="font-size:0.82rem;margin-bottom:6px">⚔️ NPC Attack</h3>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
       <label style="font-size:0.78rem;color:var(--text-muted)">Target:</label>
       <select id="npc-atk-target" style="font-size:0.78rem;min-width:120px"></select>
-      <div class="adv-toggle" id="npc-atk-adv-toggle" style="font-size:0.65rem">
-        <button data-mode="normal" class="active">Normal</button>
-        <button data-mode="advantage">ADV</button>
-        <button data-mode="disadvantage">DISADV</button>
-      </div>
+      <span id="npc-weapon-info" style="font-size:0.72rem;color:var(--text-muted)"></span>
     </div>
+    <!-- FIX 3: universal dice widget (attack: selector + advantage) -->
+    <div id="npc-atk-widget-host" style="margin-bottom:6px"></div>
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
       <button class="btn btn-primary btn-sm" id="btn-npc-roll-attack">⚔️ Roll Attack</button>
-      <span id="npc-weapon-info" style="font-size:0.72rem;color:var(--text-muted)"></span>
     </div>
     <div id="npc-atk-result" style="font-size:0.8rem;margin-bottom:8px"></div>
   ` : '';
@@ -746,7 +743,8 @@ async function renderCharDetail() {
       ).join('');
       if (!sessionChars.length) atkTarget.innerHTML = '<option value="">No targets</option>';
 
-      // Show weapon info
+      // Show weapon info + mount FIX 3 dice widget pre-filled from weapon
+      let npcAtkWidgetState = { diceCount: c.attack_dice_count || 1, diceType: c.attack_dice_type || 6, advantageMode: 'normal' };
       (async () => {
         try {
           const inv = await api.get(`/api/characters/${c.id}/inventory`);
@@ -754,18 +752,29 @@ async function renderCharDetail() {
           const wInfo = area.querySelector('#npc-weapon-info');
           if (mainHand && wInfo) {
             wInfo.textContent = `🗡️ ${mainHand.name}`;
+            const ws = mainHand.weapon_stats;
+            if (ws) {
+              npcAtkWidgetState.diceCount = ws.dice_count || npcAtkWidgetState.diceCount;
+              npcAtkWidgetState.diceType  = ws.dice_type  || npcAtkWidgetState.diceType;
+            }
           } else if (wInfo) {
             wInfo.textContent = `👊 Unarmed (${c.attack_dice_count||1}d${c.attack_dice_type||6})`;
           }
         } catch {}
+        // Mount widget after weapon info is known (so defaults are correct)
+        const host = area.querySelector('#npc-atk-widget-host');
+        if (host && typeof createDiceRollWidget === 'function') {
+          createDiceRollWidget(host, {
+            label: 'Attack Dice',
+            defaultDiceCount: npcAtkWidgetState.diceCount,
+            defaultDiceType:  npcAtkWidgetState.diceType,
+            showDiceSelector: true,
+            showAdvantage:    true,
+            showRollButton:   false,  // Roll Attack button below triggers
+            onStateChange: (s) => { npcAtkWidgetState = s; },
+          });
+        }
       })();
-
-      // Advantage toggle
-      area.querySelectorAll('#npc-atk-adv-toggle button').forEach(b => {
-        b.addEventListener('click', () => {
-          area.querySelectorAll('#npc-atk-adv-toggle button').forEach(x => x.classList.toggle('active', x === b));
-        });
-      });
 
       // Roll Attack button
       const atkBtn = area.querySelector('#btn-npc-roll-attack');
@@ -773,14 +782,15 @@ async function renderCharDetail() {
         atkBtn.addEventListener('click', async () => {
           const targetId = parseInt(atkTarget.value);
           if (!targetId) { showToast('Select a target'); return; }
-          const advBtn = area.querySelector('#npc-atk-adv-toggle button.active');
-          const advMode = advBtn ? advBtn.dataset.mode : 'normal';
           const resultDiv = area.querySelector('#npc-atk-result');
           resultDiv.innerHTML = '<span style="color:var(--text-muted)">Rolling...</span>';
           try {
             const res = await api.post('/api/combat/execute-attack', {
               attacker_id: c.id, target_id: targetId,
-              attack_type: 'weapon', advantage: advMode,
+              attack_type: 'weapon',
+              advantage:  npcAtkWidgetState.advantageMode || 'normal',
+              dice_count: npcAtkWidgetState.diceCount,
+              dice_type:  npcAtkWidgetState.diceType,
             });
             let html = '';
             if (res.hit) {
@@ -835,23 +845,26 @@ async function renderCharDetail() {
     }
   }
 
-  // Phase 6: Place at Table / Show HP toggles
+  // Phase 6 / FIX 1: Place at Table / Show HP toggles — use dedicated endpoint
+  // (server broadcasts `table.updated` to all session clients)
   const placeChk = area.querySelector('#npc-place-table');
   if (placeChk) {
     placeChk.addEventListener('change', async () => {
-      await api.put(`/api/characters/${c.id}`, { place_at_table: placeChk.checked });
-      addLog('gm.npc', `${c.name}: Place at Table = ${placeChk.checked}`);
-      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
-        ws.ws.send(JSON.stringify({ type: 'table.updated' }));
+      try {
+        await api.patch(`/api/characters/${c.id}/table-visibility`,
+                        { is_at_table: placeChk.checked });
+        addLog('gm.npc', `${c.name}: Place at Table = ${placeChk.checked}`);
+      } catch (e) { showToast('Failed to update table visibility'); }
     });
   }
   const showHpChk = area.querySelector('#npc-show-hp');
   if (showHpChk) {
     showHpChk.addEventListener('change', async () => {
-      await api.put(`/api/characters/${c.id}`, { show_hp_to_players: showHpChk.checked });
-      addLog('gm.npc', `${c.name}: Show HP = ${showHpChk.checked}`);
-      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
-        ws.ws.send(JSON.stringify({ type: 'table.updated' }));
+      try {
+        await api.patch(`/api/characters/${c.id}/table-visibility`,
+                        { show_hp_to_players: showHpChk.checked });
+        addLog('gm.npc', `${c.name}: Show HP = ${showHpChk.checked}`);
+      } catch (e) { showToast('Failed to update HP visibility'); }
     });
   }
 
@@ -2453,6 +2466,10 @@ function openItemEditor(itemId = null) {
     $('#item-ed-weight').value = item.weight || 0;
     $('#item-ed-equippable').checked = item.equippable;
     $('#item-ed-consumable').checked = item.consumable;
+    // FIX 6: potion identity
+    $('#item-ed-is-potion').checked = !!item.is_potion;
+    $('#potion-identity-section').classList.toggle('hidden', !item.is_potion);
+    _setPotionIcon(item.potion_icon || '🧪');
     $('#item-ed-mana-cost').value = item.mana_cost || 0;
     $('#item-ed-tags').value = (item.tags || []).join(', ');
     // Weapon stats
@@ -3730,6 +3747,14 @@ ws.on('combat.character_killed', d => {
   if (activeCombat) {
     showToast(`💀 ${d.character_name} has been slain!`);
   }
+});
+
+// FIX 7: Player dismissed a trade modal → log to GM's roll log
+ws.on('trade.dismissed', d => {
+  const name = d.player_name || `Player #${d.player_id}`;
+  const npc  = d.npc_name || 'merchant';
+  addLog('gm.trade', `🤝 ${name} dismissed the trade with ${npc}`);
+  showToast(`${name} dismissed the trade`);
 });
 
 // ══════════════════════════════════════════════════════════════

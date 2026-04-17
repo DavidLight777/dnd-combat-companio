@@ -1148,6 +1148,41 @@ function openTransferModal() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// FIX 7 — UNIVERSAL MODAL DISMISS HELPER
+// ══════════════════════════════════════════════════════════════
+/**
+ * Make any modal overlay dismissible via ✕ button, outside click, or Escape.
+ * @param {HTMLElement} modalEl - The overlay root element
+ * @param {function} onDismiss - Callback (reason: 'btn'|'outside'|'escape')
+ */
+function makeModalDismissible(modalEl, onDismiss = null) {
+  if (!modalEl) return;
+  function close(reason) {
+    if (modalEl.parentNode) modalEl.parentNode.removeChild(modalEl);
+    document.removeEventListener('keydown', escHandler);
+    if (typeof onDismiss === 'function') {
+      try { onDismiss(reason); } catch (e) { console.warn('modal onDismiss:', e); }
+    }
+  }
+  // ✕ close button
+  const closeBtn = modalEl.querySelector('.modal-close-btn');
+  if (closeBtn) closeBtn.addEventListener('click', () => close('btn'));
+  // Outside click (only if target is the overlay itself)
+  modalEl.addEventListener('click', e => {
+    if (e.target === modalEl) close('outside');
+  });
+  // Escape key
+  function escHandler(e) {
+    if (e.key === 'Escape') close('escape');
+  }
+  document.addEventListener('keydown', escHandler);
+  // Expose close function so external code can dismiss cleanly
+  modalEl._dismiss = close;
+  return close;
+}
+window.makeModalDismissible = makeModalDismissible;
+
+// ══════════════════════════════════════════════════════════════
 // TRADE MODAL (opened via WS event from GM)
 // ══════════════════════════════════════════════════════════════
 let activeTradeOverlay = null;
@@ -1156,19 +1191,46 @@ function openTradeModal(tradeId, npcId, npcName) {
   if (activeTradeOverlay) activeTradeOverlay.remove();
 
   const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay trade-modal';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `
-    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:90%;max-width:550px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
-      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg-surface-2)">
-        <h3 style="flex:1;font-size:0.95rem">🤝 Trading with ${npcName}</h3>
-        <span id="trade-balance" style="font-size:0.8rem;color:var(--accent);margin-right:12px"></span>
+    <div class="modal-content" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:90%;max-width:550px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+      <div class="modal-header" style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg-surface-2);gap:12px">
+        <h3 class="modal-title" style="flex:1;font-size:0.95rem;margin:0">🤝 Trading with ${npcName}</h3>
+        <span id="trade-balance" style="font-size:0.8rem;color:var(--accent)"></span>
+        <button class="modal-close-btn btn btn-ghost btn-xs" title="Close (Esc) — trade ends">✕</button>
       </div>
       <div id="trade-shop-list" style="padding:12px;overflow-y:auto;flex:1;font-size:0.82rem"></div>
       <div id="trade-result" style="padding:8px 16px;font-size:0.8rem"></div>
+      <div style="padding:6px 16px;font-size:0.68rem;color:var(--text-muted);text-align:center;border-top:1px solid var(--border)">
+        You can ask the GM to reopen this trade
+      </div>
     </div>
   `;
   document.body.appendChild(overlay);
   activeTradeOverlay = overlay;
+
+  // FIX 7: Dismissible — on dismiss, close trade + broadcast to GM
+  makeModalDismissible(overlay, async (reason) => {
+    activeTradeOverlay = null;
+    // Tell server to close the trade session
+    try {
+      await api.post(`/api/trade/${tradeId}/close`, {});
+    } catch {}
+    // Notify GM via WS so they see dismissal in log
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.ws.send(JSON.stringify({
+        type: 'trade.dismissed',
+        trade_id: tradeId,
+        player_id: CHAR_ID,
+        player_name: char?.name || 'Player',
+        npc_id: npcId,
+        npc_name: npcName,
+        reason,
+      }));
+    }
+    showToast('Trade ended');
+  });
 
   async function loadTradeShop() {
     try {
@@ -1304,10 +1366,12 @@ async function loadCombatBanner() {
     if (!res.active) {
       banner.style.display = 'none';
       playerCombat = null;
+      if (typeof hideReactionsPanel === 'function') hideReactionsPanel();  // FIX 4
       return;
     }
     playerCombat = res.combat;
     renderCombatBanner();
+    if (typeof renderReactionsPanel === 'function') renderReactionsPanel();  // FIX 4
   } catch {
     banner.style.display = 'none';
   }
@@ -1467,9 +1531,13 @@ async function loadPlayerBattleLog(combatId, container) {
   } catch(e) {}
 }
 
+// FIX 3: Initiative modal uses universal dice widget (D20, advantage toggle, no dice selector)
+// FIX 7: Modal is dismissible — on dismiss, shows persistent "pending" banner
 function showInitiativeRollModal(combatId, bonus) {
   // Remove existing modal if any
   document.querySelectorAll('.initiative-roll-modal').forEach(e => e.remove());
+  // Remove any existing "pending" banner
+  document.querySelectorAll('.initiative-pending-banner').forEach(e => e.remove());
 
   async function submitRoll(d20) {
     await api.post(`/api/combat/${combatId}/set-player-initiative`, {
@@ -1490,37 +1558,79 @@ function showInitiativeRollModal(combatId, bonus) {
     loadCombatBanner();
   }
 
+  function _showPendingBanner() {
+    const banner = document.createElement('div');
+    banner.className = 'initiative-pending-banner';
+    banner.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:9998;background:var(--accent-red);color:white;padding:8px 16px;text-align:center;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4)';
+    banner.innerHTML = '⚔️ Initiative pending — tap to roll';
+    banner.addEventListener('click', () => {
+      banner.remove();
+      showInitiativeRollModal(combatId, bonus);
+    });
+    document.body.appendChild(banner);
+  }
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay initiative-roll-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease';
   overlay.innerHTML = `
-    <div class="modal-content" style="max-width:320px;text-align:center;padding:24px">
-      <h2 style="margin:0 0 16px;font-size:1.3rem;color:var(--accent)">⚔️ Roll Initiative</h2>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 20px">
-        Bonus: <strong style="color:var(--text-primary)">+${bonus}</strong>
-      </p>
-      <button class="btn btn-primary" id="btn-auto-roll-init" style="width:100%;padding:14px;font-size:1.1rem;margin-bottom:12px">
-        🎲 Roll d20
-      </button>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+    <div class="modal-content" style="max-width:360px;padding:20px;background:var(--bg-surface);border:1px solid var(--border-active);border-radius:var(--r-lg);box-shadow:0 8px 32px rgba(0,0,0,0.5);width:90%">
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+        <h3 class="modal-title" style="color:var(--accent);margin:0;font-size:1.1rem">⚔️ Roll Initiative</h3>
+        <button class="modal-close-btn btn btn-ghost btn-xs" title="Close (Esc)" style="font-size:1rem;padding:4px 8px">✕</button>
+      </div>
+      <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted)">
+        Initiative Bonus: <strong style="color:var(--text-primary)">+${bonus}</strong>
+      </div>
+      <div id="init-widget-host" style="margin-bottom:12px"></div>
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
         <div style="flex:1;height:1px;background:var(--border)"></div>
-        <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase">or enter manually</span>
+        <span style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase">or enter manually</span>
         <div style="flex:1;height:1px;background:var(--border)"></div>
       </div>
       <input type="number" id="init-roll-input" placeholder="1–20"
-        style="width:100%;padding:10px;font-size:1rem;text-align:center;box-sizing:border-box;margin-top:8px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface-2);color:var(--text-primary)"
+        style="width:100%;padding:10px;font-size:1rem;text-align:center;margin:0;box-sizing:border-box"
         min="1" max="20">
     </div>
   `;
   document.body.appendChild(overlay);
 
-  // Auto roll — submit immediately
-  overlay.querySelector('#btn-auto-roll-init').addEventListener('click', async () => {
-    const d20 = Math.floor(Math.random() * 20) + 1;
-    const btn = overlay.querySelector('#btn-auto-roll-init');
-    btn.disabled = true;
-    btn.textContent = `🎲 Rolled: ${d20}  (${d20} + ${bonus} = ${d20 + bonus})`;
-    await submitRoll(d20);
-  });
+  // Mount universal dice widget (FIX 3): D20 fixed, advantage toggle only
+  const widgetHost = overlay.querySelector('#init-widget-host');
+  if (typeof createDiceRollWidget === 'function') {
+    createDiceRollWidget(widgetHost, {
+      label: 'Initiative Roll',
+      defaultDiceCount: 1,
+      defaultDiceType: 20,
+      fixedDiceType: 20,
+      showDiceSelector: false,     // D20 always
+      showAdvantage: true,
+      showRollButton: true,
+      rollButtonText: 'Roll d20',
+      onRoll: async ({ advantageMode }) => {
+        const roll1 = Math.floor(Math.random() * 20) + 1;
+        let finalRoll = roll1;
+        let breakdown = `D20(${roll1}) + bonus(${bonus >= 0 ? '+' : ''}${bonus}) = ${roll1 + bonus}`;
+        if (advantageMode === 'advantage' || advantageMode === 'disadvantage') {
+          const roll2 = Math.floor(Math.random() * 20) + 1;
+          finalRoll = advantageMode === 'advantage' ? Math.max(roll1, roll2) : Math.min(roll1, roll2);
+          const label = advantageMode === 'advantage' ? 'ADV' : 'DISADV';
+          breakdown = `${label}: D20[${roll1}, ${roll2}] → took ${finalRoll} + bonus(${bonus >= 0 ? '+' : ''}${bonus}) = ${finalRoll + bonus}`;
+        }
+        // Submit after showing result briefly
+        setTimeout(() => submitRoll(finalRoll), 600);
+        return breakdown;
+      },
+      resultFormatter: (breakdown) => breakdown,
+    });
+  } else {
+    // Fallback
+    widgetHost.innerHTML = '<button class="btn btn-primary" id="btn-auto-roll-init" style="width:100%;padding:14px">🎲 Roll d20</button>';
+    widgetHost.querySelector('#btn-auto-roll-init').addEventListener('click', async () => {
+      const d20 = Math.floor(Math.random() * 20) + 1;
+      await submitRoll(d20);
+    });
+  }
 
   // Manual entry — submit on Enter or blur
   const input = overlay.querySelector('#init-roll-input');
@@ -1533,6 +1643,19 @@ function showInitiativeRollModal(combatId, bonus) {
   }
   input.addEventListener('keydown', e => { if (e.key === 'Enter') handleManual(); });
   input.addEventListener('blur', () => { if (input.value) handleManual(); });
+
+  // FIX 7: Dismissible (✕, outside click, Escape) → show pending banner
+  if (typeof makeModalDismissible === 'function') {
+    makeModalDismissible(overlay, (reason) => {
+      _showPendingBanner();
+    });
+  } else {
+    // Minimal fallback for dismissal
+    overlay.querySelector('.modal-close-btn')?.addEventListener('click', () => { overlay.remove(); _showPendingBanner(); });
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); _showPendingBanner(); } });
+    const esc = e => { if (e.key === 'Escape') { overlay.remove(); _showPendingBanner(); document.removeEventListener('keydown', esc); } };
+    document.addEventListener('keydown', esc);
+  }
 }
 
 function formatTimer(totalSeconds) {
@@ -1630,14 +1753,17 @@ function restoreGmTimer() {
 ws.on('combat.created', d => {
   loadCombatBanner();
 });
-ws.on('combat.started', d => {
-  loadCombatBanner();
+ws.on('combat.started', async d => {
+  await loadCombatBanner();
+  loadTableView();  // FIX 1: refresh gold-border + Enemy badges
+  if (typeof showReactionsPanel === 'function') showReactionsPanel();  // FIX 4
   showToast('⚔️ Combat started!');
 });
-ws.on('combat.turn_changed', d => {
+ws.on('combat.turn_changed', async d => {
   if (playerCombat) {
-    // Quick update without API call
-    loadCombatBanner();
+    await loadCombatBanner();
+    loadTableView();  // FIX 1: update gold border on new current-turn card
+    if (typeof refreshReactionCooldowns === 'function') refreshReactionCooldowns();  // FIX 4
     if (d.current_character_id == CHAR_ID) {
       showToast('🗡️ Your turn!');
     }
@@ -1648,6 +1774,8 @@ ws.on('combat.ended', d => {
   const banner = $('#combat-banner');
   if (banner) banner.style.display = 'none';
   if (playerTimerInterval) { clearInterval(playerTimerInterval); playerTimerInterval = null; }
+  loadTableView();  // FIX 1: clear gold border + Enemy badges
+  if (typeof hideReactionsPanel === 'function') hideReactionsPanel();  // FIX 4
   showToast('Combat ended');
 });
 ws.on('combat.roll_initiative_request', d => {
@@ -2035,10 +2163,42 @@ async function loadTableView() {
   try {
     const chars = await api.get(`/api/sessions/${SESSION_CODE}/characters`);
     tableParticipants = chars.filter(c =>
-      (c.id !== CHAR_ID && !c.is_npc) || (c.is_npc && c.place_at_table)
+      (c.id !== CHAR_ID && !c.is_npc) || (c.is_npc && (c.is_at_table || c.place_at_table))
     );
     renderTableView();
   } catch (e) { console.warn('loadTableView:', e); }
+}
+
+function _statusIconsHtml(c, max = 3) {
+  // char has `status_effects` JSON-string; parse safely
+  let arr = [];
+  try {
+    const raw = c.status_effects;
+    if (Array.isArray(raw)) arr = raw;
+    else if (typeof raw === 'string' && raw.trim().startsWith('[')) arr = JSON.parse(raw);
+  } catch { arr = []; }
+  if (!arr.length) return '';
+  const shown = arr.slice(0, max).map(e =>
+    `<span title="${e.name || ''}" style="font-size:0.72rem">${e.icon || '⚡'}</span>`
+  ).join('');
+  const extra = arr.length > max
+    ? `<span style="font-size:0.65rem;color:var(--text-muted)">+${arr.length - max}</span>`
+    : '';
+  return `<div class="tc-status-icons" style="display:flex;gap:2px;align-items:center">${shown}${extra}</div>`;
+}
+
+function _isNpcInActiveCombat(c) {
+  if (!playerCombat || !c.is_npc) return false;
+  return (playerCombat.participants || []).some(p =>
+    p.character_id === c.id && p.is_active
+  );
+}
+
+function _currentTurnCharacterId() {
+  if (!playerCombat) return null;
+  const curP = (playerCombat.participants || [])
+    .find(p => p.id === playerCombat.current_participant_id);
+  return curP ? curP.character_id : null;
 }
 
 function renderTableView() {
@@ -2048,28 +2208,63 @@ function renderTableView() {
     grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No participants at table</span>';
     return;
   }
+  const curTurnId = _currentTurnCharacterId();
   grid.innerHTML = tableParticipants.map(c => {
     const sel = c.id === selectedTargetId ? 'selected' : '';
+    const isCurTurn = curTurnId === c.id;
+    const curCls = isCurTurn ? ' current-turn' : '';
     const hpPct = c.max_hp > 0 ? Math.round(c.current_hp / c.max_hp * 100) : 0;
     const hpColor = hpPct > 60 ? 'var(--hp-high)' : hpPct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
-    let roleIcon = '';
-    if (c.is_npc) {
-      roleIcon = c.is_gm_controlled ? '⚔️' : '👤';
+    const token = c.token_color || 'var(--accent)';
+    // Role badge
+    let roleBadge = '';
+    if (!c.is_npc) {
+      roleBadge = `<span class="tc-badge badge-player" style="background:rgba(74,127,192,0.18);color:#7ba8d9;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">PLAYER</span>`;
+    } else if (c.is_merchant) {
+      roleBadge = `<span class="tc-badge badge-merchant" style="background:rgba(74,127,192,0.18);color:#7ba8d9;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">🛒 MERCHANT</span>`;
+    } else if (_isNpcInActiveCombat(c)) {
+      roleBadge = `<span class="tc-badge badge-enemy" style="background:rgba(184,64,64,0.20);color:#e07878;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">⚔️ ENEMY</span>`;
+    } else {
+      roleBadge = `<span class="tc-badge badge-npc" style="background:rgba(138,125,110,0.20);color:#b0a392;padding:1px 6px;border-radius:8px;font-size:0.62rem;font-weight:600">👤 NPC</span>`;
     }
+    // HP visibility: teammates always, NPCs only if show_hp_to_players
     const showHp = !c.is_npc || c.show_hp_to_players;
-    return `<div class="table-card ${sel}" data-target-id="${c.id}">
-      <div class="tc-name">${roleIcon} ${c.name}</div>
-      ${c.is_npc ? `<div class="tc-role">${c.is_gm_controlled ? 'Enemy' : 'NPC'}</div>` : ''}
-      ${showHp ? `<div class="tc-hp-bar"><div class="tc-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>` : ''}
+    const hpHtml = showHp
+      ? `<div class="tc-hp-row" style="display:flex;align-items:center;gap:4px;margin-top:3px">
+          <span style="font-size:0.65rem;color:var(--text-muted);font-variant-numeric:tabular-nums">${c.current_hp}/${c.max_hp}</span>
+          <div class="tc-hp-bar" style="flex:1;height:4px;background:var(--bg-surface-3);border-radius:2px;overflow:hidden"><div class="tc-hp-fill" style="width:${hpPct}%;height:100%;background:${hpColor};transition:width .3s"></div></div>
+        </div>`
+      : `<div class="tc-hp-hidden" style="font-size:0.65rem;color:var(--text-faint);margin-top:3px">HP hidden</div>`;
+
+    const clickable = c.is_npc; // only NPCs are valid attack targets
+    return `<div class="table-card ${sel}${curCls}" data-target-id="${c.id}" data-is-npc="${c.is_npc ? '1' : '0'}"
+             style="min-width:140px;flex:0 0 auto;padding:6px 8px;border-radius:var(--r-md);
+                    background:var(--bg-surface);
+                    border:2px solid ${isCurTurn ? 'var(--accent)' : (sel ? 'var(--accent)' : 'var(--border)')};
+                    ${isCurTurn ? 'box-shadow:0 0 0 1px var(--accent-glow);' : ''}
+                    cursor:${clickable ? 'pointer' : 'default'};transition:all .15s">
+      <div class="tc-head" style="display:flex;align-items:center;gap:5px;margin-bottom:2px">
+        <span class="tc-token" style="width:10px;height:10px;border-radius:50%;background:${token};flex-shrink:0;border:1px solid var(--border)"></span>
+        <span class="tc-name" style="font-weight:600;font-size:0.8rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>
+        ${!c.is_alive ? '<span style="font-size:0.72rem" title="Down">💀</span>' : ''}
+      </div>
+      <div class="tc-meta" style="display:flex;align-items:center;gap:4px;justify-content:space-between">
+        ${roleBadge}
+        ${_statusIconsHtml(c, 3)}
+      </div>
+      ${hpHtml}
     </div>`;
   }).join('');
 
   grid.querySelectorAll('.table-card').forEach(card => {
+    const isNpc = card.dataset.isNpc === '1';
+    if (!isNpc) return; // teammates not selectable as targets
     card.addEventListener('click', () => {
       const tid = parseInt(card.dataset.targetId);
       selectedTargetId = tid === selectedTargetId ? null : tid;
       renderTableView();
       updateTargetInfo();
+      renderActionMenu(); // refresh so Attack card reflects target availability
     });
   });
 }
@@ -2095,108 +2290,551 @@ if ($('#btn-clear-target')) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// PHASE 6 — ACTION MENU
+// FIX 2 — ACTION MENU (2×2 card grid with slide-in confirmation)
 // ══════════════════════════════════════════════════════════════
+
+// Confirmation panel — rendered inside #action-menu-body, replaces cards
+function _closeConfirmPanel() {
+  const p = document.getElementById('action-confirm-panel');
+  if (p) p.remove();
+  renderActionMenu();
+}
+
+function _mountConfirmPanel(innerHtml) {
+  const body = $('#action-menu-body');
+  if (!body) return null;
+  body.innerHTML = `<div id="action-confirm-panel" class="action-confirm slide-in"
+    style="width:100%;background:var(--bg-surface-2);border:1px solid var(--border-active);
+           border-radius:var(--r-md);padding:10px 12px">
+    ${innerHtml}
+  </div>`;
+  return document.getElementById('action-confirm-panel');
+}
+
+function _actionCard({id, icon, label, sub, subColor = 'var(--text-muted)'}) {
+  return `<div class="action-card" id="${id}" role="button" tabindex="0"
+            style="flex:1 1 140px;min-width:140px;background:var(--bg-surface);
+                   border:1px solid var(--border);border-radius:var(--r-md);
+                   padding:10px;cursor:pointer;transition:all .15s;
+                   display:flex;flex-direction:column;align-items:center;gap:3px;
+                   text-align:center">
+    <div class="ac-icon" style="font-size:1.5rem">${icon}</div>
+    <div style="font-weight:600;font-size:0.82rem">${label}</div>
+    <div class="ac-sub" style="font-size:0.68rem;color:${subColor}">${sub}</div>
+  </div>`;
+}
+
 function renderActionMenu() {
   const body = $('#action-menu-body');
   if (!body || !char) return;
-  let html = '';
 
-  // Attack button (if weapon equipped)
-  const wpn = inventoryData?.items?.find(i => i.is_equipped && i.equipped_slot === 'main_hand' && i.weapon_stats);
+  // Ensure 2×2 wrapping
+  body.style.display = 'flex';
+  body.style.flexWrap = 'wrap';
+  body.style.gap = '8px';
+
+  const items = inventoryData?.items || [];
+
+  // Attack: main_hand weapon equipped
+  const wpn = items.find(i => i.is_equipped && i.equipped_slot === 'main_hand' && i.weapon_stats);
+  // Potion: any consumable in category potion
+  const potions = items.filter(i => i.consumable && (i.category || '').toLowerCase() === 'potion');
+  // Use Item: non-consumable with use_effect defined (not a potion)
+  const useables = items.filter(i =>
+    !i.consumable && i.use_effect && (i.category || '').toLowerCase() !== 'potion'
+  );
+  // Ability: ≥1 active/reaction ability not all on cooldown
+  const activeAbs = (abilitiesData || []).filter(a =>
+    a.ability_type !== 'passive' && a.is_unlocked !== false && (a.cooldown_remaining || 0) <= 0
+  );
+
+  const cards = [];
   if (wpn) {
     const ws = wpn.weapon_stats;
-    html += `<div class="action-card" id="action-attack">
-      <div class="ac-icon">⚔️</div>Attack
-      <div class="ac-sub">${wpn.name} · ${ws.dice_count}d${ws.dice_type}</div>
-    </div>`;
+    cards.push(_actionCard({
+      id: 'action-attack', icon: '⚔️', label: 'Attack',
+      sub: `${wpn.name} · ${ws.dice_count}d${ws.dice_type}`,
+    }));
   }
-
-  // Drink Potion (if any potion in inventory)
-  const potions = inventoryData?.items?.filter(i => i.consumable && i.category === 'potion') || [];
+  if (activeAbs.length) {
+    cards.push(_actionCard({
+      id: 'action-ability', icon: '✨', label: 'Ability',
+      sub: `${activeAbs.length} ready`,
+    }));
+  }
   if (potions.length) {
-    html += `<div class="action-card" id="action-potion">
-      <div class="ac-icon">🧪</div>Drink Potion
-      <div class="ac-sub">${potions.length} available</div>
-    </div>`;
+    cards.push(_actionCard({
+      id: 'action-potion', icon: '🧪', label: 'Potion',
+      sub: `${potions.length} available`,
+    }));
+  }
+  if (useables.length) {
+    cards.push(_actionCard({
+      id: 'action-use-item', icon: '🎒', label: 'Use Item',
+      sub: `${useables.length} available`,
+    }));
   }
 
-  // Use Item (consumable with use_effect, not potions)
-  const usables = inventoryData?.items?.filter(i => i.consumable && i.category !== 'potion') || [];
-  if (usables.length) {
-    html += `<div class="action-card" id="action-use-item">
-      <div class="ac-icon">🎁</div>Use Item
-      <div class="ac-sub">${usables.length} available</div>
-    </div>`;
-  }
+  body.innerHTML = cards.length
+    ? cards.join('')
+    : '<span class="text-muted" style="font-size:0.82rem;padding:8px">No actions available — equip a weapon, learn an ability, or get items</span>';
 
-  if (!html) html = '<span class="text-muted" style="font-size:0.8rem">No actions available — equip a weapon or get items</span>';
-  body.innerHTML = html;
+  // Hover / click styling
+  body.querySelectorAll('.action-card').forEach(el => {
+    el.addEventListener('mouseenter', () => { el.style.borderColor = 'var(--accent)'; });
+    el.addEventListener('mouseleave', () => { el.style.borderColor = 'var(--border)'; });
+  });
 
-  // Wire attack
-  const atkBtn = body.querySelector('#action-attack');
-  if (atkBtn) {
-    atkBtn.addEventListener('click', () => executeAttackAction(wpn));
-  }
-
-  // Wire potion
-  const potBtn = body.querySelector('#action-potion');
-  if (potBtn) {
-    potBtn.addEventListener('click', () => showPotionPicker(potions));
-  }
-
-  // Wire use item
-  const itemBtn = body.querySelector('#action-use-item');
-  if (itemBtn) {
-    itemBtn.addEventListener('click', () => showPotionPicker(usables));
-  }
+  const atkBtn   = body.querySelector('#action-attack');
+  const abiBtn   = body.querySelector('#action-ability');
+  const potBtn   = body.querySelector('#action-potion');
+  const itemBtn  = body.querySelector('#action-use-item');
+  if (atkBtn)  atkBtn.addEventListener('click',   () => openAttackConfirm(wpn));
+  if (abiBtn)  abiBtn.addEventListener('click',   () => openAbilityPicker(activeAbs));
+  if (potBtn)  potBtn.addEventListener('click',   () => openItemPicker(potions,  'Potions',   '🧪'));
+  if (itemBtn) itemBtn.addEventListener('click',  () => openItemPicker(useables, 'Use Item', '🎒'));
 }
 
-async function executeAttackAction(wpn) {
+// ── Attack confirmation panel ───────────────────────────────
+function openAttackConfirm(wpn) {
+  if (!wpn) return;
   if (!selectedTargetId) {
-    showToast('Select a target first!', 'warn');
+    // Inline warning instead of modal
+    const body = $('#action-menu-body');
+    if (!body) return;
+    const existing = document.getElementById('action-inline-warn');
+    if (existing) existing.remove();
+    const warn = document.createElement('div');
+    warn.id = 'action-inline-warn';
+    warn.style.cssText = 'width:100%;padding:6px 10px;margin-top:4px;background:rgba(184,64,64,0.12);border:1px solid var(--accent-red);border-radius:var(--r-sm);color:#e07878;font-size:0.78rem';
+    warn.innerHTML = '⚠️ Select a target first (tap an NPC card at the table above)';
+    body.appendChild(warn);
+    setTimeout(() => warn.remove(), 4000);
     return;
   }
-  const advMode = _advantageModes['attack'] || 'normal';
-  if (!confirm(`Attack ${tableParticipants.find(c=>c.id===selectedTargetId)?.name || 'target'} with ${wpn.name}? (${advMode})`)) return;
-  try {
-    const res = await api.post('/api/combat/execute-attack', {
-      attacker_id: CHAR_ID,
-      target_id: selectedTargetId,
-      advantage: advMode,
-    });
-    addLog(`⚔️ ${res.hit_breakdown}`);
-    if (res.hit) {
-      addLog(`💥 ${res.damage_breakdown}`);
-      addLog(`🛡️ ${res.intake_breakdown}`);
-      if (res.target_downed) addLog(`💀 ${res.target_name} is DOWN!`);
-    }
-    await loadChar();
-    loadTableView();
-  } catch (e) {
-    showToast(e?.body?.detail || 'Attack failed', 'error');
-  }
-}
+  const target = tableParticipants.find(c => c.id === selectedTargetId);
+  const ws = wpn.weapon_stats || { dice_count: 1, dice_type: 6 };
+  const html = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <span style="font-size:1.2rem">⚔️</span>
+      <span style="font-weight:700;flex:1">Attack: ${target ? target.name : '?'}</span>
+      <button class="btn btn-ghost btn-xs" id="ac-cancel">✕</button>
+    </div>
+    <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">
+      Weapon: <strong style="color:var(--text-primary)">${wpn.name}</strong>
+    </div>
+    <div id="ac-dice-widget" style="margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" id="ac-cancel-2">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="ac-confirm">Confirm Attack</button>
+    </div>
+    <div id="ac-result" style="margin-top:8px;font-size:0.78rem"></div>
+  `;
+  const panel = _mountConfirmPanel(html);
+  if (!panel) return;
 
-function showPotionPicker(items) {
-  const names = items.map((it, i) => `${i + 1}. ${it.name} (x${it.quantity})${it.mana_cost ? ' 🔮' + it.mana_cost : ''}`).join('\n');
-  const choice = prompt(`Choose item:\n${names}\nEnter number:`);
-  if (!choice) return;
-  const idx = parseInt(choice) - 1;
-  const item = items[idx];
-  if (!item) return;
-  if (!confirm(`Use ${item.name}?`)) return;
-  api.post(`/api/inventory/${item.inventory_id}/use`, {}).then(res => {
-    if (res.results && res.results.length) {
-      res.results.forEach(r => addLog(`🧪 ${item.name}: ${r}`));
+  // Mount universal dice widget (FIX 3 dependency)
+  const diceHost = panel.querySelector('#ac-dice-widget');
+  let widgetState = { diceCount: ws.dice_count, diceType: ws.dice_type, advantageMode: 'normal' };
+  if (typeof createDiceRollWidget === 'function') {
+    createDiceRollWidget(diceHost, {
+      label: 'Attack Dice',
+      defaultDiceCount: ws.dice_count,
+      defaultDiceType:  ws.dice_type,
+      showDiceSelector: true,
+      showAdvantage:    true,
+      showRollButton:   false,  // confirm button handles the roll
+      onStateChange: (s) => { widgetState = s; },
+    });
+  } else {
+    // Fallback: simple advantage toggle only
+    diceHost.innerHTML = `<div class="adv-toggle" id="ac-adv">
+      <button data-mode="normal" class="active">Normal</button>
+      <button data-mode="advantage">ADV</button>
+      <button data-mode="disadvantage">DISADV</button>
+    </div>`;
+    diceHost.querySelectorAll('#ac-adv button').forEach(b => {
+      b.addEventListener('click', () => {
+        diceHost.querySelectorAll('#ac-adv button').forEach(x => x.classList.toggle('active', x === b));
+        widgetState.advantageMode = b.dataset.mode;
+      });
+    });
+  }
+
+  panel.querySelector('#ac-cancel').addEventListener('click', _closeConfirmPanel);
+  panel.querySelector('#ac-cancel-2').addEventListener('click', _closeConfirmPanel);
+  panel.querySelector('#ac-confirm').addEventListener('click', async () => {
+    const resultEl = panel.querySelector('#ac-result');
+    resultEl.innerHTML = '<span class="text-muted">Rolling...</span>';
+    try {
+      const res = await api.post('/api/combat/execute-attack', {
+        attacker_id: CHAR_ID,
+        target_id:   selectedTargetId,
+        attack_type: 'weapon',
+        advantage:   widgetState.advantageMode || 'normal',
+        dice_count:  widgetState.diceCount,
+        dice_type:   widgetState.diceType,
+      });
+      let out = '';
+      if (res.hit) {
+        out += `<div style="color:var(--accent-green);font-weight:700">${res.critical ? '🎯 CRITICAL HIT!' : '⚔️ HIT!'}</div>`;
+        out += `<div>${res.hit_breakdown}</div>`;
+        out += `<div>${res.damage_breakdown}</div>`;
+        out += `<div>${res.intake_breakdown}</div>`;
+        out += `<div style="font-weight:600;margin-top:3px">${res.target_name}: ${res.final_damage} dmg → ${res.target_hp_after} HP${res.target_downed ? ' 💀 DOWN!' : ''}</div>`;
+      } else {
+        out += `<div style="color:var(--accent-red);font-weight:700">${res.fumble ? '💨 FUMBLE' : '🛡️ MISS'}</div>`;
+        out += `<div>${res.hit_breakdown}</div>`;
+      }
+      resultEl.innerHTML = out;
+      addLog(`⚔️ ${res.hit_breakdown}`);
+      if (res.hit) {
+        addLog(`💥 ${res.damage_breakdown}`);
+        addLog(`🛡️ ${res.intake_breakdown}`);
+        if (res.target_downed) addLog(`💀 ${res.target_name} is DOWN!`);
+      }
+      // WS broadcast
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({
+          type: 'combat.attack_result',
+          attacker_id: CHAR_ID, attacker_name: char.name,
+          target_id:   selectedTargetId, target_name: res.target_name,
+          hit: res.hit, critical: res.critical, fumble: res.fumble,
+          final_damage: res.final_damage, target_hp_after: res.target_hp_after,
+        }));
+      }
+      await loadChar();
+      loadTableView();
+    } catch (e) {
+      const d = e?.body?.detail;
+      resultEl.innerHTML = `<span style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Attack failed')}</span>`;
     }
-    loadChar();
-    loadInventory();
-  }).catch(e => {
-    const d = e?.body?.detail;
-    showToast(typeof d === 'object' ? d.message : String(d || 'Failed'), 'error');
   });
 }
+
+// ── Ability picker confirmation panel ─────────────────────────
+function openAbilityPicker(ablist) {
+  if (!ablist || !ablist.length) { showToast('No ready abilities'); return; }
+  const cur = char?.mana_current ?? 0;
+  const html = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <span style="font-size:1.2rem">✨</span>
+      <span style="font-weight:700;flex:1">Choose an Ability</span>
+      <button class="btn btn-ghost btn-xs" id="ap-close">✕</button>
+    </div>
+    <div id="ap-list" style="display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto">
+      ${(abilitiesData || []).filter(a => a.ability_type !== 'passive' && a.is_unlocked !== false).map(a => {
+        const onCd = (a.cooldown_remaining || 0) > 0;
+        const notEnoughMana = (a.mana_cost || 0) > cur;
+        const disabled = onCd || notEnoughMana;
+        const color = a.color || 'var(--accent)';
+        return `<div class="ap-item ${disabled ? 'disabled' : ''}" data-ca-id="${a.character_ability_id}"
+                 style="padding:6px 8px;background:var(--bg-surface);border-left:3px solid ${color};
+                        border-radius:var(--r-sm);cursor:${disabled ? 'not-allowed' : 'pointer'};
+                        opacity:${disabled ? '0.5' : '1'};transition:background .15s">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:1rem">${a.icon || '⚡'}</span>
+            <strong style="flex:1;font-size:0.82rem">${a.name}</strong>
+            ${a.ability_type === 'reaction' ? '<span style="font-size:0.6rem;color:#f59e0b">reaction</span>' : ''}
+            ${a.mana_cost ? `<span style="font-size:0.7rem;color:${notEnoughMana ? 'var(--accent-red)' : '#60a5fa'}">🔮${a.mana_cost}</span>` : ''}
+            ${a.hp_cost ? `<span style="font-size:0.7rem;color:var(--accent-red)">❤️${a.hp_cost}</span>` : ''}
+            ${onCd ? `<span style="font-size:0.7rem;color:var(--accent-orange)">⏳${a.cooldown_remaining}t</span>` : ''}
+          </div>
+          ${a.flavor_text ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px">${a.flavor_text}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div id="ap-confirm-area" style="margin-top:8px"></div>
+  `;
+  const panel = _mountConfirmPanel(html);
+  if (!panel) return;
+
+  panel.querySelector('#ap-close').addEventListener('click', _closeConfirmPanel);
+
+  panel.querySelectorAll('.ap-item:not(.disabled)').forEach(el => {
+    el.addEventListener('click', () => {
+      const caId = parseInt(el.dataset.caId);
+      const ab = abilitiesData.find(a => a.character_ability_id === caId);
+      if (!ab) return;
+      _mountAbilityConfirm(panel, ab);
+    });
+  });
+}
+
+function _mountAbilityConfirm(panel, ab) {
+  const needsTarget = ab.target_type === 'single' && (!ab.is_passive);
+  const area = panel.querySelector('#ap-confirm-area');
+  if (!area) return;
+  const targets = (tableParticipants || []).filter(t => t.is_npc); // single-target abilities hit NPCs
+  const costLine = [
+    ab.mana_cost ? `🔮 ${ab.mana_cost} mana` : null,
+    ab.hp_cost   ? `❤️ ${ab.hp_cost} HP` : null,
+    ab.cooldown_turns ? `⏳ CD ${ab.cooldown_turns}t` : null,
+  ].filter(Boolean).join(' · ');
+  area.innerHTML = `
+    <div style="padding:8px;background:var(--bg-surface);border-radius:var(--r-sm);border:1px solid var(--border-active)">
+      <div style="font-weight:700;margin-bottom:3px">${ab.icon || '⚡'} ${ab.name}</div>
+      ${ab.flavor_text ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">${ab.flavor_text}</div>` : ''}
+      ${costLine ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px">${costLine}</div>` : ''}
+      ${needsTarget ? `<div style="margin-bottom:6px">
+        <label style="font-size:0.75rem">Target:
+          <select id="ap-target" style="font-size:0.8rem;margin-left:4px;min-width:140px">
+            ${targets.length
+              ? targets.map(t => `<option value="${t.id}" ${t.id === selectedTargetId ? 'selected' : ''}>${t.name}</option>`).join('')
+              : '<option value="">(no targets)</option>'}
+          </select>
+        </label>
+      </div>` : ''}
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="ap-back">← Back</button>
+        <button class="btn btn-primary btn-sm" id="ap-use">Use</button>
+      </div>
+      <div id="ap-result" style="margin-top:6px;font-size:0.78rem"></div>
+    </div>`;
+
+  area.querySelector('#ap-back').addEventListener('click', () => openAbilityPicker(abilitiesData));
+  area.querySelector('#ap-use').addEventListener('click', async () => {
+    const resultEl = area.querySelector('#ap-result');
+    const tgt = needsTarget ? parseInt(area.querySelector('#ap-target')?.value || '') : null;
+    if (needsTarget && !tgt) { resultEl.innerHTML = '<span style="color:var(--accent-red)">Pick a target</span>'; return; }
+    resultEl.innerHTML = '<span class="text-muted">Using...</span>';
+    try {
+      const body = {};
+      if (tgt) body.target_id = tgt;
+      const res = await api.post(`/api/character-abilities/${ab.character_ability_id}/use`, body);
+      let out = '';
+      if (res.results && res.results.length) {
+        out = res.results.map(r => `<div>• ${r}</div>`).join('');
+        res.results.forEach(r => addLog(`✨ ${ab.name}: ${r}`));
+      } else {
+        out = '<div>✅ Ability used</div>';
+      }
+      resultEl.innerHTML = out;
+      await loadChar();
+      await loadAbilities();
+      loadTableView();
+    } catch (e) {
+      const d = e?.body?.detail;
+      resultEl.innerHTML = `<span style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Failed')}</span>`;
+    }
+  });
+}
+
+// ── Potion / Use-Item picker confirmation panel ─────────────
+function openItemPicker(items, title, icon) {
+  if (!items || !items.length) return;
+  const html = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <span style="font-size:1.2rem">${icon}</span>
+      <span style="font-weight:700;flex:1">${title}</span>
+      <button class="btn btn-ghost btn-xs" id="ip-close">✕</button>
+    </div>
+    <div id="ip-list" style="display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto">
+      ${items.map(it => {
+        const rarityCls = it.rarity ? ` rarity-${it.rarity}` : '';
+        const effDesc = _summarizeUseEffect(it);
+        return `<div class="ip-item" data-inv-id="${it.inventory_id}"
+                 style="padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border);
+                        border-radius:var(--r-sm);cursor:pointer;transition:all .15s">
+          <div style="display:flex;align-items:center;gap:6px">
+            <strong class="${rarityCls}" style="flex:1;font-size:0.82rem">${it.name}</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted)">×${it.quantity}</span>
+            ${it.mana_cost ? `<span style="font-size:0.7rem;color:#60a5fa">🔮${it.mana_cost}</span>` : ''}
+          </div>
+          ${effDesc ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px">${effDesc}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div id="ip-confirm-area" style="margin-top:8px"></div>
+  `;
+  const panel = _mountConfirmPanel(html);
+  if (!panel) return;
+  panel.querySelector('#ip-close').addEventListener('click', _closeConfirmPanel);
+  panel.querySelectorAll('.ip-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const invId = parseInt(el.dataset.invId);
+      const it = items.find(x => x.inventory_id === invId);
+      if (!it) return;
+      _mountItemConfirm(panel, it);
+    });
+  });
+}
+
+function _summarizeUseEffect(it) {
+  // Derive a short human description of what the item does
+  try {
+    const ue = it.use_effect;
+    if (!ue) {
+      // Legacy effect_type/effect_value
+      if (it.effect_type && it.effect_value) return `${it.effect_type}: ${it.effect_value}`;
+      return it.description || '';
+    }
+    const effs = Array.isArray(ue) ? ue : (ue.effects || []);
+    const parts = effs.map(e => {
+      if (e.type === 'heal')         return `+${e.value} HP`;
+      if (e.type === 'damage')       return `-${e.value} HP`;
+      if (e.type === 'mana_restore') return `+${e.value} mana`;
+      if (e.type === 'stat_boost')   return `+${e.value} ${e.stat} (${e.duration_turns || '?'}t)`;
+      if (e.type === 'apply_status') return `apply status`;
+      return e.description || e.type || '';
+    }).filter(Boolean);
+    if (parts.length) return parts.join(' · ');
+    return it.description || '';
+  } catch { return it.description || ''; }
+}
+
+function _mountItemConfirm(panel, it) {
+  const area = panel.querySelector('#ip-confirm-area');
+  if (!area) return;
+  const rarityCls = it.rarity ? ` rarity-${it.rarity}` : '';
+  area.innerHTML = `
+    <div style="padding:8px;background:var(--bg-surface);border-radius:var(--r-sm);border:1px solid var(--border-active)">
+      <div style="font-weight:700;margin-bottom:3px"><span class="${rarityCls}">${it.name}</span></div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">${_summarizeUseEffect(it) || it.description || ''}</div>
+      ${it.mana_cost ? `<div style="font-size:0.72rem;color:#60a5fa;margin-bottom:6px">🔮 ${it.mana_cost} mana</div>` : ''}
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="ip-back">← Back</button>
+        <button class="btn btn-primary btn-sm" id="ip-use">Use</button>
+      </div>
+      <div id="ip-result" style="margin-top:6px;font-size:0.78rem"></div>
+    </div>`;
+  area.querySelector('#ip-back').addEventListener('click', _closeConfirmPanel);
+  area.querySelector('#ip-use').addEventListener('click', async () => {
+    const resultEl = area.querySelector('#ip-result');
+    resultEl.innerHTML = '<span class="text-muted">Using...</span>';
+    const hpBefore = char?.current_hp ?? 0;
+    try {
+      const res = await api.post(`/api/inventory/${it.inventory_id}/use`, {});
+      const results = res.results || [];
+      let out = results.length ? results.map(r => `<div>• ${r}</div>`).join('') : '<div>✅ Used</div>';
+      await loadChar();
+      await loadInventory();
+      const hpAfter = char?.current_hp ?? hpBefore;
+      if (hpAfter !== hpBefore) {
+        out = `<div style="font-weight:700;margin-bottom:3px">HP: ${hpBefore} → ${hpAfter}</div>` + out;
+      }
+      resultEl.innerHTML = out;
+      results.forEach(r => addLog(`${(it.category||'').toLowerCase()==='potion'?'🧪':'🎒'} ${it.name}: ${r}`));
+    } catch (e) {
+      const d = e?.body?.detail;
+      resultEl.innerHTML = `<span style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Failed')}</span>`;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// FIX 4 — REACTIONS PANEL (combat-only, collapsible)
+// ══════════════════════════════════════════════════════════════
+let _reactionsCollapsed = false;
+
+function _hasCombatActive() {
+  return !!(playerCombat && playerCombat.status === 'active');
+}
+
+function _myReactions() {
+  return (abilitiesData || []).filter(a =>
+    a.ability_type === 'reaction' && a.is_unlocked !== false
+  );
+}
+
+function showReactionsPanel() {
+  const panel = document.getElementById('reactions-panel');
+  if (!panel) return;
+  const reactions = _myReactions();
+  if (!reactions.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  renderReactionsPanel();
+}
+
+function hideReactionsPanel() {
+  const panel = document.getElementById('reactions-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function renderReactionsPanel() {
+  const panel = document.getElementById('reactions-panel');
+  const list  = document.getElementById('reactions-list');
+  if (!panel || !list) return;
+  const reactions = _myReactions();
+  // Hide if no combat or no reactions
+  if (!_hasCombatActive() || !reactions.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  const cur = char?.mana_current ?? 0;
+  list.innerHTML = reactions.map(a => {
+    const onCd = (a.cooldown_remaining || 0) > 0;
+    const notEnoughMana = (a.mana_cost || 0) > cur;
+    const disabled = onCd || notEnoughMana;
+    const color = a.color || 'var(--accent-orange)';
+    return `<div class="reaction-card ${disabled ? 'disabled' : ''}" data-ca-id="${a.character_ability_id}"
+             style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+                    background:var(--bg-surface);border-left:3px solid ${color};
+                    border-radius:var(--r-sm);transition:all .15s;
+                    opacity:${disabled ? '0.55' : '1'}">
+      <span style="font-size:1.2rem">${a.icon || '⚡'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:0.85rem">${a.name}</div>
+        ${a.flavor_text ? `<div style="font-size:0.7rem;color:var(--text-muted)">${a.flavor_text}</div>` : ''}
+      </div>
+      ${a.mana_cost ? `<span style="font-size:0.72rem;color:${notEnoughMana ? 'var(--accent-red)' : '#60a5fa'}">🔮${a.mana_cost}</span>` : ''}
+      ${a.hp_cost   ? `<span style="font-size:0.72rem;color:var(--accent-red)">❤️${a.hp_cost}</span>` : ''}
+      ${onCd ? `<span style="font-size:0.72rem;color:var(--accent-orange);font-weight:600">Used this round</span>` : ''}
+      ${!disabled ? `<button class="btn btn-primary btn-sm" data-use-reaction="${a.character_ability_id}">Use</button>` : ''}
+    </div>`;
+  }).join('');
+
+  // Wire Use buttons (route to same ability picker/confirm flow for consistency)
+  list.querySelectorAll('[data-use-reaction]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const caId = parseInt(btn.dataset.useReaction);
+      const ab = abilitiesData.find(a => a.character_ability_id === caId);
+      if (!ab) return;
+      // Open the action confirmation flow (mount ability confirm directly)
+      const body = $('#action-menu-body');
+      if (!body) return;
+      // Scroll to action menu for visibility
+      body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const html = `
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:1.2rem">⚡</span>
+          <span style="font-weight:700;flex:1">Reaction: ${ab.name}</span>
+          <button class="btn btn-ghost btn-xs" id="ap-close">✕</button>
+        </div>
+        <div id="ap-confirm-area"></div>`;
+      const panel2 = _mountConfirmPanel(html);
+      if (!panel2) return;
+      panel2.querySelector('#ap-close').addEventListener('click', _closeConfirmPanel);
+      _mountAbilityConfirm(panel2, ab);
+    });
+  });
+}
+
+async function refreshReactionCooldowns() {
+  // Re-fetch abilities so cooldown_remaining values reflect current round
+  try {
+    abilitiesData = await api.get(`/api/characters/${CHAR_ID}/abilities`);
+  } catch {}
+  renderReactionsPanel();
+  renderActionMenu();
+}
+
+// Collapse/expand toggle
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'reactions-toggle') {
+    _reactionsCollapsed = !_reactionsCollapsed;
+    const content = document.getElementById('reactions-content');
+    const btn = document.getElementById('reactions-toggle');
+    if (content) content.style.display = _reactionsCollapsed ? 'none' : '';
+    if (btn) btn.textContent = _reactionsCollapsed ? '▶' : '▼';
+  }
+});
 
 // ══════════════════════════════════════════════════════════════
 // PHASE 6 — ACTIVE BONUSES & PENALTIES PANEL
@@ -2255,6 +2893,8 @@ async function loadAbilities() {
   try {
     abilitiesData = await api.get(`/api/characters/${CHAR_ID}/abilities`);
     renderAbilities();
+    renderActionMenu();     // FIX 2: refresh action cards (Ability card visibility)
+    if (typeof renderReactionsPanel === 'function') renderReactionsPanel();  // FIX 4
   } catch (e) { console.warn('loadAbilities:', e); }
 }
 
@@ -2434,6 +3074,22 @@ ws.on('combat.character_downed', d => {
 ws.on('table.updated', () => {
   loadTableView();
 });
+// FIX 1: Re-render table on HP, status, or turn change
+ws.on('character.hp_changed', () => { loadTableView(); });
+ws.on('character.hp_update',  () => { loadTableView(); });
+ws.on('character.status_changed', () => { loadTableView(); });
+ws.on('status_effect.applied',  () => { loadTableView(); });
+ws.on('status_effect.removed',  () => { loadTableView(); });
+ws.on('status_effect.expired',  () => { loadTableView(); });
+// FIX 5: Auto-populate Memory tab — refresh + toast on new entry
+ws.on('memory.entry_added', d => {
+  if (d.character_id != CHAR_ID) return;
+  const typeIcon = d.entry_type === 'npc_encounter' ? '👥'
+                 : d.entry_type === 'event' ? '📜'
+                 : '📝';
+  showToast(`${typeIcon} ${d.title}`);
+  loadMemory();
+});
 
 // ══════════════════════════════════════════════════════════════
 // INIT
@@ -2450,4 +3106,5 @@ loadPlayerTimer();
 restoreGmTimer();
 loadTableView();
 renderBonusesPenalties();
+loadAbilities();  // FIX 2: load early so Action Menu (Main tab) knows abilities
 ws.connect();

@@ -221,6 +221,9 @@ async def get_item(item_id: int, db: AsyncSession = Depends(get_session)):
 @router.post("/items")
 async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
     await _ensure_default_categories(db)
+    # FIX 6: auto-flag consumable if is_potion=true (potions are always consumable)
+    _is_potion = bool(body.get("is_potion", False))
+    _consumable = body.get("consumable", False) or _is_potion
     item = Item(
         session_id=body.get("session_id"),
         name=body.get("name", "Item"),
@@ -234,11 +237,14 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
         effect_type=body.get("effect_type"),
         effect_value=body.get("effect_value"),
         equippable=body.get("equippable", False),
-        consumable=body.get("consumable", False),
+        consumable=_consumable,
         mana_cost=body.get("mana_cost", 0),
         use_effect=json.dumps(body["use_effect"]) if isinstance(body.get("use_effect"), (dict, list)) else body.get("use_effect"),
         tags=body.get("tags", "[]") if isinstance(body.get("tags", "[]"), str) else json.dumps(body.get("tags", [])),
         created_by_ai=body.get("created_by_ai", False),
+        # FIX 6: potion identity
+        is_potion=_is_potion,
+        potion_icon=body.get("potion_icon", "🧪"),
     )
     db.add(item)
     await db.flush()
@@ -277,9 +283,14 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
         raise HTTPException(404, detail={"error": True, "code": "NOT_FOUND", "message": "Item not found"})
     for k in ["name", "description", "category", "category_id", "rarity", "base_price",
               "base_price_bronze", "weight", "effect_type", "effect_value", "equippable",
-              "consumable", "mana_cost", "created_by_ai"]:
+              "consumable", "mana_cost", "created_by_ai",
+              # FIX 6: potion identity
+              "is_potion", "potion_icon"]:
         if k in body:
             setattr(item, k, body[k])
+    # FIX 6: potions are always consumable — auto-enable when is_potion=true
+    if body.get("is_potion") and not item.consumable:
+        item.consumable = True
     # Accept legacy base_price_copper key
     if "base_price_copper" in body and "base_price_bronze" not in body:
         item.base_price_bronze = body["base_price_copper"]
@@ -401,6 +412,9 @@ def _item_dict(i: Item) -> dict:
         "weapon_stats": None,
         "category_name": i.category_rel.name if i.category_rel else (i.category or "misc").capitalize(),
         "category_icon": i.category_rel.icon if i.category_rel else "📦",
+        # FIX 6: Potion identity
+        "is_potion":   bool(getattr(i, "is_potion", False)),
+        "potion_icon": getattr(i, "potion_icon", None) or "🧪",
     }
     if i.weapon_stats:
         ws = i.weapon_stats
@@ -578,6 +592,10 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
     if not char:
         raise HTTPException(404, "Character not found")
 
+    # FIX 6: snapshot before for response delta
+    _hp_before = char.current_hp
+    _mana_before = char.mana_current
+
     results = []
 
     # 1. Mana cost check
@@ -712,13 +730,21 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
     return {
         "ok": True,
         "item_name": item.name,
+        "is_potion": bool(getattr(item, "is_potion", False)),
+        "potion_icon": getattr(item, "potion_icon", None) or "🧪",
         "results": results,
+        "breakdown": "; ".join(results) if results else "",
         "result": f"Used {item.name}: " + "; ".join(results) if results else f"Used {item.name}",
         "character_id": char.id,
-        "current_hp": char.current_hp,
-        "max_hp": char.max_hp,
-        "mana_current": char.mana_current,
-        "mana_max": char.mana_max,
+        # FIX 6: before/after for UI deltas
+        "hp_before":   _hp_before,
+        "hp_after":    char.current_hp,
+        "mana_before": _mana_before,
+        "mana_after":  char.mana_current,
+        "current_hp":  char.current_hp,
+        "max_hp":      char.max_hp,
+        "mana_current":char.mana_current,
+        "mana_max":    char.mana_max,
         "quantity_remaining": qty_left,
     }
 

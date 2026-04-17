@@ -376,3 +376,51 @@
 .npc-tab.active {
   color: var(--accent); border-bottom-color: var(--accent);
 }
+
+/* ── FIX 3: Universal Dice Roll Widget (same as player.css) ──── */
+.dice-roll-widget {
+  display: flex; flex-direction: column; gap: 6px;
+  font-family: var(--font-body);
+}
+.dice-roll-widget .widget-label {
+  font-size: 0.72rem; color: var(--text-muted); font-weight: 600;
+}
+.dice-roll-widget .dice-selector {
+  display: flex; align-items: center; gap: 6px;
+}
+.dice-roll-widget .dice-count {
+  width: 54px !important; text-align: center;
+}
+.dice-roll-widget .dice-type { min-width: 60px; }
+.dice-roll-widget .adv-toggle {
+  display: flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); height: 26px;
+}
+.dice-roll-widget .adv-toggle .adv-btn {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 10px; cursor: pointer; font-size: 0.7rem;
+  transition: all .15s ease; font-weight: 500;
+}
+.dice-roll-widget .adv-btn:hover { background: var(--bg-surface-3); }
+.dice-roll-widget .adv-btn.active { font-weight: 700; }
+.dice-roll-widget .adv-btn.active[data-mode="normal"] {
+  background: var(--bg-surface-3); color: var(--text-primary);
+}
+.dice-roll-widget .adv-btn.active[data-mode="advantage"] {
+  background: rgba(74,156,93,0.20); color: var(--accent-green);
+}
+.dice-roll-widget .adv-btn.active[data-mode="disadvantage"] {
+  background: rgba(184,64,64,0.20); color: var(--accent-red);
+}
+.dice-roll-widget .roll-btn { align-self: flex-start; margin-top: 2px; }
+.dice-roll-widget .roll-result {
+  background: var(--bg-surface-2); border-radius: var(--r-sm);
+  padding: 6px 10px; border-left: 3px solid var(--accent); margin-top: 4px;
+}
+.dice-roll-widget .roll-result.hidden { display: none; }
+.dice-roll-widget .result-total {
+  font-size: 1.1rem; font-weight: 700; color: var(--accent);
+}
+.dice-roll-widget .result-breakdown {
+  font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;
+}

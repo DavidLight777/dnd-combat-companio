@@ -95,6 +95,22 @@
             </section>
           </div>
 
+          <!-- FIX 4: REACTIONS PANEL (combat-only, collapsible) -->
+          <div id="reactions-panel" class="panels-row" style="display:none">
+            <section class="panel panel-full" style="border-color:var(--accent-orange);border-width:2px">
+              <div class="panel-header" style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1)">
+                <h2 style="flex:1;color:var(--accent-orange);margin:0">⚡ Reactions</h2>
+                <button class="btn btn-ghost btn-xs" id="reactions-toggle" title="Collapse/Expand">▼</button>
+              </div>
+              <div class="panel-body" id="reactions-content">
+                <div id="reactions-list" style="display:flex;flex-direction:column;gap:6px"></div>
+                <div class="reactions-note" style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);font-style:italic">
+                  Reactions can be used once per round
+                </div>
+              </div>
+            </section>
+          </div>
+
           <!-- INFO PANEL: Bonuses & Penalties -->
           <div class="panels-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <section class="panel">

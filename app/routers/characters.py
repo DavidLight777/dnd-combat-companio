@@ -48,7 +48,9 @@ def _serialize_char(c: Character) -> dict:
         "mana_regen_per_turn": c.mana_regen_per_turn,
         "can_edit_own_items": c.can_edit_own_items,
         "place_at_table": c.place_at_table,
+        "is_at_table": c.place_at_table,  # alias for spec compliance
         "show_hp_to_players": c.show_hp_to_players,
+        "is_gm_controlled": c.is_gm_controlled,
         "turn_count": c.turn_count,
         "status_effects": c.status_effects,
         "notes": c.notes,
@@ -194,6 +196,87 @@ async def delete_character(char_id: int, db: AsyncSession = Depends(get_session)
     await db.delete(c)
     await db.commit()
     return {"ok": True}
+
+
+# ── Table visibility (FIX 1) ─────────────────────────────────
+class TableVisibilityBody(BaseModel):
+    is_at_table: bool | None = None
+    show_hp_to_players: bool | None = None
+
+
+@router.patch("/characters/{char_id}/table-visibility")
+async def patch_table_visibility(
+    char_id: int,
+    body: TableVisibilityBody,
+    db: AsyncSession = Depends(get_session),
+):
+    """FIX 1: Toggle a character's appearance at the player 'table view'
+    and whether their HP is visible. Broadcasts WS `table.updated` so
+    players re-render their Main-tab table cards immediately.
+    The DB column is `place_at_table` — `is_at_table` is accepted as alias.
+    Memory auto-entry (FIX 5) is created when an NPC transitions OFF→ON.
+    """
+    from app.websocket_manager import manager
+
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+
+    # Detect OFF→ON transition for NPC so FIX 5 can create memory entries
+    was_at_table = bool(c.place_at_table)
+    transition_to_on = False
+
+    if body.is_at_table is not None:
+        c.place_at_table = bool(body.is_at_table)
+        transition_to_on = c.is_npc and (not was_at_table) and c.place_at_table
+    if body.show_hp_to_players is not None:
+        c.show_hp_to_players = bool(body.show_hp_to_players)
+
+    await db.commit()
+    await db.refresh(c)
+
+    # FIX 5: Auto-memory for player characters when NPC placed at table
+    if transition_to_on:
+        try:
+            from app.routers.memory import create_memory_entry
+            players_res = await db.execute(
+                select(Character).where(
+                    Character.session_id == c.session_id,
+                    Character.is_npc == False,  # noqa: E712
+                )
+            )
+            players = players_res.scalars().all()
+            for p in players:
+                await create_memory_entry(
+                    db, p.id, "npc_encounter",
+                    f"Met: {c.name}",
+                    c.notes or f"Encountered {c.name}.",
+                    related_npc_id=c.id,
+                )
+        except Exception as e:
+            # Non-fatal — memory is best-effort
+            import logging
+            logging.getLogger("characters").warning(f"memory auto-entry failed: {e}")
+
+    # Broadcast to all session clients
+    try:
+        sess = await db.get(Session, c.session_id)
+        if sess:
+            await manager.broadcast_to_session(sess.code, "table.updated", {
+                "character_id": c.id,
+                "is_at_table": c.place_at_table,
+                "show_hp_to_players": c.show_hp_to_players,
+            })
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "character_id": c.id,
+        "is_at_table": c.place_at_table,
+        "place_at_table": c.place_at_table,
+        "show_hp_to_players": c.show_hp_to_players,
+    }
 
 
 # ══════════════════════════════════════════════════════════════

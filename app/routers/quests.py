@@ -208,6 +208,19 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
         assigned.append({"quest_id": q.id, "character_id": cid, "character_name": char.name})
 
     await db.commit()
+
+    # FIX 5: Auto-memory entry per assigned character (best-effort)
+    try:
+        from app.routers.memory import create_memory_entry
+        for a in assigned:
+            await create_memory_entry(
+                db, a["character_id"], "event",
+                f"Quest: {title}",
+                description or "A new quest was assigned.",
+            )
+    except Exception:
+        pass
+
     return {"assigned": assigned, "title": title}
 
 
@@ -284,6 +297,18 @@ async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session))
 
     await db.commit()
     await db.refresh(q)
+
+    # FIX 5: Append completion note to the existing "Quest: ..." memory entry
+    try:
+        from app.routers.memory import update_memory_by_title
+        reward_txt = q.reward_description or "received"
+        await update_memory_by_title(
+            db, q.character_id, f"Quest: {q.title}",
+            f"\n\n✅ Completed. Reward: {reward_txt}",
+        )
+    except Exception:
+        pass
+
     return _ser_quest(q)
 
 

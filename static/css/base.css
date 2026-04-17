@@ -98,19 +98,42 @@ a:hover { color: var(--accent-hover); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Inputs ────────────────────────────────────────────────── */
-input, select, textarea {
-  font-family: var(--font-body); font-size: 0.85rem;
-  background: var(--bg-input); color: var(--text-primary);
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  padding: 8px 12px; outline: none;
+input[type="text"], input[type="number"], input[type="password"],
+input[type="email"], input[type="search"], input:not([type]),
+textarea, select {
+  font-family: var(--font-body) !important;
+  font-size: 0.85rem;
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid #3a3d4a !important;
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  outline: none;
   transition: border-color var(--t-fast);
 }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 1px 0 0 var(--accent);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-glow);
 }
+input::placeholder, textarea::placeholder { color: var(--text-faint) !important; }
 input[type="number"] { width: 70px; font-variant-numeric: tabular-nums; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { filter: invert(0.7); }
 textarea { resize: vertical; width: 100%; }
+/* Modal inputs — slightly darker to distinguish against modal surface */
+.modal-content input, .modal-content textarea, .modal-content select,
+.modal input, .modal textarea, .modal select {
+  background-color: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid #3a3d4a !important;
+}
+/* Checkbox/radio — keep native but tint accent */
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--accent);
+  border: none !important;
+  background: initial !important;
+  padding: 0 !important;
+}
 
 /* ── Cards / Panels ────────────────────────────────────────── */
 .card {
@@ -135,6 +158,27 @@ textarea { resize: vertical; width: 100%; }
 .hp-bar {
   height: 100%; border-radius: 4px;
   transition: width 300ms ease, background 300ms ease;
+}
+
+/* ── FIX 7: Universal Modal Header & Dismiss Button ────────── */
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header .modal-title {
+  margin: 0; font-size: 1rem; color: var(--accent);
+  font-family: var(--font-display); font-weight: 600;
+}
+.modal-close-btn {
+  margin-left: auto; font-size: 1rem; line-height: 1;
+  padding: 4px 8px; opacity: 0.7; cursor: pointer;
+  transition: all var(--t-fast);
+}
+.modal-close-btn:hover { opacity: 1; color: var(--accent-red); }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* ── Toast ──────────────────────────────────────────────────── */

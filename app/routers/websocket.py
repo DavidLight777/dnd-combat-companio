@@ -140,6 +140,18 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                 elif msg_type == "table.updated":
                     await manager.broadcast_to_session(session_code, "table.updated", msg)
 
+                # FIX 7: Player dismissed a GM-initiated trade modal
+                elif msg_type == "trade.dismissed":
+                    # Relay to GM only — so GM sees in roll log
+                    await manager.send_to_gm(session_code, "trade.dismissed", {
+                        "trade_id": msg.get("trade_id"),
+                        "player_id": msg.get("player_id"),
+                        "player_name": msg.get("player_name"),
+                        "npc_id": msg.get("npc_id"),
+                        "npc_name": msg.get("npc_name"),
+                        "reason": msg.get("reason", "unknown"),
+                    })
+
                 elif msg_type == "modifier.expired":
                     await manager.broadcast_to_session(session_code, "modifier.expired", {
                         "character_id": msg.get("character_id"),

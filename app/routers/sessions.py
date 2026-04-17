@@ -175,17 +175,32 @@ async def list_session_characters(code: str, db: AsyncSession = Depends(get_sess
     )
     chars = chars_result.scalars().all()
 
+    # FIX 1: compute which NPCs are merchants (have at least one shop entry)
+    from app.models import NpcShopInventory
+    npc_ids = [c.id for c in chars if c.is_npc]
+    merchant_ids: set[int] = set()
+    if npc_ids:
+        shop_res = await db.execute(
+            select(NpcShopInventory.npc_id).where(NpcShopInventory.npc_id.in_(npc_ids))
+        )
+        merchant_ids = {row[0] for row in shop_res.all()}
+
     return [
         {
             "id": c.id,
             "name": c.name,
             "is_npc": c.is_npc,
+            "is_gm_controlled": c.is_gm_controlled,
+            "is_merchant": c.id in merchant_ids,
             "current_hp": c.current_hp,
             "max_hp": c.max_hp,
             "armor_class": c.armor_class,
             "is_alive": c.is_alive,
             "token_color": c.token_color,
             "status_effects": c.status_effects,
+            "place_at_table": c.place_at_table,
+            "is_at_table": c.place_at_table,  # alias
+            "show_hp_to_players": c.show_hp_to_players,
         }
         for c in chars
     ]

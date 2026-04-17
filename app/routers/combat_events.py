@@ -54,6 +54,9 @@ class ExecuteAttackBody(BaseModel):
     ability_id: int | None = None
     advantage: str = "normal"       # "advantage" | "normal" | "disadvantage"
     player_roll: int | None = None  # optional player-submitted d20
+    # FIX 3: optional dice overrides from universal dice widget
+    dice_count: int | None = None
+    dice_type:  int | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -488,7 +491,51 @@ async def end_combat(combat_id: int, db: AsyncSession = Depends(get_session)):
     ce = await _get_combat(combat_id, db)
     ce.status = "ended"
     ce.ended_at = datetime.now(timezone.utc)
+
+    # FIX 5: Collect player participants + defeated NPCs BEFORE commit
+    player_ids: list[int] = []
+    defeated_names: list[str] = []
+    try:
+        for p in (ce.participants or []):
+            ch = await db.get(Character, p.character_id)
+            if not ch:
+                continue
+            if ch.is_npc and not ch.is_alive:
+                defeated_names.append(ch.name)
+            elif not ch.is_npc:
+                player_ids.append(ch.id)
+    except Exception:
+        pass
+
     await db.commit()
+
+    # FIX 5: Auto-memory entry for each player who was in this combat
+    if defeated_names and player_ids:
+        try:
+            from app.routers.memory import create_memory_entry
+            combat_name = ce.name or "Combat"
+            content = f"Fought and defeated: {', '.join(defeated_names)}."
+            for pid in player_ids:
+                # Make title unique per combat to avoid dedup collision on repeat battles
+                title = f"Battle: {combat_name} #{ce.id}"
+                await create_memory_entry(
+                    db, pid, "event", title, content,
+                )
+        except Exception:
+            pass
+
+    # Broadcast combat.ended (existing client code expects it)
+    try:
+        from app.websocket_manager import manager
+        from app.models import Session as SessionModel
+        sess = await db.get(SessionModel, ce.session_id)
+        if sess:
+            await manager.broadcast_to_session(sess.code, "combat.ended", {
+                "combat_id": ce.id, "combat_name": ce.name,
+            })
+    except Exception:
+        pass
+
     return {"ok": True, "status": "ended"}
 
 
@@ -822,6 +869,12 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
     else:
         dc = attacker.attack_dice_count or 1
         dt = attacker.attack_dice_type or 6
+
+    # FIX 3: allow universal dice widget to override dice count/type
+    if body.dice_count is not None and body.dice_count > 0:
+        dc = min(20, max(1, int(body.dice_count)))
+    if body.dice_type is not None and body.dice_type > 0:
+        dt = int(body.dice_type)
 
     # Roll damage dice (crit = double dice count)
     actual_dc = dc * 2 if critical else dc

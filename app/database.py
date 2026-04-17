@@ -18,8 +18,25 @@ class Base(DeclarativeBase):
 
 async def init_db():
     from app.models import Base as _  # noqa: F401
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # FIX 6: lightweight column migrations for existing SQLite DBs
+    # (create_all does not ALTER existing tables)
+    _migrations = [
+        # (table, column, column_def_sql) — idempotent, try/except absorbs "duplicate column"
+        ("items",      "is_potion",   "is_potion BOOLEAN DEFAULT 0"),
+        ("items",      "potion_icon", "potion_icon VARCHAR(8) DEFAULT '🧪'"),
+        # Fix 1: ensure existing DBs have the table-visibility columns
+        ("characters", "show_hp_to_players",  "show_hp_to_players BOOLEAN DEFAULT 0"),
+        ("characters", "place_at_table",      "place_at_table BOOLEAN DEFAULT 0"),
+    ]
+    async with engine.begin() as conn:
+        for table, col, coldef in _migrations:
+            try:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {coldef}"))
+            except Exception:
+                pass  # column already exists or table missing — harmless
 
 
 async def get_session() -> AsyncSession:  # type: ignore[misc]

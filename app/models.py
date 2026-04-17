@@ -303,6 +303,9 @@ class Item(Base):
     use_effect: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {"effects": [...]}
     tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
     created_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+    # FIX 6: Potion identity (v2 spec)
+    is_potion: Mapped[bool] = mapped_column(Boolean, default=False)
+    potion_icon: Mapped[str] = mapped_column(String(8), default="🧪")
 
     category_rel: Mapped["ItemCategory | None"] = relationship(back_populates="items", lazy="selectin")
     bonuses: Mapped[list["ItemBonus"]] = relationship(back_populates="item", cascade="all, delete-orphan", lazy="selectin")
