@@ -98,6 +98,9 @@ a:hover { color: var(--accent-hover); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Inputs ────────────────────────────────────────────────── */
+input, textarea, select {
+  color: var(--text-primary) !important;
+}
 input[type="text"], input[type="number"], input[type="password"],
 input[type="email"], input[type="search"], input:not([type]),
 textarea, select {
@@ -107,6 +110,7 @@ textarea, select {
   color: var(--text-primary) !important;
   border: 1px solid #3a3d4a !important;
   border-radius: var(--r-sm);
+  -webkit-text-fill-color: var(--text-primary);
   padding: 8px 12px;
   outline: none;
   transition: border-color var(--t-fast);
@@ -116,6 +120,7 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 input::placeholder, textarea::placeholder { color: var(--text-faint) !important; }
+select option { background-color: var(--bg-surface) !important; color: var(--text-primary) !important; }
 input[type="number"] { width: 70px; font-variant-numeric: tabular-nums; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { filter: invert(0.7); }

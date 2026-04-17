@@ -385,12 +385,55 @@ async function renderCharDetail() {
       <select id="npc-atk-target" style="font-size:0.78rem;min-width:120px"></select>
       <span id="npc-weapon-info" style="font-size:0.72rem;color:var(--text-muted)"></span>
     </div>
-    <!-- FIX 3: universal dice widget (attack: selector + advantage) -->
-    <div id="npc-atk-widget-host" style="margin-bottom:6px"></div>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-      <button class="btn btn-primary btn-sm" id="btn-npc-roll-attack">⚔️ Roll Attack</button>
+
+    <!-- STEP 1: HIT ROLL -->
+    <div id="npc-atk-step1">
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🎯 Step 1 — Roll to Hit (d20)</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:0.72rem;color:var(--text-muted)">Mode:</span>
+        <div class="adv-toggle" id="npc-hit-adv">
+          <button data-mode="disadvantage">Disadv</button>
+          <button data-mode="normal" class="active">Normal</button>
+          <button data-mode="advantage">Adv</button>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-npc-roll-attack" style="margin-left:auto">🎯 Roll Hit</button>
+      </div>
     </div>
-    <div id="npc-atk-result" style="font-size:0.8rem;margin-bottom:8px"></div>
+
+    <!-- STEP 2: DAMAGE ROLL (hidden until HIT) -->
+    <div id="npc-atk-step2" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">💥 Step 2 — Roll Damage</div>
+      <div id="npc-atk-widget-host" style="margin-bottom:6px"></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-sm" id="btn-npc-cancel-dmg">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-npc-roll-damage" style="margin-left:auto">💥 Roll Damage</button>
+      </div>
+    </div>
+
+    <div id="npc-atk-result" style="font-size:0.8rem;margin:8px 0"></div>
+
+    <!-- NPC Actions panel: Abilities / Potions / Items (like player's Action Menu) -->
+    <hr class="section-divider">
+    <h3 style="font-size:0.82rem;margin-bottom:6px">🎯 NPC Actions</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" id="btn-npc-act-ability" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px">
+        <span style="font-size:1.2rem">✨</span>
+        <span style="font-size:0.72rem">Ability</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" id="btn-npc-act-potion" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px">
+        <span style="font-size:1.2rem">🧪</span>
+        <span style="font-size:0.72rem">Potion</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" id="btn-npc-act-item" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px">
+        <span style="font-size:1.2rem">🎒</span>
+        <span style="font-size:0.72rem">Use Item</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" id="btn-npc-act-heal" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px">
+        <span style="font-size:1.2rem">❤️</span>
+        <span style="font-size:0.72rem">Heal</span>
+      </button>
+    </div>
+    <div id="npc-action-result" style="font-size:0.8rem;margin-bottom:8px"></div>
   ` : '';
 
   const dmgCalcHtml = `
@@ -744,8 +787,12 @@ async function renderCharDetail() {
       ).join('');
       if (!sessionChars.length) atkTarget.innerHTML = '<option value="">No targets</option>';
 
-      // Show weapon info + mount FIX 3 dice widget pre-filled from weapon
-      let npcAtkWidgetState = { diceCount: c.attack_dice_count || 1, diceType: c.attack_dice_type || 6, advantageMode: 'normal' };
+      // Show weapon info; damage dice widget will mount after HIT (step 2)
+      let weaponDefaults = { diceCount: c.attack_dice_count || 1, diceType: c.attack_dice_type || 6 };
+      let hitAdvMode = 'normal';
+      let dmgWidgetState = { diceCount: weaponDefaults.diceCount, diceType: weaponDefaults.diceType, advantageMode: 'normal' };
+      let lastHitData = null; // stored after /hit-roll succeeds
+
       (async () => {
         try {
           const inv = await api.get(`/api/characters/${c.id}/inventory`);
@@ -753,73 +800,294 @@ async function renderCharDetail() {
           const wInfo = area.querySelector('#npc-weapon-info');
           if (mainHand && wInfo) {
             wInfo.textContent = `🗡️ ${mainHand.name}`;
-            const ws = mainHand.weapon_stats;
-            if (ws) {
-              npcAtkWidgetState.diceCount = ws.dice_count || npcAtkWidgetState.diceCount;
-              npcAtkWidgetState.diceType  = ws.dice_type  || npcAtkWidgetState.diceType;
+            const wst = mainHand.weapon_stats;
+            if (wst) {
+              weaponDefaults.diceCount = wst.dice_count || weaponDefaults.diceCount;
+              weaponDefaults.diceType  = wst.dice_type  || weaponDefaults.diceType;
             }
           } else if (wInfo) {
             wInfo.textContent = `👊 Unarmed (${c.attack_dice_count||1}d${c.attack_dice_type||6})`;
           }
         } catch {}
-        // Mount widget after weapon info is known (so defaults are correct)
-        const host = area.querySelector('#npc-atk-widget-host');
-        if (host && typeof createDiceRollWidget === 'function') {
-          createDiceRollWidget(host, {
-            label: 'Attack Dice',
-            defaultDiceCount: npcAtkWidgetState.diceCount,
-            defaultDiceType:  npcAtkWidgetState.diceType,
-            showDiceSelector: true,
-            showAdvantage:    true,
-            showRollButton:   false,  // Roll Attack button below triggers
-            onStateChange: (s) => { npcAtkWidgetState = s; },
-          });
-        }
       })();
 
-      // Roll Attack button
+      // Hit-mode adv toggle
+      area.querySelectorAll('#npc-hit-adv button').forEach(b => {
+        b.addEventListener('click', () => {
+          area.querySelectorAll('#npc-hit-adv button').forEach(x => x.classList.toggle('active', x === b));
+          hitAdvMode = b.dataset.mode;
+        });
+      });
+
+      // Helper: mount damage dice widget in step 2
+      const mountDmgWidget = () => {
+        const host = area.querySelector('#npc-atk-widget-host');
+        if (!host) return;
+        host.innerHTML = '';
+        if (typeof createDiceRollWidget === 'function') {
+          createDiceRollWidget(host, {
+            label: 'Damage Dice',
+            defaultDiceCount: dmgWidgetState.diceCount,
+            defaultDiceType:  dmgWidgetState.diceType,
+            showDiceSelector: true,
+            showAdvantage:    true,
+            showRollButton:   false,
+            onStateChange: (s) => { dmgWidgetState = s; },
+          });
+        } else {
+          host.innerHTML = `
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <label style="font-size:0.72rem;color:var(--text-muted)">Dice:</label>
+              <input type="number" id="npc-dmg-count" value="${dmgWidgetState.diceCount}" min="1" max="20" style="width:48px">
+              <span>d</span>
+              <select id="npc-dmg-type" style="width:60px">
+                <option value="4">4</option><option value="6">6</option>
+                <option value="8">8</option><option value="10">10</option>
+                <option value="12">12</option><option value="20">20</option>
+              </select>
+              <div class="adv-toggle" id="npc-dmg-adv" style="margin-left:8px">
+                <button data-mode="disadvantage">Disadv</button>
+                <button data-mode="normal" class="active">Normal</button>
+                <button data-mode="advantage">Adv</button>
+              </div>
+            </div>`;
+          host.querySelector('#npc-dmg-type').value = dmgWidgetState.diceType;
+          host.querySelector('#npc-dmg-count').addEventListener('input', e => {
+            dmgWidgetState.diceCount = parseInt(e.target.value) || 1;
+          });
+          host.querySelector('#npc-dmg-type').addEventListener('change', e => {
+            dmgWidgetState.diceType = parseInt(e.target.value) || 6;
+          });
+          host.querySelectorAll('#npc-dmg-adv button').forEach(b => {
+            b.addEventListener('click', () => {
+              host.querySelectorAll('#npc-dmg-adv button').forEach(x => x.classList.toggle('active', x === b));
+              dmgWidgetState.advantageMode = b.dataset.mode;
+            });
+          });
+        }
+      };
+
+      const resetAttackSteps = () => {
+        area.querySelector('#npc-atk-step1').style.display = '';
+        area.querySelector('#npc-atk-step2').style.display = 'none';
+        const atkBtnEl = area.querySelector('#btn-npc-roll-attack');
+        if (atkBtnEl) { atkBtnEl.disabled = false; atkBtnEl.textContent = '🎯 Roll Hit'; }
+        lastHitData = null;
+      };
+
+      // STEP 1: Roll Hit button
       const atkBtn = area.querySelector('#btn-npc-roll-attack');
       if (atkBtn) {
         atkBtn.addEventListener('click', async () => {
           const targetId = parseInt(atkTarget.value);
           if (!targetId) { showToast('Select a target'); return; }
           const resultDiv = area.querySelector('#npc-atk-result');
-          resultDiv.innerHTML = '<span style="color:var(--text-muted)">Rolling...</span>';
+          atkBtn.disabled = true;
+          resultDiv.innerHTML = '<span style="color:var(--text-muted)">Rolling d20...</span>';
           try {
-            const res = await api.post('/api/combat/execute-attack', {
+            const res = await api.post('/api/combat/hit-roll', {
               attacker_id: c.id, target_id: targetId,
-              attack_type: 'weapon',
-              advantage:  npcAtkWidgetState.advantageMode || 'normal',
-              dice_count: npcAtkWidgetState.diceCount,
-              dice_type:  npcAtkWidgetState.diceType,
+              advantage: hitAdvMode,
             });
+            lastHitData = { ...res, target_id: targetId };
             let html = '';
             if (res.hit) {
               html += `<div style="color:var(--accent-green);font-weight:700">${res.critical ? '🎯 CRITICAL HIT!' : '⚔️ HIT!'}</div>`;
-              html += `<div style="font-size:0.75rem">${res.hit_breakdown}</div>`;
-              html += `<div style="font-size:0.75rem;margin-top:3px">${res.damage_breakdown}</div>`;
-              html += `<div style="font-size:0.75rem">${res.intake_breakdown}</div>`;
-              html += `<div style="font-weight:600;margin-top:3px">${res.target_name}: <span style="color:var(--accent-red)">${res.final_damage} dmg</span> → ${res.target_hp_after} HP${res.target_downed ? ' 💀 DOWN!' : ''}</div>`;
             } else {
               html += `<div style="color:var(--text-muted);font-weight:700">${res.fumble ? '💨 FUMBLE!' : '🛡️ MISS'}</div>`;
-              html += `<div style="font-size:0.75rem">${res.hit_breakdown}</div>`;
             }
+            html += `<div style="font-size:0.75rem">${res.hit_breakdown}</div>`;
             resultDiv.innerHTML = html;
-            addLog('gm.combat', `${c.name} → ${res.target_name}: ${res.hit ? (res.critical ? 'CRIT ' : '') + res.final_damage + ' dmg' : 'MISS'}`);
+            addLog('gm.combat', `${c.name} → ${res.target_name}: ${res.hit ? (res.critical ? 'CRIT' : 'HIT') : 'MISS'}`);
+
+            // Broadcast hit result
+            if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+              ws.ws.send(JSON.stringify({
+                type: 'combat.hit_result',
+                attacker_id: c.id, attacker_name: c.name,
+                target_id: targetId, target_name: res.target_name,
+                hit: res.hit, critical: res.critical, fumble: res.fumble,
+                hit_breakdown: res.hit_breakdown,
+              }));
+            }
+
+            if (res.hit) {
+              // Show step 2 — use server-suggested dice defaults (reflects equipped weapon)
+              dmgWidgetState.diceCount = res.default_dice_count || weaponDefaults.diceCount;
+              dmgWidgetState.diceType  = res.default_dice_type  || weaponDefaults.diceType;
+              dmgWidgetState.advantageMode = 'normal';
+              area.querySelector('#npc-atk-step1').style.display = 'none';
+              area.querySelector('#npc-atk-step2').style.display = '';
+              mountDmgWidget();
+            } else {
+              atkBtn.disabled = false;
+              atkBtn.textContent = '🎯 Re-roll Hit';
+            }
+          } catch (e) {
+            atkBtn.disabled = false;
+            resultDiv.innerHTML = `<span style="color:var(--accent-red)">${e?.body?.detail || 'Hit roll failed'}</span>`;
+          }
+        });
+      }
+
+      // STEP 2: Roll Damage button
+      const dmgBtn = area.querySelector('#btn-npc-roll-damage');
+      if (dmgBtn) {
+        dmgBtn.addEventListener('click', async () => {
+          if (!lastHitData || !lastHitData.hit) return;
+          const targetId = lastHitData.target_id;
+          const resultDiv = area.querySelector('#npc-atk-result');
+          dmgBtn.disabled = true;
+          try {
+            const res = await api.post('/api/combat/damage-roll', {
+              attacker_id: c.id, target_id: targetId,
+              critical: !!lastHitData.critical,
+              dice_count: dmgWidgetState.diceCount,
+              dice_type:  dmgWidgetState.diceType,
+              advantage:  dmgWidgetState.advantageMode || 'normal',
+            });
+            let html = '';
+            if (lastHitData.critical) {
+              html += `<div style="color:var(--accent-green);font-weight:700">🎯 CRITICAL HIT!</div>`;
+            } else {
+              html += `<div style="color:var(--accent-green);font-weight:700">⚔️ HIT!</div>`;
+            }
+            html += `<div style="font-size:0.75rem">${lastHitData.hit_breakdown}</div>`;
+            html += `<div style="font-size:0.75rem;margin-top:3px">${res.damage_breakdown}</div>`;
+            html += `<div style="font-size:0.75rem">${res.intake_breakdown}</div>`;
+            html += `<div style="font-weight:600;margin-top:3px">${res.target_name}: <span style="color:var(--accent-red)">${res.final_damage} dmg</span> → ${res.target_hp_after} HP${res.target_downed ? ' 💀 DOWN!' : ''}</div>`;
+            resultDiv.innerHTML = html;
+            addLog('gm.combat', `${c.name} → ${res.target_name}: ${res.final_damage} dmg${res.target_downed ? ' (DOWN)' : ''}`);
+
             await refreshChars();
             if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
               ws.ws.send(JSON.stringify({
                 type: 'combat.attack_result',
                 attacker_id: c.id, attacker_name: c.name,
-                target_name: res.target_name, hit: res.hit, critical: res.critical,
+                target_id: targetId, target_name: res.target_name,
+                hit: true, critical: !!lastHitData.critical,
                 final_damage: res.final_damage, target_hp_after: res.target_hp_after,
               }));
             }
+            // Reset back to step 1 for next attack
+            setTimeout(resetAttackSteps, 2000);
           } catch (e) {
-            resultDiv.innerHTML = `<span style="color:var(--accent-red)">${e?.body?.detail || 'Attack failed'}</span>`;
+            dmgBtn.disabled = false;
+            resultDiv.innerHTML += `<div style="color:var(--accent-red)">${e?.body?.detail || 'Damage roll failed'}</div>`;
           }
         });
       }
+
+      // Cancel damage button — go back to step 1
+      const cancelDmgBtn = area.querySelector('#btn-npc-cancel-dmg');
+      if (cancelDmgBtn) cancelDmgBtn.addEventListener('click', resetAttackSteps);
+
+      // ── NPC Actions wiring ──
+      const actResEl = area.querySelector('#npc-action-result');
+      const showActRes = (msg, color='var(--text-primary)') => {
+        if (actResEl) actResEl.innerHTML = `<span style="color:${color}">${msg}</span>`;
+      };
+
+      // Ability
+      const abBtn = area.querySelector('#btn-npc-act-ability');
+      if (abBtn) abBtn.addEventListener('click', async () => {
+        try {
+          const abs = await api.get(`/api/characters/${c.id}/abilities`);
+          const active = (abs || []).filter(a => a.ability_type !== 'passive');
+          if (!active.length) { showActRes('No active abilities assigned.', 'var(--text-muted)'); return; }
+          openNpcPickerModal('✨ Use Ability', active.map(a => ({
+            id: a.character_ability_id,
+            label: `${a.icon||'✨'} ${a.name}`,
+            sub: (a.description || '') + (a.cooldown_remaining ? ` · ⏳ CD ${a.cooldown_remaining}` : ''),
+            onPick: async () => {
+              try {
+                const res = await api.post(`/api/character-abilities/${a.character_ability_id}/use`, {});
+                const msg = (res.results || []).join(' · ') || 'Ability used';
+                showActRes(`✅ ${a.name}: ${msg}`, 'var(--accent-green)');
+                addLog('gm.ability', `${c.name} used ${a.name}`);
+                refreshChars();
+              } catch(e) {
+                let m='Ability failed'; try{const er=JSON.parse(e.message);m=er.detail?.message||er.detail||m;}catch{}
+                showActRes('❌ ' + m, 'var(--accent-red)');
+              }
+            }
+          })));
+        } catch (e) { showActRes('❌ Failed to load abilities', 'var(--accent-red)'); }
+      });
+
+      // Potion
+      const potBtn = area.querySelector('#btn-npc-act-potion');
+      if (potBtn) potBtn.addEventListener('click', async () => {
+        try {
+          const inv = await api.get(`/api/characters/${c.id}/inventory`);
+          const potions = (inv.items||[]).filter(i => i.is_potion);
+          if (!potions.length) { showActRes('No potions in inventory.', 'var(--text-muted)'); return; }
+          openNpcPickerModal('🧪 Use Potion', potions.map(p => ({
+            id: p.inventory_id,
+            label: `${p.potion_icon||'🧪'} ${p.name}`,
+            sub: `x${p.quantity} · ${p.description||''}`,
+            onPick: async () => {
+              try {
+                const res = await api.post(`/api/inventory/${p.inventory_id}/use`, {});
+                const msg = res.breakdown || 'used';
+                showActRes(`✅ ${p.name}: ${msg}`, 'var(--accent-green)');
+                addLog('gm.potion', `${c.name} used ${p.name}`);
+                refreshChars();
+              } catch(e) {
+                let m='Use failed'; try{const er=JSON.parse(e.message);m=er.detail?.message||er.detail||m;}catch{}
+                showActRes('❌ ' + m, 'var(--accent-red)');
+              }
+            }
+          })));
+        } catch(e) { showActRes('❌ Failed to load potions', 'var(--accent-red)'); }
+      });
+
+      // Use Item (any consumable)
+      const itBtn = area.querySelector('#btn-npc-act-item');
+      if (itBtn) itBtn.addEventListener('click', async () => {
+        try {
+          const inv = await api.get(`/api/characters/${c.id}/inventory`);
+          const usable = (inv.items||[]).filter(i => i.consumable || i.is_potion);
+          if (!usable.length) { showActRes('No usable items in inventory.', 'var(--text-muted)'); return; }
+          openNpcPickerModal('🎒 Use Item', usable.map(it => ({
+            id: it.inventory_id,
+            label: `${it.is_potion ? (it.potion_icon||'🧪') : '📦'} ${it.name}`,
+            sub: `x${it.quantity} · ${it.description||''}`,
+            onPick: async () => {
+              try {
+                const res = await api.post(`/api/inventory/${it.inventory_id}/use`, {});
+                const msg = res.breakdown || 'used';
+                showActRes(`✅ ${it.name}: ${msg}`, 'var(--accent-green)');
+                addLog('gm.item', `${c.name} used ${it.name}`);
+                refreshChars();
+              } catch(e) {
+                let m='Use failed'; try{const er=JSON.parse(e.message);m=er.detail?.message||er.detail||m;}catch{}
+                showActRes('❌ ' + m, 'var(--accent-red)');
+              }
+            }
+          })));
+        } catch(e) { showActRes('❌ Failed to load inventory', 'var(--accent-red)'); }
+      });
+
+      // Quick Heal (full)
+      const healBtn = area.querySelector('#btn-npc-act-heal');
+      if (healBtn) healBtn.addEventListener('click', async () => {
+        try {
+          await api.put(`/api/characters/${c.id}`, { current_hp: c.max_hp, is_alive: true });
+          showActRes(`✅ ${c.name} fully healed (${c.max_hp} HP)`, 'var(--accent-green)');
+          addLog('gm.heal', `${c.name} fully healed by GM`);
+          // Broadcast HP change so player UIs update
+          if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+            ws.ws.send(JSON.stringify({
+              type: 'character.hp_changed',
+              character_id: c.id,
+              current_hp: c.max_hp,
+              max_hp: c.max_hp,
+            }));
+          }
+          refreshChars();
+        } catch(e) { showActRes('❌ Heal failed', 'var(--accent-red)'); }
+      });
     }
 
     // Turn counter wiring
@@ -1159,12 +1427,18 @@ async function loadGmCharInventory(charId) {
       const eq = i.is_equipped ? '✅' : '';
       const slotLbl = i.equipped_slot ? ` [${i.equipped_slot}]` : '';
       const bonusesStr = (i.bonuses||[]).map(b => b.bonus_type === 'stat_bonus' ? `${b.stat_name}+${b.value}` : `${b.bonus_type.replace(/_/g,' ')}+${b.value}`).join(', ');
+      const isPotion = i.is_potion;
+      const isConsumable = i.consumable;
+      const showEquip = i.equippable && !isPotion;
+      const showUse = isConsumable || isPotion;
+      const icon = isPotion ? (i.potion_icon || '🧪') : '';
       return `<div class="mod-row" style="gap:6px">
-        <span style="min-width:18px">${eq}</span>
+        <span style="min-width:18px">${eq}${icon}</span>
         <span class="rarity-${i.rarity}" style="flex:1;font-weight:600">${i.name}</span>
         <span style="font-size:0.7rem;color:var(--text-muted)">x${i.quantity}${slotLbl}</span>
         ${bonusesStr ? `<span style="font-size:0.65rem;color:var(--accent-green)">${bonusesStr}</span>` : ''}
-        <button class="btn btn-ghost btn-xs" data-gm-equip="${i.inventory_id}" data-gm-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>
+        ${showEquip ? `<button class="btn btn-ghost btn-xs" data-gm-equip="${i.inventory_id}" data-gm-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
+        ${showUse ? `<button class="btn btn-primary btn-xs" data-gm-use="${i.inventory_id}" data-gm-use-name="${i.name}" title="Use on this character">${isPotion ? '🧪 Use' : 'Use'}</button>` : ''}
         <button class="btn btn-ghost btn-xs" data-gm-buyback="${i.inventory_id}" data-gm-buyback-price="${i.base_price_bronze||i.base_price_copper||0}" data-gm-buyback-name="${i.name}" title="Buy from player">💰</button>
         <button class="btn-icon danger" data-gm-remove-inv="${i.inventory_id}" title="Remove">🗑</button>
       </div>`;
@@ -1189,6 +1463,27 @@ async function loadGmCharInventory(charId) {
       btn.addEventListener('click', async () => {
         await api.del(`/api/inventory/${btn.dataset.gmRemoveInv}`);
         loadGmCharInventory(charId);
+      });
+    });
+    // Use consumable/potion (GM applies effect to the character)
+    container.querySelectorAll('[data-gm-use]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const invId = btn.dataset.gmUse;
+        const itemName = btn.dataset.gmUseName;
+        if (!confirm(`Use "${itemName}" on this character?`)) return;
+        try {
+          const res = await api.post(`/api/inventory/${invId}/use`, {});
+          const breakdown = res.breakdown || res.results?.join('; ') || 'applied';
+          addLog('inventory.use', `${itemName} used → ${breakdown}`);
+          showToast(`✅ ${itemName} used: ${breakdown}`);
+          loadGmCharInventory(charId);
+          // Refresh char detail to show new HP/mana
+          if (selectedCharId === charId) renderCharDetail();
+        } catch (e) {
+          let msg = 'Use failed';
+          try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
+          showToast('❌ ' + msg);
+        }
       });
     });
     // Buyback
@@ -2465,7 +2760,8 @@ function openItemEditor(itemId = null) {
     $('#item-ed-price-b').value = _rem;
     $('#item-ed-price').value = _bp;
     $('#item-ed-weight').value = item.weight || 0;
-    $('#item-ed-equippable').checked = item.equippable;
+    $('#item-ed-equippable').checked = item.equippable && !item.is_potion;
+    $('#item-ed-equippable').disabled = !!item.is_potion;
     $('#item-ed-consumable').checked = item.consumable;
     // FIX 6: potion identity
     $('#item-ed-is-potion').checked = !!item.is_potion;
@@ -2594,8 +2890,8 @@ async function saveItem() {
   // FIX 6: potion identity fields
   body.is_potion = $('#item-ed-is-potion').checked;
   body.potion_icon = $('#item-ed-potion-icon').value || '🧪';
-  // Potions are always consumable (backend also enforces this, but set here for UI accuracy)
-  if (body.is_potion) body.consumable = true;
+  // Potions are always consumable and NEVER equippable
+  if (body.is_potion) { body.consumable = true; body.equippable = false; }
   if (tempUseEffects.length > 0) {
     body.use_effect = { effects: tempUseEffects };
   } else {
@@ -2687,7 +2983,13 @@ if (_ipChk) {
         cons.checked = true;
         document.getElementById('use-effects-section')?.classList.remove('hidden');
       }
+      // Potions cannot be equipped — disable & uncheck
+      const eq = document.getElementById('item-ed-equippable');
+      if (eq) { eq.checked = false; eq.disabled = true; }
       _setPotionIcon(document.getElementById('item-ed-potion-icon')?.value || '🧪');
+    } else {
+      const eq = document.getElementById('item-ed-equippable');
+      if (eq) eq.disabled = false;
     }
   });
 }
@@ -5674,6 +5976,42 @@ function showAbilityEditor(existing = null) {
 
 if ($('#btn-new-ability')) {
   $('#btn-new-ability').addEventListener('click', () => showAbilityEditor());
+}
+
+// ══════════════════════════════════════════════════════════════
+// NPC Picker Modal (used by NPC Actions panel)
+// ══════════════════════════════════════════════════════════════
+function openNpcPickerModal(title, items) {
+  if (!items || !items.length) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999';
+  overlay.innerHTML = `
+    <div class="modal-content" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;max-width:400px;width:90%;max-height:70vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <h3 style="flex:1;margin:0;font-size:1rem">${title}</h3>
+        <button class="btn-icon" id="npc-picker-close">✕</button>
+      </div>
+      <div id="npc-picker-items" style="display:flex;flex-direction:column;gap:6px">
+        ${items.map((it, i) => `
+          <button class="btn btn-ghost" data-pick="${i}" style="text-align:left;padding:8px 10px;display:flex;flex-direction:column;align-items:flex-start;gap:2px">
+            <span style="font-weight:600">${it.label}</span>
+            ${it.sub ? `<span style="font-size:0.72rem;color:var(--text-muted)">${it.sub}</span>` : ''}
+          </button>
+        `).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#npc-picker-close').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelectorAll('[data-pick]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.pick);
+      close();
+      if (items[idx] && items[idx].onPick) await items[idx].onPick();
+    });
+  });
 }
 
 // ══════════════════════════════════════════════════════════════

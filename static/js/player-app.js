@@ -1189,17 +1189,11 @@ async function loadCurrency() {
     parts.push(`${d.bronze || d.copper}B`);
     $('#player-currency').innerHTML = `💰 ${parts.join(' ')}`;
     $('#player-currency').dataset.totalBronze = data.total_bronze || data.total_copper;
-    // FIX 2: mirror to left sidebar
+    // FIX 2: mirror to left sidebar — always show all 4 denominations
     const plat = $('#cs-curr-plat');
     const platVal = $('#cs-curr-plat-val');
-    if (plat) {
-      if ((d.platinum || 0) > 0) {
-        plat.style.display = '';
-        if (platVal) platVal.textContent = d.platinum;
-      } else {
-        plat.style.display = 'none';
-      }
-    }
+    if (plat) { plat.style.display = ''; }
+    if (platVal) platVal.textContent = d.platinum || 0;
     const csGold   = $('#cs-curr-gold');   if (csGold)   csGold.textContent   = d.gold || 0;
     const csSilver = $('#cs-curr-silver'); if (csSilver) csSilver.textContent = d.silver || 0;
     const csBronze = $('#cs-curr-bronze'); if (csBronze) csBronze.textContent = d.bronze || d.copper || 0;
@@ -1437,16 +1431,19 @@ ws.on('character.hp_update', d => {
   if (d.character_id == CHAR_ID) loadChar();
 });
 ws.on('inventory.item_added', d => {
-  if (d.character_id == CHAR_ID) loadInventory();
+  if (d.character_id == CHAR_ID) { loadInventory(); renderBonusesPenalties(); }
 });
 ws.on('inventory.item_equipped', d => {
-  if (d.character_id == CHAR_ID) loadInventory();
+  if (d.character_id == CHAR_ID) { loadInventory(); renderBonusesPenalties(); }
 });
 ws.on('inventory.item_removed', d => {
-  if (d.character_id == CHAR_ID) loadInventory();
+  if (d.character_id == CHAR_ID) { loadInventory(); renderBonusesPenalties(); }
 });
 ws.on('combat.bonuses_updated', d => {
-  if (d.character_id == CHAR_ID) { loadInventory(); loadChar(); }
+  if (d.character_id == CHAR_ID) { loadInventory(); loadChar(); renderBonusesPenalties(); }
+});
+ws.on('status.updated', d => {
+  if (d.character_id == CHAR_ID) { renderBonusesPenalties(); }
 });
 ws.on('session.status_change', d => {
   if (d.status === 'ended') addLog('[Session] Ended by GM');
@@ -2546,7 +2543,7 @@ function renderActionMenu() {
   if (itemBtn) itemBtn.addEventListener('click',  () => openItemPicker(useables, 'Use Item', '🎒'));
 }
 
-// ── Attack confirmation panel ───────────────────────────────
+// ── Attack confirmation panel (two-step: Hit → Damage) ───────
 function openAttackConfirm(wpn) {
   if (!wpn) return;
   if (!selectedTargetId) {
@@ -2564,7 +2561,7 @@ function openAttackConfirm(wpn) {
     return;
   }
   const target = tableParticipants.find(c => c.id === selectedTargetId);
-  const ws = wpn.weapon_stats || { dice_count: 1, dice_type: 6 };
+  const wpnStats = wpn.weapon_stats || { dice_count: 1, dice_type: 6 };
   const html = `
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
       <span style="font-size:1.2rem">⚔️</span>
@@ -2574,93 +2571,215 @@ function openAttackConfirm(wpn) {
     <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">
       Weapon: <strong style="color:var(--text-primary)">${wpn.name}</strong>
     </div>
-    <div id="ac-dice-widget" style="margin-bottom:8px"></div>
-    <div style="display:flex;gap:6px;justify-content:flex-end">
-      <button class="btn btn-ghost btn-sm" id="ac-cancel-2">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="ac-confirm">Confirm Attack</button>
+
+    <!-- STEP 1: HIT ROLL -->
+    <div id="ac-step1">
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🎯 Step 1 — Roll to Hit (d20)</div>
+      <div id="ac-hit-adv-host" style="margin-bottom:6px"></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="ac-cancel-2">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="ac-roll-hit">🎯 Roll Hit</button>
+      </div>
     </div>
+
+    <!-- STEP 2: DAMAGE ROLL (hidden until hit confirmed) -->
+    <div id="ac-step2" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">💥 Step 2 — Roll Damage</div>
+      <div id="ac-dmg-widget" style="margin-bottom:6px"></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="ac-cancel-3">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="ac-roll-dmg">💥 Roll Damage</button>
+      </div>
+    </div>
+
     <div id="ac-result" style="margin-top:8px;font-size:0.78rem"></div>
   `;
   const panel = _mountConfirmPanel(html);
   if (!panel) return;
 
-  // Mount universal dice widget (FIX 3 dependency)
-  const diceHost = panel.querySelector('#ac-dice-widget');
-  let widgetState = { diceCount: ws.dice_count, diceType: ws.dice_type, advantageMode: 'normal' };
-  if (typeof createDiceRollWidget === 'function') {
-    createDiceRollWidget(diceHost, {
-      label: 'Attack Dice',
-      defaultDiceCount: ws.dice_count,
-      defaultDiceType:  ws.dice_type,
-      showDiceSelector: true,
-      showAdvantage:    true,
-      showRollButton:   false,  // confirm button handles the roll
-      onStateChange: (s) => { widgetState = s; },
-    });
-  } else {
-    // Fallback: simple advantage toggle only
-    diceHost.innerHTML = `<div class="adv-toggle" id="ac-adv">
-      <button data-mode="normal" class="active">Normal</button>
-      <button data-mode="advantage">ADV</button>
-      <button data-mode="disadvantage">DISADV</button>
+  // ── Hit roll advantage toggle ──
+  const hitAdvHost = panel.querySelector('#ac-hit-adv-host');
+  let hitState = { advantageMode: 'normal' };
+  hitAdvHost.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:0.72rem;color:var(--text-muted)">Mode:</span>
+      <div class="adv-toggle" id="ac-hit-adv">
+        <button data-mode="disadvantage">Disadv</button>
+        <button data-mode="normal" class="active">Normal</button>
+        <button data-mode="advantage">Adv</button>
+      </div>
     </div>`;
-    diceHost.querySelectorAll('#ac-adv button').forEach(b => {
-      b.addEventListener('click', () => {
-        diceHost.querySelectorAll('#ac-adv button').forEach(x => x.classList.toggle('active', x === b));
-        widgetState.advantageMode = b.dataset.mode;
-      });
+  hitAdvHost.querySelectorAll('#ac-hit-adv button').forEach(b => {
+    b.addEventListener('click', () => {
+      hitAdvHost.querySelectorAll('#ac-hit-adv button').forEach(x => x.classList.toggle('active', x === b));
+      hitState.advantageMode = b.dataset.mode;
     });
-  }
+  });
 
-  panel.querySelector('#ac-cancel').addEventListener('click', _closeConfirmPanel);
-  panel.querySelector('#ac-cancel-2').addEventListener('click', _closeConfirmPanel);
-  panel.querySelector('#ac-confirm').addEventListener('click', async () => {
+  // ── Damage dice widget state (mounted after hit roll) ──
+  let dmgState = { diceCount: wpnStats.dice_count, diceType: wpnStats.dice_type, advantageMode: 'normal' };
+  let hitData = null; // stored after Step 1
+
+  const closePanel = () => _closeConfirmPanel();
+  panel.querySelector('#ac-cancel').addEventListener('click', closePanel);
+  panel.querySelector('#ac-cancel-2').addEventListener('click', closePanel);
+  panel.querySelector('#ac-cancel-3').addEventListener('click', closePanel);
+
+  // STEP 1: Roll Hit
+  panel.querySelector('#ac-roll-hit').addEventListener('click', async () => {
     const resultEl = panel.querySelector('#ac-result');
-    resultEl.innerHTML = '<span class="text-muted">Rolling...</span>';
+    const rollBtn = panel.querySelector('#ac-roll-hit');
+    rollBtn.disabled = true;
+    resultEl.innerHTML = '<span class="text-muted">Rolling d20...</span>';
     try {
-      const res = await api.post('/api/combat/execute-attack', {
+      const res = await api.post('/api/combat/hit-roll', {
         attacker_id: CHAR_ID,
         target_id:   selectedTargetId,
-        attack_type: 'weapon',
-        advantage:   widgetState.advantageMode || 'normal',
-        dice_count:  widgetState.diceCount,
-        dice_type:   widgetState.diceType,
+        advantage:   hitState.advantageMode,
       });
+      hitData = res;
       let out = '';
       if (res.hit) {
         out += `<div style="color:var(--accent-green);font-weight:700">${res.critical ? '🎯 CRITICAL HIT!' : '⚔️ HIT!'}</div>`;
-        out += `<div>${res.hit_breakdown}</div>`;
-        out += `<div>${res.damage_breakdown}</div>`;
-        out += `<div>${res.intake_breakdown}</div>`;
-        out += `<div style="font-weight:600;margin-top:3px">${res.target_name}: ${res.final_damage} dmg → ${res.target_hp_after} HP${res.target_downed ? ' 💀 DOWN!' : ''}</div>`;
       } else {
         out += `<div style="color:var(--accent-red);font-weight:700">${res.fumble ? '💨 FUMBLE' : '🛡️ MISS'}</div>`;
-        out += `<div>${res.hit_breakdown}</div>`;
       }
+      out += `<div>${res.hit_breakdown}</div>`;
       resultEl.innerHTML = out;
       addLog(`⚔️ ${res.hit_breakdown}`);
-      if (res.hit) {
-        addLog(`💥 ${res.damage_breakdown}`);
-        addLog(`🛡️ ${res.intake_breakdown}`);
-        if (res.target_downed) addLog(`💀 ${res.target_name} is DOWN!`);
+
+      // WS broadcast: hit result (no damage yet)
+      if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        ws.ws.send(JSON.stringify({
+          type: 'combat.hit_result',
+          attacker_id: CHAR_ID, attacker_name: char.name,
+          target_id:   selectedTargetId, target_name: res.target_name,
+          hit: res.hit, critical: res.critical, fumble: res.fumble,
+          hit_breakdown: res.hit_breakdown,
+        }));
       }
-      // WS broadcast
+
+      if (res.hit) {
+        // Hide step 1, show step 2 with damage dice picker
+        panel.querySelector('#ac-step1').style.display = 'none';
+        const step2 = panel.querySelector('#ac-step2');
+        step2.style.display = '';
+        // Defaults from server response (reflects equipped weapon)
+        dmgState.diceCount = res.default_dice_count || wpnStats.dice_count;
+        dmgState.diceType  = res.default_dice_type  || wpnStats.dice_type;
+        _mountDmgWidget(panel, dmgState);
+      } else {
+        // Miss/fumble — close after delay via final button
+        rollBtn.disabled = false;
+        rollBtn.textContent = '🎯 Re-roll Hit';
+      }
+    } catch (e) {
+      rollBtn.disabled = false;
+      const d = e?.body?.detail;
+      resultEl.innerHTML = `<span style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Hit roll failed')}</span>`;
+    }
+  });
+
+  // STEP 2: Roll Damage
+  panel.querySelector('#ac-roll-dmg').addEventListener('click', async () => {
+    if (!hitData || !hitData.hit) return;
+    const resultEl = panel.querySelector('#ac-result');
+    const rollBtn = panel.querySelector('#ac-roll-dmg');
+    rollBtn.disabled = true;
+    resultEl.innerHTML = (resultEl.innerHTML || '') + '<div class="text-muted">Rolling damage...</div>';
+    try {
+      const res = await api.post('/api/combat/damage-roll', {
+        attacker_id: CHAR_ID,
+        target_id:   selectedTargetId,
+        critical:    !!hitData.critical,
+        dice_count:  dmgState.diceCount,
+        dice_type:   dmgState.diceType,
+        advantage:   dmgState.advantageMode || 'normal',
+      });
+      let out = '';
+      if (hitData.critical) {
+        out += `<div style="color:var(--accent-green);font-weight:700">🎯 CRITICAL HIT!</div>`;
+      } else {
+        out += `<div style="color:var(--accent-green);font-weight:700">⚔️ HIT!</div>`;
+      }
+      out += `<div>${hitData.hit_breakdown}</div>`;
+      out += `<div>${res.damage_breakdown}</div>`;
+      out += `<div>${res.intake_breakdown}</div>`;
+      out += `<div style="font-weight:600;margin-top:3px">${res.target_name}: <span style="color:var(--accent-red)">${res.final_damage} dmg</span> → ${res.target_hp_after} HP${res.target_downed ? ' 💀 DOWN!' : ''}</div>`;
+      resultEl.innerHTML = out;
+      addLog(`💥 ${res.damage_breakdown}`);
+      addLog(`🛡️ ${res.intake_breakdown}`);
+      if (res.target_downed) addLog(`💀 ${res.target_name} is DOWN!`);
+
+      // WS broadcast: full attack result
       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
         ws.ws.send(JSON.stringify({
           type: 'combat.attack_result',
           attacker_id: CHAR_ID, attacker_name: char.name,
           target_id:   selectedTargetId, target_name: res.target_name,
-          hit: res.hit, critical: res.critical, fumble: res.fumble,
+          hit: true, critical: !!hitData.critical, fumble: false,
           final_damage: res.final_damage, target_hp_after: res.target_hp_after,
         }));
       }
       await loadChar();
       loadTableView();
     } catch (e) {
+      rollBtn.disabled = false;
       const d = e?.body?.detail;
-      resultEl.innerHTML = `<span style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Attack failed')}</span>`;
+      resultEl.innerHTML += `<div style="color:var(--accent-red)">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Damage roll failed')}</div>`;
     }
   });
+}
+
+// Helper to mount damage dice widget in step 2
+function _mountDmgWidget(panel, dmgState) {
+  const host = panel.querySelector('#ac-dmg-widget');
+  if (!host) return;
+  if (typeof createDiceRollWidget === 'function') {
+    createDiceRollWidget(host, {
+      label: 'Damage Dice',
+      defaultDiceCount: dmgState.diceCount,
+      defaultDiceType:  dmgState.diceType,
+      showDiceSelector: true,
+      showAdvantage:    true,
+      showRollButton:   false,
+      onStateChange: (s) => {
+        dmgState.diceCount = s.diceCount;
+        dmgState.diceType = s.diceType;
+        dmgState.advantageMode = s.advantageMode;
+      },
+    });
+  } else {
+    host.innerHTML = `
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.72rem;color:var(--text-muted)">Dice:</label>
+        <input type="number" id="ac-dmg-count" value="${dmgState.diceCount}" min="1" max="20" style="width:48px">
+        <span>d</span>
+        <select id="ac-dmg-type" style="width:60px">
+          <option value="4">4</option><option value="6">6</option>
+          <option value="8">8</option><option value="10">10</option>
+          <option value="12">12</option><option value="20">20</option>
+        </select>
+        <div class="adv-toggle" id="ac-dmg-adv" style="margin-left:8px">
+          <button data-mode="disadvantage">Disadv</button>
+          <button data-mode="normal" class="active">Normal</button>
+          <button data-mode="advantage">Adv</button>
+        </div>
+      </div>`;
+    host.querySelector('#ac-dmg-type').value = dmgState.diceType;
+    host.querySelector('#ac-dmg-count').addEventListener('input', e => {
+      dmgState.diceCount = parseInt(e.target.value) || 1;
+    });
+    host.querySelector('#ac-dmg-type').addEventListener('change', e => {
+      dmgState.diceType = parseInt(e.target.value) || 6;
+    });
+    host.querySelectorAll('#ac-dmg-adv button').forEach(b => {
+      b.addEventListener('click', () => {
+        host.querySelectorAll('#ac-dmg-adv button').forEach(x => x.classList.toggle('active', x === b));
+        dmgState.advantageMode = b.dataset.mode;
+      });
+    });
+  }
 }
 
 // ── Ability picker confirmation panel ─────────────────────────
@@ -3016,27 +3135,49 @@ async function renderBonusesPenalties() {
   const penaltyEl = $('#active-penalties-list');
   if (!bonusEl || !penaltyEl) return;
 
-  // Bonuses from equipped items + passive abilities
+  // Bonuses from equipped items + passive abilities + active status buffs
   try {
     const data = await api.get(`/api/characters/${CHAR_ID}/equipped-bonuses`);
-    const bonuses = data.bonuses || [];
+    // API returns { breakdown: [{source, bonus_type, stat_name, value}], + aggregated keys }
+    const bonuses = Array.isArray(data.breakdown) ? data.breakdown.slice() : (data.bonuses || []);
     // Also show passive ability bonuses
     const passiveAbs = (abilitiesData || []).filter(a => a.ability_type === 'passive' && a.is_unlocked !== false);
     for (const pa of passiveAbs) {
       const pe = pa.passive_effect || {};
       const pBonuses = pe.bonuses || [];
       for (const pb of pBonuses) {
-        bonuses.push({ value: pb.value, bonus_type: pb.bonus_type, source: `${pa.icon||'🔵'} ${pa.name} (passive)` });
+        bonuses.push({ value: pb.value, bonus_type: pb.bonus_type, stat_name: pb.stat_name, source: `${pa.icon||'🔵'} ${pa.name} (passive)` });
       }
     }
+    // Also show active status effect buffs (positive values)
+    try {
+      const effects = await api.get(`/api/characters/${CHAR_ID}/status-effects`);
+      for (const se of (effects || [])) {
+        const effs = typeof se.effects === 'string' ? JSON.parse(se.effects) : (se.effects || []);
+        for (const e of effs) {
+          const v = Number(e.value || 0);
+          if (v > 0 && !String(e.type||'').includes('penalty')) {
+            bonuses.push({
+              value: v,
+              bonus_type: e.type || 'bonus',
+              stat_name: e.stat_name || null,
+              source: `${se.icon || '✨'} ${se.name}`,
+            });
+          }
+        }
+      }
+    } catch {}
     if (bonuses.length) {
-      bonusEl.innerHTML = bonuses.map(b =>
-        `<div style="margin-bottom:3px">+${b.value} ${b.bonus_type.replace(/_/g,' ')} <span style="color:var(--text-muted)">from ${b.source}</span></div>`
-      ).join('');
+      bonusEl.innerHTML = bonuses.map(b => {
+        const label = b.stat_name
+          ? `${b.stat_name.toUpperCase()} ${b.value > 0 ? '+' : ''}${b.value}`
+          : `${b.bonus_type.replace(/_/g,' ')} ${b.value > 0 ? '+' : ''}${b.value}`;
+        return `<div style="margin-bottom:3px"><span style="color:var(--accent-green)">${label}</span> <span style="color:var(--text-muted)">from ${b.source}</span></div>`;
+      }).join('');
     } else {
       bonusEl.innerHTML = '<span class="text-muted">No active bonuses</span>';
     }
-  } catch { bonusEl.innerHTML = '<span class="text-muted">No active bonuses</span>'; }
+  } catch (e) { console.warn('bonuses:', e); bonusEl.innerHTML = '<span class="text-muted">No active bonuses</span>'; }
 
   // Penalties from status effects
   try {

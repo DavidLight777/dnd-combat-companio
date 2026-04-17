@@ -224,6 +224,8 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
     # FIX 6: auto-flag consumable if is_potion=true (potions are always consumable)
     _is_potion = bool(body.get("is_potion", False))
     _consumable = body.get("consumable", False) or _is_potion
+    # Potions cannot be equippable — force-off
+    _equippable = body.get("equippable", False) and not _is_potion
     item = Item(
         session_id=body.get("session_id"),
         name=body.get("name", "Item"),
@@ -236,7 +238,7 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
         weight=body.get("weight", 0.0),
         effect_type=body.get("effect_type"),
         effect_value=body.get("effect_value"),
-        equippable=body.get("equippable", False),
+        equippable=_equippable,
         consumable=_consumable,
         mana_cost=body.get("mana_cost", 0),
         use_effect=json.dumps(body["use_effect"]) if isinstance(body.get("use_effect"), (dict, list)) else body.get("use_effect"),
@@ -291,6 +293,9 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
     # FIX 6: potions are always consumable — auto-enable when is_potion=true
     if body.get("is_potion") and not item.consumable:
         item.consumable = True
+    # Potions cannot be equippable
+    if item.is_potion and item.equippable:
+        item.equippable = False
     # Accept legacy base_price_copper key
     if "base_price_copper" in body and "base_price_bronze" not in body:
         item.base_price_bronze = body["base_price_copper"]
@@ -538,6 +543,17 @@ async def toggle_equip(inventory_id: int, body: dict, db: AsyncSession = Depends
 
     equip = body.get("equip", not entry.is_equipped)
     slot = body.get("slot")
+
+    # Guard: potions/consumables cannot be equipped (they are used, not worn)
+    if equip:
+        item = await db.get(Item, entry.item_id)
+        if item:
+            if getattr(item, "is_potion", False):
+                raise HTTPException(400, "Potions cannot be equipped. Use them instead.")
+            if item.consumable and not item.equippable:
+                raise HTTPException(400, "Consumables cannot be equipped. Use them instead.")
+            if not item.equippable:
+                raise HTTPException(400, f"'{item.name}' is not equippable.")
 
     if equip and slot and slot not in EQUIPMENT_SLOTS:
         raise HTTPException(400, f"Invalid slot. Must be one of: {EQUIPMENT_SLOTS}")
