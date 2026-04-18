@@ -181,6 +181,44 @@ async def create_category(body: dict, db: AsyncSession = Depends(get_session)):
 
 
 # ══════════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════════
+_DAMAGE_MODE_CAP = 8  # hard cap on number of preset damage modes per weapon
+
+
+def _sanitize_damage_modes(raw) -> list:
+    """Validate + clamp a GM-submitted damage_modes list.
+
+    Returns a clean list of dicts ready to json.dumps into the DB. Empty
+    input → empty list (weapon uses its flat dice_count/dice_type fallback).
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for m in raw[:_DAMAGE_MODE_CAP]:
+        if not isinstance(m, dict):
+            continue
+        try:
+            dc = max(1, min(20, int(m.get("dice_count", 1))))
+            dt = max(2, min(100, int(m.get("dice_type", 6))))
+        except (TypeError, ValueError):
+            continue
+        name = str(m.get("name") or f"{dc}d{dt}")[:60]
+        dmg_type = str(m.get("damage_type") or "physical")[:20]
+        dmg_stat = m.get("damage_stat")
+        if dmg_stat is not None:
+            dmg_stat = str(dmg_stat)[:20]
+        out.append({
+            "name": name,
+            "dice_count": dc,
+            "dice_type": dt,
+            "damage_type": dmg_type,
+            "damage_stat": dmg_stat,
+        })
+    return out
+
+
+# ══════════════════════════════════════════════════════════════
 # ITEMS CRUD
 # ══════════════════════════════════════════════════════════════
 @router.get("/items")
@@ -262,6 +300,7 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
     ws = body.get("weapon_stats")
     if ws:
         wp = ws.get("weapon_properties", [])
+        dm = _sanitize_damage_modes(ws.get("damage_modes"))
         db.add(ItemWeaponStats(
             item_id=item.id,
             dice_count=ws.get("dice_count", 1),
@@ -273,6 +312,8 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
             # Rework Phase 2: stat that adds its value as bonus to hit / damage rolls
             hit_stat=ws.get("hit_stat", "strength"),
             damage_stat=ws.get("damage_stat") if ws.get("damage_stat") is not None else "strength",
+            # Rework v3: optional preset damage modes.
+            damage_modes=json.dumps(dm),
         ))
     await db.commit()
     await db.refresh(item)
@@ -321,8 +362,11 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
             if "weapon_properties" in ws:
                 wp = ws["weapon_properties"]
                 item.weapon_stats.weapon_properties = json.dumps(wp) if isinstance(wp, list) else (wp or "[]")
+            if "damage_modes" in ws:
+                item.weapon_stats.damage_modes = json.dumps(_sanitize_damage_modes(ws["damage_modes"]))
         else:
             wp = ws.get("weapon_properties", [])
+            dm = _sanitize_damage_modes(ws.get("damage_modes"))
             db.add(ItemWeaponStats(
                 item_id=item.id,
                 **{k: ws[k] for k in ["dice_count", "dice_type", "damage_type", "range"] if k in ws},
@@ -330,6 +374,7 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
                 weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
                 hit_stat=ws.get("hit_stat", "strength"),
                 damage_stat=ws.get("damage_stat") if ws.get("damage_stat") is not None else "strength",
+                damage_modes=json.dumps(dm),
             ))
     await db.commit()
     await db.refresh(item)
@@ -426,6 +471,12 @@ def _item_dict(i: Item) -> dict:
     }
     if i.weapon_stats:
         ws = i.weapon_stats
+        try:
+            dmg_modes = json.loads(getattr(ws, "damage_modes", None) or "[]")
+            if not isinstance(dmg_modes, list):
+                dmg_modes = []
+        except Exception:
+            dmg_modes = []
         d["weapon_stats"] = {
             "id": ws.id, "dice_count": ws.dice_count, "dice_type": ws.dice_type,
             "damage_type": ws.damage_type, "range": ws.range,
@@ -434,6 +485,9 @@ def _item_dict(i: Item) -> dict:
             # Rework Phase 2: expose hit_stat / damage_stat so GM editor can show them
             "hit_stat": getattr(ws, "hit_stat", None) or "strength",
             "damage_stat": getattr(ws, "damage_stat", None),
+            # Rework v3: optional preset damage modes. Empty list = weapon has
+            # a single mode (use the flat dice_count/dice_type above).
+            "damage_modes": dmg_modes,
         }
     return d
 

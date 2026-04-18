@@ -36,34 +36,65 @@ class AdvantageResult:
     mode: str                 # "normal" | "advantage" | "disadvantage"
 
 
-def apply_advantage(roll_func: Callable, mode: str = "normal") -> AdvantageResult:
+ADV_DICE_CAP = 5  # hard cap on number of d20s a player can roll per check
+
+
+def apply_advantage(
+    roll_func: Callable,
+    mode: str = "normal",
+    dice_count: int | None = None,
+) -> AdvantageResult:
     """
     Wraps any roll function with advantage/disadvantage logic.
-    roll_func: callable returning (total: int, details: Any)
-    mode: "normal" | "advantage" | "disadvantage"
-    Returns AdvantageResult.
+
+    roll_func:    callable returning (total: int, details: Any)
+    mode:         "normal" | "advantage" | "disadvantage"
+    dice_count:   how many times to call ``roll_func``.
+                  None → legacy behaviour: 1 roll for normal, 2 rolls for adv/disadv.
+                  Player-facing: clamped to [1, ADV_DICE_CAP].
+                  For adv/disadv we force ``max(2, dice_count)`` so the pick is
+                  meaningful (ADV on a single die collapses to normal).
+
+    Selection policy:
+        normal        → take the first roll; extras are logged but unused.
+        advantage     → take the HIGHEST.
+        disadvantage  → take the LOWEST.
+
+    Returns AdvantageResult with ``all_totals`` / ``all_details`` of length N.
     """
     if mode not in ("normal", "advantage", "disadvantage"):
         mode = "normal"
 
-    total1, details1 = roll_func()
-    if mode == "normal":
-        return AdvantageResult(
-            chosen_total=total1, all_totals=[total1],
-            chosen_index=0, all_details=[details1], mode=mode,
-        )
+    if dice_count is None:
+        n = 1 if mode == "normal" else 2
+    else:
+        try:
+            n = int(dice_count)
+        except (TypeError, ValueError):
+            n = 1 if mode == "normal" else 2
+    n = max(1, min(ADV_DICE_CAP, n))
+    if mode != "normal" and n < 2:
+        n = 2  # adv/disadv need at least 2 rolls to pick from
 
-    total2, details2 = roll_func()
+    totals: list = []
+    details: list = []
+    for _ in range(n):
+        t, d = roll_func()
+        totals.append(t)
+        details.append(d)
+
     if mode == "advantage":
-        chosen = 0 if total1 >= total2 else 1
-    else:  # disadvantage
-        chosen = 0 if total1 <= total2 else 1
+        chosen = max(range(n), key=lambda i: totals[i])
+    elif mode == "disadvantage":
+        chosen = min(range(n), key=lambda i: totals[i])
+    else:
+        chosen = 0
 
     return AdvantageResult(
-        chosen_total=[total1, total2][chosen],
-        all_totals=[total1, total2],
+        chosen_total=totals[chosen],
+        all_totals=totals,
         chosen_index=chosen,
-        all_details=[details1, details2],
+        all_details=details,
         mode=mode,
     )
 
@@ -92,12 +123,22 @@ def resolve_advantage_mode(player_choice: str, penalties: dict | None) -> str:
 
 def format_advantage_breakdown(mode: str, all_totals: list, chosen_index: int,
                                  base_label: str = "D20") -> str:
-    """Format advantage/disadvantage prefix for breakdown strings."""
-    if mode == "normal" or len(all_totals) < 2:
+    """Format advantage/disadvantage prefix for breakdown strings.
+
+    Works for arbitrary dice counts (1..N). "normal" with a single die
+    returns "" so the caller can skip prefix entirely.
+    """
+    if mode == "normal" and len(all_totals) < 2:
         return ""
-    label = "ADV" if mode == "advantage" else "DISADV"
-    chosen = all_totals[chosen_index]
-    return f"{label}: {base_label}[{all_totals[0]}, {all_totals[1]}] took {chosen}"
+    if mode == "normal":
+        label = "NORM"
+    elif mode == "advantage":
+        label = "ADV"
+    else:
+        label = "DISADV"
+    chosen = all_totals[chosen_index] if 0 <= chosen_index < len(all_totals) else all_totals[0]
+    inner = ", ".join(str(x) for x in all_totals)
+    return f"{label}: {base_label}[{inner}] took {chosen}"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -691,10 +732,12 @@ def calculate_combat_attack(
     item_atk_bonus: int = 0,
     status_atk_penalty: int = 0,
     advantage_mode: str = "normal",
+    dice_count: int | None = None,
 ) -> CombatAttackResult:
     """
     Full D&D-style attack roll with advantage/disadvantage support.
     advantage_mode: "normal" | "advantage" | "disadvantage"
+    dice_count: optional number of d20s to roll (1..ADV_DICE_CAP).
     """
     sm = _calc_attack_stat_mod(attacker_stats, weapon)
     _, _, wb = _resolve_weapon_props(weapon) if weapon else ([], "melee", 0)
@@ -704,7 +747,7 @@ def calculate_combat_attack(
         t = d + sm + wb + item_atk_bonus - status_atk_penalty
         return t, d
 
-    adv = apply_advantage(_single_roll, advantage_mode)
+    adv = apply_advantage(_single_roll, advantage_mode, dice_count=dice_count)
     chosen_d20 = adv.all_details[adv.chosen_index]
     total = adv.chosen_total
 

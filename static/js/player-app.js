@@ -20,26 +20,60 @@ let charData = null;      // Alias for shop access
 let calcLog = [];         // Calc log entries
 let rollHistory = [];     // Roll history entries
 let _atkD20Result = null; // Last d20 roll
-let _advantageModes = {};  // per-panel advantage mode: { attack: 'normal', damage: 'normal', heal: 'normal', char_roll: 'normal' }
+// Rework v3: per-panel state carries BOTH the mode and the dice count.
+// { attack: { mode: 'normal', diceCount: 1 }, ... }
+let _advantageModes = {};
+const ADV_DICE_CAP = 5;
+
+function _getAdvState(panelKey) {
+  if (!_advantageModes[panelKey] || typeof _advantageModes[panelKey] !== 'object') {
+    _advantageModes[panelKey] = { mode: 'normal', diceCount: 1 };
+  }
+  return _advantageModes[panelKey];
+}
 
 // ── Advantage Toggle helper ──────────────────────────────────
-function makeAdvToggle(panelKey) {
-  _advantageModes[panelKey] = _advantageModes[panelKey] || 'normal';
-  const cur = _advantageModes[panelKey];
-  return `<div class="adv-toggle" data-adv-panel="${panelKey}">
-    <button data-mode="normal" class="${cur==='normal'?'active':''}">Normal</button>
-    <button data-mode="advantage" class="${cur==='advantage'?'active':''}">ADV</button>
-    <button data-mode="disadvantage" class="${cur==='disadvantage'?'active':''}">DISADV</button>
-  </div>`;
+function makeAdvToggle(panelKey, opts = {}) {
+  const st = _getAdvState(panelKey);
+  const showStepper = opts.showStepper !== false;  // default: show N-d20 stepper
+  const stepperHtml = showStepper ? `
+    <div class="adv-stepper" data-adv-panel="${panelKey}" style="display:inline-flex;align-items:center;gap:4px;margin-left:6px">
+      <span style="font-size:0.7rem;color:var(--text-muted)">🎲 ×</span>
+      <button type="button" class="btn btn-ghost btn-xs" data-adv-step="-1" style="padding:0 6px">−</button>
+      <span data-adv-count style="font-weight:600;min-width:10px;text-align:center">${st.diceCount}</span>
+      <button type="button" class="btn btn-ghost btn-xs" data-adv-step="+1" style="padding:0 6px">+</button>
+    </div>` : '';
+  return `<div style="display:inline-flex;align-items:center"><div class="adv-toggle" data-adv-panel="${panelKey}">
+    <button data-mode="normal" class="${st.mode==='normal'?'active':''}">Normal</button>
+    <button data-mode="advantage" class="${st.mode==='advantage'?'active':''}">ADV</button>
+    <button data-mode="disadvantage" class="${st.mode==='disadvantage'?'active':''}">DISADV</button>
+  </div>${stepperHtml}</div>`;
 }
 function bindAdvToggle(container, panelKey) {
+  const st = _getAdvState(panelKey);
   const btns = container.querySelectorAll(`.adv-toggle[data-adv-panel="${panelKey}"] button`);
   btns.forEach(b => b.addEventListener('click', () => {
-    _advantageModes[panelKey] = b.dataset.mode;
+    st.mode = b.dataset.mode;
+    // adv/disadv need at least 2 dice to be meaningful
+    if (st.mode !== 'normal' && st.diceCount < 2) st.diceCount = 2;
     btns.forEach(x => x.classList.toggle('active', x === b));
+    _refreshAdvStepper(container, panelKey);
+  }));
+  const stepBtns = container.querySelectorAll(`.adv-stepper[data-adv-panel="${panelKey}"] [data-adv-step]`);
+  stepBtns.forEach(b => b.addEventListener('click', () => {
+    const delta = parseInt(b.dataset.advStep) || 0;
+    const min = st.mode === 'normal' ? 1 : 2;
+    st.diceCount = Math.max(min, Math.min(ADV_DICE_CAP, st.diceCount + delta));
+    _refreshAdvStepper(container, panelKey);
   }));
 }
-function getAdvMode(panelKey) { return _advantageModes[panelKey] || 'normal'; }
+function _refreshAdvStepper(container, panelKey) {
+  const st = _getAdvState(panelKey);
+  const lbl = container.querySelector(`.adv-stepper[data-adv-panel="${panelKey}"] [data-adv-count]`);
+  if (lbl) lbl.textContent = st.diceCount;
+}
+function getAdvMode(panelKey) { return _getAdvState(panelKey).mode; }
+function getAdvDiceCount(panelKey) { return _getAdvState(panelKey).diceCount; }
 
 // ── API helper ───────────────────────────────────────────────
 const api = {
@@ -685,6 +719,7 @@ async function calcAttack() {
   const res = await api.post('/api/calc/attack-roll', {
     d20, base_mod: baseMod, modifier_values: mods.map(m => m.value),
     character_id: CHAR_ID, advantage_mode: getAdvMode('attack'),
+    hit_dice_count: getAdvDiceCount('attack'),
   });
   let t = res.breakdown || `D20(${res.d20}) + Base(${res.base_mod}) = ${res.total}`;
   t += ` → Attack Bonus: <span class="value">${res.attack_bonus}</span>`;
@@ -2024,6 +2059,7 @@ function renderCombatBanner() {
                 const result = await api.post(`/api/combat/${c.id}/attack`, {
                   attacker_id: CHAR_ID, target_id: targetId,
                   advantage_mode: getAdvMode('player_combat'),
+                  hit_dice_count: getAdvDiceCount('player_combat'),
                 });
                 tp.style.display = 'none';
                 const resEl = banner.querySelector('#player-action-result');
@@ -3056,27 +3092,52 @@ function openAttackConfirm(wpn) {
   const panel = _mountConfirmPanel(html);
   if (!panel) return;
 
-  // ── Hit roll advantage toggle ──
+  // ── Hit roll advantage toggle + dice-count stepper (Rework v3) ──
   const hitAdvHost = panel.querySelector('#ac-hit-adv-host');
-  let hitState = { advantageMode: 'normal' };
-  hitAdvHost.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:0.72rem;color:var(--text-muted)">Mode:</span>
-      <div class="adv-toggle" id="ac-hit-adv">
-        <button data-mode="disadvantage">Disadv</button>
-        <button data-mode="normal" class="active">Normal</button>
-        <button data-mode="advantage">Adv</button>
-      </div>
-    </div>`;
-  hitAdvHost.querySelectorAll('#ac-hit-adv button').forEach(b => {
-    b.addEventListener('click', () => {
-      hitAdvHost.querySelectorAll('#ac-hit-adv button').forEach(x => x.classList.toggle('active', x === b));
-      hitState.advantageMode = b.dataset.mode;
+  let hitState = { advantageMode: 'normal', diceCount: 1 };
+  function _renderHitAdv() {
+    hitAdvHost.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:0.72rem;color:var(--text-muted)">Mode:</span>
+        <div class="adv-toggle" id="ac-hit-adv">
+          <button data-mode="disadvantage" class="${hitState.advantageMode==='disadvantage'?'active':''}">Disadv</button>
+          <button data-mode="normal" class="${hitState.advantageMode==='normal'?'active':''}">Normal</button>
+          <button data-mode="advantage" class="${hitState.advantageMode==='advantage'?'active':''}">Adv</button>
+        </div>
+        <div style="display:inline-flex;align-items:center;gap:4px">
+          <span style="font-size:0.72rem;color:var(--text-muted)">🎲 ×</span>
+          <button type="button" class="btn btn-ghost btn-xs" id="ac-hit-dice-minus" style="padding:0 6px">−</button>
+          <span id="ac-hit-dice-count" style="font-weight:600;min-width:10px;text-align:center">${hitState.diceCount}</span>
+          <button type="button" class="btn btn-ghost btn-xs" id="ac-hit-dice-plus" style="padding:0 6px">+</button>
+        </div>
+      </div>`;
+    hitAdvHost.querySelectorAll('#ac-hit-adv button').forEach(b => {
+      b.addEventListener('click', () => {
+        hitState.advantageMode = b.dataset.mode;
+        if (hitState.advantageMode !== 'normal' && hitState.diceCount < 2) hitState.diceCount = 2;
+        _renderHitAdv();
+      });
     });
-  });
+    const step = (d) => {
+      const min = hitState.advantageMode === 'normal' ? 1 : 2;
+      hitState.diceCount = Math.max(min, Math.min(ADV_DICE_CAP, hitState.diceCount + d));
+      _renderHitAdv();
+    };
+    hitAdvHost.querySelector('#ac-hit-dice-minus').addEventListener('click', () => step(-1));
+    hitAdvHost.querySelector('#ac-hit-dice-plus').addEventListener('click', () => step(+1));
+  }
+  _renderHitAdv();
 
   // ── Damage dice widget state (mounted after hit roll) ──
-  let dmgState = { diceCount: wpnStats.dice_count, diceType: wpnStats.dice_type, advantageMode: 'normal' };
+  //    Rework v3: dice_count/type are FIXED by weapon; if the weapon defines
+  //    preset damage_modes, the player picks one via modeIndex instead.
+  let dmgState = {
+    diceCount: wpnStats.dice_count,
+    diceType: wpnStats.dice_type,
+    damageModes: (wpnStats.damage_modes || []),
+    modeIndex: (wpnStats.damage_modes && wpnStats.damage_modes.length ? 0 : null),
+    advantageMode: 'normal',
+  };
   let hitData = null; // stored after Step 1
 
   const closePanel = () => _closeConfirmPanel();
@@ -3095,6 +3156,7 @@ function openAttackConfirm(wpn) {
         attacker_id: CHAR_ID,
         target_id:   selectedTargetId,
         advantage:   hitState.advantageMode,
+        hit_dice_count: hitState.diceCount,
       });
       hitData = res;
       let out = '';
@@ -3126,6 +3188,14 @@ function openAttackConfirm(wpn) {
         // Defaults from server response (reflects equipped weapon)
         dmgState.diceCount = res.default_dice_count || wpnStats.dice_count;
         dmgState.diceType  = res.default_dice_type  || wpnStats.dice_type;
+        // Rework v3: server returns preset damage_modes if the weapon has them.
+        if (Array.isArray(res.damage_modes) && res.damage_modes.length) {
+          dmgState.damageModes = res.damage_modes;
+          if (dmgState.modeIndex == null) dmgState.modeIndex = 0;
+        } else {
+          dmgState.damageModes = [];
+          dmgState.modeIndex = null;
+        }
         _mountDmgWidget(panel, dmgState);
       } else {
         // Miss/fumble — close after delay via final button
@@ -3151,8 +3221,8 @@ function openAttackConfirm(wpn) {
         attacker_id: CHAR_ID,
         target_id:   selectedTargetId,
         critical:    !!hitData.critical,
-        dice_count:  dmgState.diceCount,
-        dice_type:   dmgState.diceType,
+        // Rework v3: damage dice are fixed by the weapon. Only pass mode index.
+        damage_mode_index: dmgState.modeIndex,
         advantage:   dmgState.advantageMode || 'normal',
       });
       let out = '';
@@ -3190,55 +3260,57 @@ function openAttackConfirm(wpn) {
   });
 }
 
-// Helper to mount damage dice widget in step 2
+// Rework v3: damage dice are LOCKED by the weapon.
+//   * No damage_modes → render read-only "1d6 physical".
+//   * Has damage_modes → render a dropdown of preset modes.
+// Player can still pick adv/disadv on the damage roll.
 function _mountDmgWidget(panel, dmgState) {
   const host = panel.querySelector('#ac-dmg-widget');
   if (!host) return;
-  if (typeof createDiceRollWidget === 'function') {
-    createDiceRollWidget(host, {
-      label: 'Damage Dice',
-      defaultDiceCount: dmgState.diceCount,
-      defaultDiceType:  dmgState.diceType,
-      showDiceSelector: true,
-      showAdvantage:    true,
-      showRollButton:   false,
-      onStateChange: (s) => {
-        dmgState.diceCount = s.diceCount;
-        dmgState.diceType = s.diceType;
-        dmgState.advantageMode = s.advantageMode;
-      },
-    });
-  } else {
+  const modes = Array.isArray(dmgState.damageModes) ? dmgState.damageModes : [];
+  dmgState.advantageMode = dmgState.advantageMode || 'normal';
+
+  if (modes.length > 0) {
+    if (dmgState.modeIndex == null) dmgState.modeIndex = 0;
     host.innerHTML = `
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <label style="font-size:0.72rem;color:var(--text-muted)">Dice:</label>
-        <input type="number" id="ac-dmg-count" value="${dmgState.diceCount}" min="1" max="20" style="width:48px">
-        <span>d</span>
-        <select id="ac-dmg-type" style="width:60px">
-          <option value="4">4</option><option value="6">6</option>
-          <option value="8">8</option><option value="10">10</option>
-          <option value="12">12</option><option value="20">20</option>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label style="font-size:0.72rem;color:var(--text-muted)">Damage Mode:</label>
+        <select id="ac-dmg-mode" style="font-size:0.85rem">
+          ${modes.map((m, i) => `<option value="${i}"${i===dmgState.modeIndex?' selected':''}>${m.name} — ${m.dice_count}d${m.dice_type} ${m.damage_type || ''}</option>`).join('')}
         </select>
-        <div class="adv-toggle" id="ac-dmg-adv" style="margin-left:8px">
-          <button data-mode="disadvantage">Disadv</button>
-          <button data-mode="normal" class="active">Normal</button>
-          <button data-mode="advantage">Adv</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:0.72rem;color:var(--text-muted)">Adv:</span>
+          <div class="adv-toggle" id="ac-dmg-adv">
+            <button data-mode="disadvantage" class="${dmgState.advantageMode==='disadvantage'?'active':''}">Disadv</button>
+            <button data-mode="normal" class="${dmgState.advantageMode==='normal'?'active':''}">Normal</button>
+            <button data-mode="advantage" class="${dmgState.advantageMode==='advantage'?'active':''}">Adv</button>
+          </div>
         </div>
       </div>`;
-    host.querySelector('#ac-dmg-type').value = dmgState.diceType;
-    host.querySelector('#ac-dmg-count').addEventListener('input', e => {
-      dmgState.diceCount = parseInt(e.target.value) || 1;
+    host.querySelector('#ac-dmg-mode').addEventListener('change', e => {
+      dmgState.modeIndex = parseInt(e.target.value) || 0;
     });
-    host.querySelector('#ac-dmg-type').addEventListener('change', e => {
-      dmgState.diceType = parseInt(e.target.value) || 6;
-    });
-    host.querySelectorAll('#ac-dmg-adv button').forEach(b => {
-      b.addEventListener('click', () => {
-        host.querySelectorAll('#ac-dmg-adv button').forEach(x => x.classList.toggle('active', x === b));
-        dmgState.advantageMode = b.dataset.mode;
-      });
-    });
+  } else {
+    // Single-mode weapon — read-only display.
+    host.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:0.8rem">Damage: <strong>${dmgState.diceCount}d${dmgState.diceType}</strong> <span style="color:var(--text-muted)">(fixed by weapon)</span></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:0.72rem;color:var(--text-muted)">Adv:</span>
+          <div class="adv-toggle" id="ac-dmg-adv">
+            <button data-mode="disadvantage" class="${dmgState.advantageMode==='disadvantage'?'active':''}">Disadv</button>
+            <button data-mode="normal" class="${dmgState.advantageMode==='normal'?'active':''}">Normal</button>
+            <button data-mode="advantage" class="${dmgState.advantageMode==='advantage'?'active':''}">Adv</button>
+          </div>
+        </div>
+      </div>`;
   }
+  host.querySelectorAll('#ac-dmg-adv button').forEach(b => {
+    b.addEventListener('click', () => {
+      host.querySelectorAll('#ac-dmg-adv button').forEach(x => x.classList.toggle('active', x === b));
+      dmgState.advantageMode = b.dataset.mode;
+    });
+  });
 }
 
 // ── Ability picker confirmation panel ─────────────────────────
@@ -3294,7 +3366,32 @@ function _mountAbilityConfirm(panel, ab) {
   const needsTarget = ab.target_type === 'single' && (!ab.is_passive);
   const area = panel.querySelector('#ap-confirm-area');
   if (!area) return;
-  const targets = (tableParticipants || []).filter(t => t.is_npc); // single-target abilities hit NPCs
+  // Rework v3 — classify the ability by its effects to show the right targets.
+  //   * Offensive (requires hit-roll OR has a damage dice/effect) → enemies only (NPCs).
+  //   * Supportive (heal / restore mana / buff / cleanse / ...)   → allies + self.
+  //   * Mixed or unknown                                          → everyone living.
+  const _effList = Array.isArray(ab.effect) ? ab.effect
+    : (ab.effect && Array.isArray(ab.effect.effects)) ? ab.effect.effects : [];
+  const _hasDamage = _effList.some(e => e && e.type === 'damage')
+                  || !!(ab.damage_dice_count && ab.damage_dice_type);
+  const _hasSupport = _effList.some(e => e && [
+    'heal_hp','restore_mana','restore_hp_by_die',
+    'stat_boost','apply_status','remove_status',
+  ].includes(e.type));
+  const _isOffensive = !!ab.requires_hit_roll || (_hasDamage && !_hasSupport);
+
+  let targets;
+  if (_isOffensive) {
+    targets = (tableParticipants || []).filter(t => t.is_npc && t.is_alive !== false);
+  } else if (_hasSupport && !_hasDamage) {
+    const allies = (tableParticipants || [])
+      .filter(t => !t.is_npc && t.id !== CHAR_ID && t.is_alive !== false);
+    targets = [{ id: CHAR_ID, name: (char?.name || 'Self'), _self: true }, ...allies];
+  } else {
+    const others = (tableParticipants || [])
+      .filter(t => t.id !== CHAR_ID && t.is_alive !== false);
+    targets = [{ id: CHAR_ID, name: (char?.name || 'Self'), _self: true }, ...others];
+  }
   const costLine = [
     ab.mana_cost ? `🔮 ${ab.mana_cost} mana` : null,
     ab.hp_cost   ? `❤️ ${ab.hp_cost} HP` : null,
@@ -3323,9 +3420,16 @@ function _mountAbilityConfirm(panel, ab) {
       ${needsTarget ? `<div style="margin-bottom:6px">
         <label style="font-size:0.75rem">Target:
           <select id="ap-target" style="font-size:0.8rem;margin-left:4px;min-width:140px">
-            ${targets.length
-              ? targets.map(t => `<option value="${t.id}" ${t.id === selectedTargetId ? 'selected' : ''}>${t.name}</option>`).join('')
-              : '<option value="">(no targets)</option>'}
+            ${(() => {
+              if (!targets.length) return '<option value="">(no targets)</option>';
+              // Prefer the currently selected table target; else first option in the list.
+              const picked = targets.find(t => t.id === selectedTargetId) || targets[0];
+              return targets.map(t => {
+                const lbl = t._self ? `Self (${t.name})`
+                          : (t.is_npc ? `🎭 ${t.name}` : `👤 ${t.name}`);
+                return `<option value="${t.id}"${t.id === picked.id ? ' selected' : ''}>${lbl}</option>`;
+              }).join('');
+            })()}
           </select>
         </label>
       </div>` : ''}
@@ -3543,11 +3647,30 @@ function _mountItemConfirm(panel, it) {
   const area = panel.querySelector('#ip-confirm-area');
   if (!area) return;
   const rarityCls = it.rarity ? ` rarity-${it.rarity}` : '';
+  // Rework v3 — consumables can target Self or a teammate. Build a Self + living
+  // teammates dropdown; default to the currently selected table target (if it is
+  // not Self), otherwise Self. Previously this modal shipped no target_id at all,
+  // so potions "used on a teammate" were silently applied to the caster instead.
+  const _teammates = (tableParticipants || [])
+    .filter(t => t && t.id !== CHAR_ID && t.is_alive !== false);
+  const _hasTeammates = _teammates.length > 0;
+  const _defaultTargetId = (selectedTargetId && selectedTargetId !== CHAR_ID)
+    ? selectedTargetId : CHAR_ID;
+  const _targetOptions = [
+    `<option value="${CHAR_ID}"${_defaultTargetId === CHAR_ID ? ' selected' : ''}>Self (${char?.name || 'me'})</option>`,
+    ..._teammates.map(t => `<option value="${t.id}"${t.id === _defaultTargetId ? ' selected' : ''}>${t.is_npc ? '🎭 ' : '👤 '}${t.name}</option>`),
+  ].join('');
+
   area.innerHTML = `
     <div style="padding:8px;background:var(--bg-surface);border-radius:var(--r-sm);border:1px solid var(--border-active)">
       <div style="font-weight:700;margin-bottom:3px"><span class="${rarityCls}">${it.name}</span></div>
       <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">${_summarizeUseEffect(it) || it.description || ''}</div>
       ${it.mana_cost ? `<div style="font-size:0.72rem;color:#60a5fa;margin-bottom:6px">🔮 ${it.mana_cost} mana</div>` : ''}
+      ${_hasTeammates ? `<div style="margin-bottom:6px">
+        <label style="font-size:0.75rem">Target:
+          <select id="ip-target" style="font-size:0.8rem;margin-left:4px;min-width:160px">${_targetOptions}</select>
+        </label>
+      </div>` : ''}
       <div style="display:flex;gap:6px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" id="ip-back">← Back</button>
         <button class="btn btn-primary btn-sm" id="ip-use">Use</button>
@@ -3560,7 +3683,12 @@ function _mountItemConfirm(panel, it) {
     resultEl.innerHTML = '<span class="text-muted">Using...</span>';
     const hpBefore = char?.current_hp ?? 0;
     try {
-      const res = await api.post(`/api/inventory/${it.inventory_id}/use`, {});
+      // Rework v3 — include target_id so the server applies heal / buff / status
+      // to the chosen character instead of defaulting to the caster.
+      const _sel = area.querySelector('#ip-target');
+      const _tid = _sel ? parseInt(_sel.value) : CHAR_ID;
+      const _body = (_tid && _tid !== CHAR_ID) ? { target_id: _tid } : {};
+      const res = await api.post(`/api/inventory/${it.inventory_id}/use`, _body);
       const results = res.results || [];
       let out = results.length ? results.map(r => `<div>• ${r}</div>`).join('') : '<div>✅ Used</div>';
       await loadChar();

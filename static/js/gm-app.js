@@ -3062,6 +3062,7 @@ let allItems = [];
 let allCategories = [];
 let editingItemId = null;
 let tempBonuses = []; // bonuses being edited in modal
+let tempDamageModes = []; // Rework v3: preset damage modes for the current weapon
 
 const BONUS_TYPES = [
   {value: 'percent_damage_reduction', label: '% Damage Reduction'},
@@ -3208,7 +3209,14 @@ function openItemEditor(itemId = null) {
       // Rework Phase 2: which stat contributes the +bonus for hit / damage
       $('#item-ed-whitstat').value = item.weapon_stats.hit_stat || 'strength';
       $('#item-ed-wdmgstat').value = item.weapon_stats.damage_stat ?? 'strength';
+      // Rework v3: preset damage modes (optional)
+      tempDamageModes = Array.isArray(item.weapon_stats.damage_modes)
+        ? item.weapon_stats.damage_modes.map(m => ({ ...m }))
+        : [];
+    } else {
+      tempDamageModes = [];
     }
+    renderDamageModeEditor();
     tempBonuses = (item.bonuses || []).map(b => ({...b}));
     // Use effects
     const ue = item.use_effect;
@@ -3235,7 +3243,9 @@ function openItemEditor(itemId = null) {
     _setPotionIcon('🧪');
     tempBonuses = [];
     tempUseEffects = [];
+    tempDamageModes = [];
     renderUseEffectEditor();
+    renderDamageModeEditor();
     $('#btn-delete-item').classList.add('hidden');
   }
   renderBonusEditor();
@@ -3334,6 +3344,14 @@ async function saveItem() {
       // Rework Phase 2: stat-bonus sources for hit / damage rolls
       hit_stat: $('#item-ed-whitstat').value || 'strength',
       damage_stat: $('#item-ed-wdmgstat').value || null,
+      // Rework v3: optional preset damage modes (empty list = single-mode weapon)
+      damage_modes: tempDamageModes.map(m => ({
+        name: (m.name || '').trim() || `${m.dice_count}d${m.dice_type}`,
+        dice_count: parseInt(m.dice_count) || 1,
+        dice_type: parseInt(m.dice_type) || 6,
+        damage_type: m.damage_type || 'physical',
+        damage_stat: m.damage_stat || null,
+      })),
     };
   }
 
@@ -3541,6 +3559,63 @@ $('#btn-add-bonus').addEventListener('click', () => {
 $('#item-ed-is-weapon').addEventListener('change', e => {
   $('#weapon-stats-section').classList.toggle('hidden', !e.target.checked);
 });
+
+// ── Rework v3: damage modes editor ──
+const _DMG_TYPES_DM = ['physical','fire','ice','lightning','poison','magic','necrotic','radiant'];
+const _STATS_DM = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+function renderDamageModeEditor() {
+  const host = $('#item-ed-dmodes');
+  if (!host) return;
+  if (!tempDamageModes.length) {
+    host.innerHTML = '<div style="font-size:0.72rem;color:var(--text-muted);padding:2px 0">No modes — weapon uses the fixed Dice above.</div>';
+    return;
+  }
+  host.innerHTML = tempDamageModes.map((m, i) => `
+    <div class="dmg-mode-row" data-dm-idx="${i}" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:4px;background:var(--bg-surface-2);border-radius:var(--r-sm)">
+      <input type="text" data-df="name" value="${m.name || ''}" placeholder="Mode name (e.g. Two-handed)" style="flex:1;min-width:130px;font-size:0.75rem">
+      <input type="number" data-df="dice_count" value="${m.dice_count || 1}" min="1" max="20" style="width:42px;font-size:0.75rem">
+      <span style="font-size:0.72rem">d</span>
+      <input type="number" data-df="dice_type" value="${m.dice_type || 6}" min="2" max="100" style="width:44px;font-size:0.75rem">
+      <select data-df="damage_type" style="font-size:0.72rem;width:90px">
+        ${_DMG_TYPES_DM.map(t => `<option value="${t}"${t===(m.damage_type||'physical')?' selected':''}>${t}</option>`).join('')}
+      </select>
+      <select data-df="damage_stat" style="font-size:0.72rem;width:74px" title="Stat override (optional)">
+        <option value=""${!m.damage_stat?' selected':''}>—</option>
+        ${_STATS_DM.map(s => `<option value="${s}"${s===m.damage_stat?' selected':''}>${s.slice(0,3).toUpperCase()}</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-ghost btn-xs" data-dm-remove="${i}" style="color:var(--accent-red)">✕</button>
+    </div>
+  `).join('');
+  host.querySelectorAll('.dmg-mode-row').forEach(row => {
+    const idx = parseInt(row.dataset.dmIdx);
+    row.querySelectorAll('[data-df]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const f = inp.dataset.df;
+        let v = inp.value;
+        if (f === 'dice_count' || f === 'dice_type') v = parseInt(v) || (f === 'dice_count' ? 1 : 6);
+        if (f === 'damage_stat' && v === '') v = null;
+        tempDamageModes[idx][f] = v;
+      });
+    });
+    const rm = row.querySelector('[data-dm-remove]');
+    if (rm) rm.addEventListener('click', () => {
+      tempDamageModes.splice(idx, 1);
+      renderDamageModeEditor();
+    });
+  });
+}
+if ($('#item-ed-add-dmode')) {
+  $('#item-ed-add-dmode').addEventListener('click', () => {
+    tempDamageModes.push({
+      name: '',
+      dice_count: parseInt($('#item-ed-wdice-count').value) || 1,
+      dice_type: parseInt($('#item-ed-wdice-type').value) || 6,
+      damage_type: $('#item-ed-wdmg-type').value || 'physical',
+      damage_stat: null,
+    });
+    renderDamageModeEditor();
+  });
+}
 $('#item-ed-consumable').addEventListener('change', e => {
   $('#use-effects-section').classList.toggle('hidden', !e.target.checked);
 });
@@ -4647,7 +4722,6 @@ function renderRCList() {
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:700;font-size:0.85rem">${c.name}</span>
         <div style="display:flex;gap:4px">
-          <span style="font-size:0.65rem;color:var(--text-muted)">d${c.hit_die}</span>
           <button class="btn btn-ghost btn-xs" data-edit-class="${c.id}">✏️</button>
           <button class="btn btn-ghost btn-xs" data-del-class="${c.id}" style="color:var(--accent-red)">🗑</button>
         </div>
@@ -4692,7 +4766,7 @@ function openRCEditorModal(kind, existing) {
   const kindLabel = kind === 'race' ? 'Race' : 'Profession';   // Rework v2 UI rename
   const title = isEdit ? `Edit ${kindLabel}` : `Create ${kindLabel}`;
   const data = existing || { name: '', description: '', bonuses: [], special_abilities: [], is_available: true,
-                             hit_die: 8, hp_die: 8, hp_dice_count: 1 };
+                             hp_die: 8, hp_dice_count: 1 };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -4715,9 +4789,6 @@ function openRCEditorModal(kind, existing) {
               <input type="number" id="rc-ed-hpcount" min="1" max="5" value="${data.hp_dice_count || 1}">
             </div>
           </div>` : ''}
-        ${kind === 'class' ? `<div class="form-group"><label>Hit Die</label><select id="rc-ed-hitdie">
-          ${[4,6,8,10,12].map(d => `<option value="${d}"${data.hit_die===d?' selected':''}>d${d}</option>`).join('')}
-        </select></div>` : ''}
         <div class="form-group">
           <label>Bonuses</label>
           <div id="rc-ed-bonuses"></div>
@@ -4816,9 +4887,6 @@ function openRCEditorModal(kind, existing) {
     };
     if (!body.name) return;
 
-    if (kind === 'class') {
-      body.hit_die = parseInt(overlay.querySelector('#rc-ed-hitdie')?.value) || 8;
-    }
     if (kind === 'race') {
       body.hp_die = parseInt(overlay.querySelector('#rc-ed-hpdie')?.value) || 8;
       body.hp_dice_count = Math.max(1, Math.min(5, parseInt(overlay.querySelector('#rc-ed-hpcount')?.value) || 1));

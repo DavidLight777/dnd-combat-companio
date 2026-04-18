@@ -232,11 +232,59 @@ Stop and verify after each phase.
 Follow-up pass driven by user feedback after playing with v2. Everything
 below is now merged and exercised by `tests/test_rework_v2.py` (75/75 OK).
 
-### Schema (alembic `r3a0b1c2d3e4`)
+### Schema (alembic `r3a0b1c2d3e4`, `r4a0b1c2d3e4`)
 
 * Dropped `items.weight` — inventory is purely slot-based now.
 * Dropped `characters.hp_dice_count`, `hp_dice_type`, `hp_recovery_modifier`
   — retired with the "Roll & Heal" widget.
+* Dropped `classes.hit_die` — professions never consumed it; HP die is
+  race-only. (Migration `r4a0b1c2d3e4`.)
+* Added `item_weapon_stats.damage_modes` (JSON TEXT) — optional preset
+  damage alternatives (e.g. one-handed 1d8 / two-handed 1d10). Empty list
+  = single-mode weapon. Players cannot freeform dice anymore; they pick
+  a preset. (Migration `r4a0b1c2d3e4`.)
+
+### Attack hit roll — N d20s
+
+* `game_mechanics.apply_advantage` now accepts `dice_count` (1..5).
+  `normal` takes the first roll; `advantage` takes the max of N; `disadvantage`
+  takes the min of N. Adv/disadv with N=1 is auto-bumped to N=2.
+* `calculate_combat_attack` forwards `dice_count` from endpoints.
+* `POST /api/combat/hit-roll`, `/execute-attack`, `/combat/{id}/attack`,
+  `/calc/attack-roll` all accept `hit_dice_count`. Response exposes
+  `all_d20s` and `dice_count_rolled` for transparency.
+* Player attack modal: Step 1 now has a `🎲 × [N]` stepper next to
+  Disadv / Normal / Adv. "Player combat attack" card and calc panels
+  pass `hit_dice_count` as well.
+
+### Damage dice locked to weapon
+
+* Player-facing `POST /api/combat/damage-roll` ignores free-form
+  `dice_count` / `dice_type`. The player picks `damage_mode_index` from
+  `weapon.damage_modes`; if the weapon has no modes, dice are exactly
+  those on the weapon. Invalid index → 400.
+* GM item editor grew a "Damage Modes" section that accepts any number
+  of presets (name / dice / type / optional stat override). Leaving it
+  empty = single-mode weapon (the existing Dice row above is authoritative).
+* Player Step 2 UI no longer shows free-form inputs. Single-mode weapons
+  display a read-only "Damage: 1d6 (fixed by weapon)" line. Multi-mode
+  weapons show a dropdown of the presets.
+
+### P2P targeting — UI fixes
+
+* Potion / Use-Item picker (`_mountItemConfirm`) previously shipped an
+  empty body to `POST /api/inventory/{id}/use`, so consumables silently
+  applied to the caster even when the player had a teammate selected at
+  the table. It now renders a **Target** dropdown (Self + living
+  teammates), defaults to the currently selected table target, and
+  forwards `target_id`.
+* Ability picker (`_mountAbilityConfirm`) used to hard-filter targets to
+  `is_npc` only, making heal / buff / cleanse abilities impossible to aim
+  at an ally. The list is now derived from the ability's effects:
+  offensive (requires hit-roll or has a damage effect) → NPCs only;
+  supportive (heal_hp, restore_mana, restore_hp_by_die, stat_boost,
+  apply_status, remove_status) → Self + allies; mixed/unknown → every
+  living participant + Self.
 
 ### Backend
 

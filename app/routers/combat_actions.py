@@ -162,6 +162,7 @@ async def perform_attack(combat_id: int, body: dict, db: AsyncSession = Depends(
     target_id = body.get("target_id")
     weapon_item_id = body.get("weapon_id")  # optional override
     advantage_mode = body.get("advantage_mode", "normal")  # normal/advantage/disadvantage
+    hit_dice_count = body.get("hit_dice_count")  # Rework v3: number of d20s on hit
 
     if not attacker_id or not target_id:
         raise HTTPException(400, "attacker_id and target_id required")
@@ -199,6 +200,7 @@ async def perform_attack(combat_id: int, body: dict, db: AsyncSession = Depends(
         item_atk_bonus=int(item_bonuses.get("attack_bonus", 0)),
         status_atk_penalty=penalties.get("attack_penalty", 0),
         advantage_mode=advantage_mode,
+        dice_count=hit_dice_count,
     )
 
     attack_roll_data = asdict(atk)

@@ -54,9 +54,15 @@ class ExecuteAttackBody(BaseModel):
     ability_id: int | None = None
     advantage: str = "normal"       # "advantage" | "normal" | "disadvantage"
     player_roll: int | None = None  # optional player-submitted d20
-    # FIX 3: optional dice overrides from universal dice widget
+    # FIX 3: optional dice overrides from universal dice widget (GM superpower;
+    # ignored by the player-facing two-step flow).
     dice_count: int | None = None
     dice_type:  int | None = None
+    # Rework v3: number of d20s rolled on the HIT check (1..ADV_DICE_CAP).
+    # Default behaviour: 1 for normal, 2 for adv/disadv.
+    hit_dice_count: int | None = None
+    # Rework v3: picks a preset from weapon.damage_modes, if any.
+    damage_mode_index: int | None = None
 
 
 # Two-step attack flow: hit roll only (no damage, no apply)
@@ -64,6 +70,7 @@ class HitRollBody(BaseModel):
     attacker_id: int
     target_id: int
     advantage: str = "normal"       # "advantage" | "normal" | "disadvantage"
+    hit_dice_count: int | None = None   # Rework v3: number of d20s
 
 
 # Two-step attack flow: damage roll only (applies damage to target)
@@ -71,9 +78,13 @@ class DamageRollBody(BaseModel):
     attacker_id: int
     target_id: int
     critical: bool = False          # must come from preceding hit roll
-    dice_count: int | None = None   # override weapon dice count
-    dice_type:  int | None = None   # override weapon dice type
+    # Rework v3: damage dice are fixed by the weapon; player-supplied dice_count
+    # / dice_type are ignored for normal attacks. The `damage_mode_index` field
+    # picks from ``weapon.damage_modes`` if the weapon has multiple modes.
+    damage_mode_index: int | None = None
     advantage: str = "normal"       # advantage on damage roll itself
+    dice_count: int | None = None   # accepted for back-compat; ignored for players
+    dice_type:  int | None = None   # accepted for back-compat; ignored for players
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -731,6 +742,13 @@ async def _get_equipped_weapon(character_id: int, db: AsyncSession) -> dict | No
             props = json.loads(props)
         except Exception:
             props = []
+    # Rework v3: preset damage modes. Empty list = single-mode weapon.
+    try:
+        dmg_modes = json.loads(getattr(ws, "damage_modes", None) or "[]")
+        if not isinstance(dmg_modes, list):
+            dmg_modes = []
+    except Exception:
+        dmg_modes = []
     return {
         "name": inv.item.name,
         "dice_count": ws.dice_count,
@@ -743,6 +761,8 @@ async def _get_equipped_weapon(character_id: int, db: AsyncSession) -> dict | No
         # Rework Phase 2: stat binding lives on the weapon itself
         "hit_stat": getattr(ws, "hit_stat", None) or "strength",
         "damage_stat": getattr(ws, "damage_stat", "strength"),
+        # Rework v3: preset alternate damage modes (1h/2h, element, etc.).
+        "damage_modes": dmg_modes,
     }
 
 
@@ -842,6 +862,7 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
         atk_result = calculate_combat_attack(
             attacker_stats, target.armor_class, weapon,
             item_atk_bonus, status_atk_penalty, adv_mode,
+            dice_count=body.hit_dice_count,
         )
         d20 = atk_result.d20
         sm = atk_result.stat_mod
@@ -877,11 +898,9 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
     else:
         hit_str += " → MISS"
 
-    # Advantage prefix
-    if adv_mode != "normal" and body.player_roll is None:
-        adv_label = "ADV" if adv_mode == "advantage" else "DISADV"
-        d20s = atk_result.all_d20s
-        hit_str = f"{adv_label}: D20[{', '.join(str(x) for x in d20s)}] took {d20} | " + hit_str
+    # Advantage / N-dice prefix (adv_breakdown already formatted by engine)
+    if body.player_roll is None and atk_result.advantage_breakdown:
+        hit_str = f"{atk_result.advantage_breakdown} | " + hit_str
 
     # 8. If miss, return early
     if not hit:
@@ -900,14 +919,23 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
         }
 
     # 9. DAMAGE ROLL
+    # Rework v3: honor preset damage_modes first, then GM dice overrides.
+    _xa_damage_modes = (weapon or {}).get("damage_modes") or []
     if weapon:
-        dc = weapon["dice_count"]
-        dt = weapon["dice_type"]
+        if _xa_damage_modes:
+            idx = 0 if body.damage_mode_index is None else int(body.damage_mode_index)
+            idx = max(0, min(len(_xa_damage_modes) - 1, idx))
+            _mode = _xa_damage_modes[idx]
+            dc = int(_mode.get("dice_count", weapon["dice_count"]))
+            dt = int(_mode.get("dice_type", weapon["dice_type"]))
+        else:
+            dc = weapon["dice_count"]
+            dt = weapon["dice_type"]
     else:
         dc = attacker.attack_dice_count or 1
         dt = attacker.attack_dice_type or 6
 
-    # FIX 3: allow universal dice widget to override dice count/type
+    # FIX 3: allow universal dice widget (GM superpower) to override dice count/type
     if body.dice_count is not None and body.dice_count > 0:
         dc = min(20, max(1, int(body.dice_count)))
     if body.dice_type is not None and body.dice_type > 0:
@@ -1035,6 +1063,7 @@ async def hit_roll(body: HitRollBody, db: AsyncSession = Depends(get_session)):
     atk_result = calculate_combat_attack(
         attacker_stats, target.armor_class, weapon,
         item_atk_bonus, status_atk_penalty, adv_mode,
+        dice_count=body.hit_dice_count,
     )
     d20 = atk_result.d20
     sm = atk_result.stat_mod
@@ -1069,36 +1098,40 @@ async def hit_roll(body: HitRollBody, db: AsyncSession = Depends(get_session)):
     else:
         hit_str += " → MISS"
 
-    if adv_mode != "normal":
-        adv_label = "ADV" if adv_mode == "advantage" else "DISADV"
-        d20s = atk_result.all_d20s
-        hit_str = f"{adv_label}: D20[{', '.join(str(x) for x in d20s)}] took {d20} | " + hit_str
+    if atk_result.advantage_breakdown:
+        hit_str = f"{atk_result.advantage_breakdown} | " + hit_str
 
     # Suggest default damage dice from weapon
     if weapon:
         default_dc = weapon.get("dice_count", 1)
         default_dt = weapon.get("dice_type", 6)
         weapon_name = weapon.get("name", "Weapon")
+        damage_modes = weapon.get("damage_modes") or []
     else:
         default_dc = attacker.attack_dice_count or 1
         default_dt = attacker.attack_dice_type or 6
         weapon_name = "Unarmed"
+        damage_modes = []
 
     return {
         "hit": hit,
         "critical": critical,
         "fumble": fumble,
         "d20": d20,
+        "all_d20s": list(atk_result.all_d20s),
+        "dice_count_rolled": len(atk_result.all_d20s),
         "total": total,
         "hit_breakdown": hit_str,
         "advantage_mode": adv_mode,
         "attacker_name": attacker.name,
         "target_name": target.name,
         "target_ac": target.armor_class,
-        # Suggest defaults for damage step
+        # Suggest defaults for damage step (read-only for player UI)
         "weapon_name": weapon_name,
         "default_dice_count": default_dc,
         "default_dice_type": default_dt,
+        # Rework v3: preset damage modes available on the weapon (can be empty)
+        "damage_modes": damage_modes,
     }
 
 
@@ -1120,17 +1153,26 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
     tgt_item_bonuses, tgt_status_penalties = await _get_char_bonuses_and_penalties(target, db)
     weapon = await _get_equipped_weapon(body.attacker_id, db)
 
-    # Determine dice count/type (weapon defaults, overridable)
+    # Rework v3: damage dice are fixed by the weapon. If the weapon exposes
+    # alternate `damage_modes`, the player picks a preset via
+    # ``body.damage_mode_index``. Free-form `dice_count` / `dice_type` from
+    # the client are IGNORED for attacks.
+    damage_modes = (weapon or {}).get("damage_modes") or []
+    chosen_mode = None
     if weapon:
-        dc = weapon["dice_count"]
-        dt = weapon["dice_type"]
+        if damage_modes:
+            idx = 0 if body.damage_mode_index is None else int(body.damage_mode_index)
+            if not (0 <= idx < len(damage_modes)):
+                raise HTTPException(400, f"invalid damage_mode_index {idx} (weapon has {len(damage_modes)} modes)")
+            chosen_mode = damage_modes[idx]
+            dc = int(chosen_mode.get("dice_count", weapon["dice_count"]))
+            dt = int(chosen_mode.get("dice_type", weapon["dice_type"]))
+        else:
+            dc = weapon["dice_count"]
+            dt = weapon["dice_type"]
     else:
         dc = attacker.attack_dice_count or 1
         dt = attacker.attack_dice_type or 6
-    if body.dice_count is not None and body.dice_count > 0:
-        dc = min(20, max(1, int(body.dice_count)))
-    if body.dice_type is not None and body.dice_type > 0:
-        dt = int(body.dice_type)
 
     # Crit doubles dice count
     actual_dc = dc * 2 if body.critical else dc
@@ -1138,7 +1180,14 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
     # Roll with advantage on the *damage* total
     attacker_stats = _char_stats_dict(attacker)
     if weapon:
-        dmg_sm = _calc_damage_stat_mod(attacker_stats, weapon)
+        # Honor the chosen mode's damage_stat if set, else weapon default.
+        if chosen_mode and chosen_mode.get("damage_stat") is not None:
+            from app.game_mechanics import stat_modifier as _sm
+            stat_key = str(chosen_mode.get("damage_stat"))
+            raw_val = attacker_stats.get(stat_key)
+            dmg_sm = _sm(int(raw_val)) if isinstance(raw_val, int) else 0
+        else:
+            dmg_sm = _calc_damage_stat_mod(attacker_stats, weapon)
     else:
         dmg_sm = stat_modifier(attacker.strength)
 

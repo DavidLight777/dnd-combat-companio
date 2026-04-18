@@ -268,6 +268,15 @@
                 </select>
                 <span style="font-size:0.68rem;color:var(--text-muted)">Bonus = stat value directly (e.g. STR 3 → +3).</span>
               </div>
+              <!-- Rework v3: optional preset damage modes (1h/2h, elemental, etc.). -->
+              <div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                  <label style="font-size:0.78rem;font-weight:600">Damage Modes <span style="font-weight:400;color:var(--text-muted)">(optional presets — players pick one)</span></label>
+                  <button type="button" class="btn btn-ghost btn-xs" id="item-ed-add-dmode">+ Add mode</button>
+                </div>
+                <div id="item-ed-dmodes" style="display:flex;flex-direction:column;gap:4px"></div>
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px">Leave empty to use the fixed Dice above. Otherwise the first mode is the default.</div>
+              </div>
             </div>
 
             <!-- Use Effects (for consumables/potions) -->

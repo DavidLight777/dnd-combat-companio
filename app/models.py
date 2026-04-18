@@ -362,6 +362,13 @@ class ItemWeaponStats(Base):
     # Rework: which character stat contributes the +bonus to hit / damage (strength, dexterity, ...)
     hit_stat: Mapped[str] = mapped_column(String(20), default="strength")
     damage_stat: Mapped[str | None] = mapped_column(String(20), nullable=True, default="strength")
+    # Rework v3: optional pre-baked damage modes (e.g. one-handed 1d8 /
+    # two-handed 1d10). If non-empty, the player picks a mode at damage time
+    # instead of being allowed free-form dice. Empty list = single-mode (use
+    # the flat dice_count/dice_type above).
+    # JSON: [{"name": str, "dice_count": int, "dice_type": int,
+    #         "damage_type": str, "damage_stat": str | null}, ...]
+    damage_modes: Mapped[str] = mapped_column(Text, default="[]")
 
     item: Mapped["Item"] = relationship(back_populates="weapon_stats")
 
@@ -575,7 +582,8 @@ class CharacterClass(Base):
     session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
     bonuses: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of bonus objects
     special_abilities: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
-    hit_die: Mapped[int] = mapped_column(Integer, default=8)
+    # Rework v3: `hit_die` retired — never consumed anywhere (races carry the
+    # HP die via `Race.hp_die`). Column dropped by migration r4a0b1c2d3e4.
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

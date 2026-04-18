@@ -53,7 +53,6 @@ def _ser_profession(cp: CharacterProfession) -> dict:
         "is_active": cp.is_active,
         "name": cls.name if cls else None,
         "description": cls.description if cls else "",
-        "hit_die": cls.hit_die if cls else None,
         "bonuses": json.loads(cls.bonuses) if (cls and cls.bonuses) else [],
         "special_abilities": json.loads(cls.special_abilities) if (cls and cls.special_abilities) else [],
         "acquired_at": cp.acquired_at.isoformat() if cp.acquired_at else None,

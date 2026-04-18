@@ -30,7 +30,8 @@ class ClassBody(BaseModel):
     session_id: int | None = None
     bonuses: list = []
     special_abilities: list = []
-    hit_die: int = 8
+    # Rework v3: `hit_die` dropped — professions never contributed to HP
+    # rolls. Races own the HP die.
     is_available: bool = True
 
 
@@ -57,7 +58,6 @@ def _ser_class(c: CharacterClass) -> dict:
         "session_id": c.session_id,
         "bonuses": json.loads(c.bonuses) if c.bonuses else [],
         "special_abilities": json.loads(c.special_abilities) if c.special_abilities else [],
-        "hit_die": c.hit_die,
         "is_available": c.is_available,
     }
 
@@ -156,7 +156,6 @@ async def create_class(body: ClassBody, db: AsyncSession = Depends(get_session))
         session_id=body.session_id,
         bonuses=json.dumps(body.bonuses),
         special_abilities=json.dumps(body.special_abilities),
-        hit_die=body.hit_die,
         is_available=body.is_available,
     )
     db.add(c)
@@ -175,7 +174,6 @@ async def update_class(class_id: int, body: ClassBody, db: AsyncSession = Depend
     c.session_id = body.session_id
     c.bonuses = json.dumps(body.bonuses)
     c.special_abilities = json.dumps(body.special_abilities)
-    c.hit_die = body.hit_die
     c.is_available = body.is_available
     await db.commit()
     await db.refresh(c)
@@ -248,42 +246,36 @@ SEED_CLASSES = [
         "description": "Masters of martial combat, skilled with all weapons and armor.",
         "bonuses": [{"type": "stat_bonus", "stat": "strength", "value": 1}, {"type": "hp_bonus", "value": 5}],
         "special_abilities": ["Second Wind: heal 1d10+level (1/rest)", "Fighting Style choice", "Action Surge (1/rest)"],
-        "hit_die": 10,
     },
     {
         "name": "Mage",
         "description": "Arcane spellcasters who bend reality through study and intellect.",
         "bonuses": [{"type": "stat_bonus", "stat": "intelligence", "value": 2}],
         "special_abilities": ["Spellcasting (INT)", "Arcane Recovery", "School of Magic specialization"],
-        "hit_die": 6,
     },
     {
         "name": "Rogue",
         "description": "Cunning tricksters and deadly strikers from the shadows.",
         "bonuses": [{"type": "stat_bonus", "stat": "dexterity", "value": 1}, {"type": "initiative_bonus", "value": 2}],
         "special_abilities": ["Sneak Attack", "Cunning Action: dash/disengage/hide as bonus", "Expertise"],
-        "hit_die": 8,
     },
     {
         "name": "Cleric",
         "description": "Divine servants who channel the power of their deity to heal and protect.",
         "bonuses": [{"type": "stat_bonus", "stat": "wisdom", "value": 2}],
         "special_abilities": ["Spellcasting (WIS)", "Channel Divinity", "Divine Domain"],
-        "hit_die": 8,
     },
     {
         "name": "Ranger",
         "description": "Wilderness warriors who combine martial skill with nature magic.",
         "bonuses": [{"type": "stat_bonus", "stat": "dexterity", "value": 1}, {"type": "stat_bonus", "stat": "wisdom", "value": 1}],
         "special_abilities": ["Favored Enemy", "Natural Explorer", "Spellcasting (WIS)"],
-        "hit_die": 10,
     },
     {
         "name": "Paladin",
         "description": "Holy warriors who smite evil with divine power and righteous fury.",
         "bonuses": [{"type": "stat_bonus", "stat": "strength", "value": 1}, {"type": "stat_bonus", "stat": "charisma", "value": 1}],
         "special_abilities": ["Divine Smite", "Lay on Hands", "Aura of Protection"],
-        "hit_die": 10,
     },
 ]
 
@@ -318,7 +310,6 @@ async def seed_races_classes(db: AsyncSession = Depends(get_session)):
                 description=cd["description"],
                 bonuses=json.dumps(cd["bonuses"]),
                 special_abilities=json.dumps(cd["special_abilities"]),
-                hit_die=cd["hit_die"],
             ))
             classes_added += 1
 

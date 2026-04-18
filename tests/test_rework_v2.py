@@ -413,6 +413,112 @@ def run(base: str) -> int:
     s.check("target now holds Ally Tonic",
             any(i.get("id") == heal_item["id"] for i in target_inv["items"]))
 
+    # ── λ: N-d20 hit rolls (advantage/disadvantage pool, clamp 1..5) ──
+    s.group("Phase λ: Rework v3 — N d20 on hit rolls")
+
+    # Seed a second living combatant we can attack. Use the GM NPC endpoint.
+    code, npc = s.req("POST", f"/api/sessions/{scode}/npc", {
+        "name": "Dummy NPC",
+        "armor_class": 10, "current_hp": 50, "max_hp": 50,
+        "strength": 0, "dexterity": 0, "constitution": 0,
+        "intelligence": 0, "wisdom": 0, "charisma": 0,
+    })
+    s.check("create NPC 200 (for hit-roll test)", code == 200, f"body={npc}")
+    npc_id = npc.get("id") if isinstance(npc, dict) else None
+    if npc_id:
+        # N=4 + advantage → 4 d20s, server picks the MAX.
+        code, hr = s.req("POST", "/api/combat/hit-roll", {
+            "attacker_id": cid, "target_id": npc_id,
+            "advantage": "advantage", "hit_dice_count": 4,
+        })
+        s.check("hit-roll(advantage, N=4) returns 200", code == 200, f"body={hr}")
+        s.check("hit-roll rolled exactly 4 d20s",
+                hr.get("dice_count_rolled") == 4,
+                f"count={hr.get('dice_count_rolled')} list={hr.get('all_d20s')}")
+        if hr.get("all_d20s"):
+            s.check("advantage picked the MAX of 4",
+                    hr.get("d20") == max(hr["all_d20s"]),
+                    f"d20={hr.get('d20')} of {hr['all_d20s']}")
+
+        # N=3 + disadvantage → server picks the MIN.
+        code, hr2 = s.req("POST", "/api/combat/hit-roll", {
+            "attacker_id": cid, "target_id": npc_id,
+            "advantage": "disadvantage", "hit_dice_count": 3,
+        })
+        s.check("hit-roll(disadvantage, N=3) rolled 3",
+                hr2.get("dice_count_rolled") == 3)
+        if hr2.get("all_d20s"):
+            s.check("disadvantage picked the MIN of 3",
+                    hr2.get("d20") == min(hr2["all_d20s"]))
+
+        # Clamp: ask for 99, server must clamp to cap (5).
+        code, hr3 = s.req("POST", "/api/combat/hit-roll", {
+            "attacker_id": cid, "target_id": npc_id,
+            "advantage": "advantage", "hit_dice_count": 99,
+        })
+        s.check("hit_dice_count=99 clamped to 5",
+                hr3.get("dice_count_rolled") == 5,
+                f"count={hr3.get('dice_count_rolled')}")
+
+        # Bump: adv + N=1 must auto-bump to 2 (single die → pick is moot).
+        code, hr4 = s.req("POST", "/api/combat/hit-roll", {
+            "attacker_id": cid, "target_id": npc_id,
+            "advantage": "advantage", "hit_dice_count": 1,
+        })
+        s.check("adv + N=1 auto-bumped to 2",
+                hr4.get("dice_count_rolled") == 2,
+                f"count={hr4.get('dice_count_rolled')}")
+
+    # ── μ: Fixed weapon damage + preset damage modes ──
+    s.group("Phase μ: Rework v3 — damage modes")
+
+    # Single-mode weapon (no damage_modes). Create item, serializer should
+    # expose damage_modes = [].
+    code, single_weapon = s.req("POST", "/api/items", {
+        "session_id": sid, "name": "Simple Dagger",
+        "description": "plain.", "category": "weapon", "rarity": "common",
+        "weapon_stats": {
+            "dice_count": 1, "dice_type": 4, "damage_type": "physical",
+        },
+    })
+    s.check("single-mode weapon: damage_modes defaults to []",
+            single_weapon.get("weapon_stats", {}).get("damage_modes") == [],
+            f"modes={single_weapon.get('weapon_stats', {}).get('damage_modes')}")
+
+    # Multi-mode weapon: one-handed 1d8, two-handed 1d10.
+    code, multi_weapon = s.req("POST", "/api/items", {
+        "session_id": sid, "name": "Versatile Blade",
+        "description": "1h or 2h.", "category": "weapon", "rarity": "uncommon",
+        "weapon_stats": {
+            "dice_count": 1, "dice_type": 8, "damage_type": "physical",
+            "damage_modes": [
+                {"name": "One-handed", "dice_count": 1, "dice_type": 8, "damage_type": "physical"},
+                {"name": "Two-handed", "dice_count": 1, "dice_type": 10, "damage_type": "physical"},
+            ],
+        },
+    })
+    modes = multi_weapon.get("weapon_stats", {}).get("damage_modes", [])
+    s.check("multi-mode weapon round-tripped 2 modes", len(modes) == 2,
+            f"got={modes}")
+    if len(modes) == 2:
+        s.check("mode 0 is 1d8", modes[0]["dice_count"] == 1 and modes[0]["dice_type"] == 8)
+        s.check("mode 1 is 1d10", modes[1]["dice_count"] == 1 and modes[1]["dice_type"] == 10)
+
+    # Update via PUT — shrink to a single mode.
+    code, patched = s.req("PUT", f"/api/items/{multi_weapon['id']}", {
+        "name": "Versatile Blade", "description": "1h or 2h.",
+        "category": "weapon", "rarity": "uncommon",
+        "weapon_stats": {
+            "dice_count": 1, "dice_type": 8, "damage_type": "physical",
+            "damage_modes": [
+                {"name": "Only mode", "dice_count": 2, "dice_type": 6, "damage_type": "fire"},
+            ],
+        },
+    })
+    updated = (patched.get("weapon_stats") or {}).get("damage_modes", [])
+    s.check("PUT updates damage_modes", len(updated) == 1 and updated[0]["dice_type"] == 6,
+            f"got={updated}")
+
     # ── κ: Passive ability direct-mutation bonuses (max_hp_bonus) ──
     s.group("Phase κ: Rework v3 — new passive bonus types")
     code, boost = s.req("POST", "/api/abilities", {

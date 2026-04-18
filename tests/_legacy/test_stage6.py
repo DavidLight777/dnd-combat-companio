@@ -40,7 +40,6 @@ classes = r.json()
 check("Classes list not empty", len(classes) >= 6)
 warrior = next((x for x in classes if x["name"] == "Warrior"), None)
 check("Warrior class exists", warrior is not None)
-check("Warrior hit_die = 10", warrior["hit_die"] == 10)
 check("Warrior has HP bonus", any(b["type"] == "hp_bonus" for b in warrior["bonuses"]))
 
 # ── CRUD Race ──
@@ -79,12 +78,10 @@ r = requests.post(f"{BASE}/api/races-classes/classes", json={
     "description": "A test class",
     "bonuses": [{"type": "hp_bonus", "value": 10}],
     "special_abilities": ["Power strike"],
-    "hit_die": 12,
 })
 check("Create class 200", r.status_code == 200)
 test_class = r.json()
 check("Class has id", "id" in test_class)
-check("Class hit_die = 12", test_class["hit_die"] == 12)
 
 # Delete
 r = requests.delete(f"{BASE}/api/races-classes/classes/{test_class['id']}")

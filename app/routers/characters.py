@@ -74,7 +74,6 @@ def _serialize_char(c: Character) -> dict:
                 "level": cp.level,
                 "is_active": cp.is_active,
                 "name": getattr(cp.character_class, "name", None) if cp.character_class else None,
-                "hit_die": getattr(cp.character_class, "hit_die", None) if cp.character_class else None,
             }
             for cp in (c.professions or [])
         ],

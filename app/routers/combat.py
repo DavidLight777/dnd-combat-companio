@@ -107,6 +107,7 @@ async def calc_attack_roll(body: dict, db: AsyncSession = Depends(get_session)):
     modifier_values = body.get("modifier_values", [])
     character_id = body.get("character_id")
     advantage_mode = body.get("advantage_mode", "normal")
+    hit_dice_count = body.get("hit_dice_count")  # Rework v3: N d20s
 
     item_bonuses = await _load_item_bonuses(character_id, db) if character_id else None
     penalties = await _load_status_penalties(character_id, db) if character_id else None
@@ -114,16 +115,19 @@ async def calc_attack_roll(body: dict, db: AsyncSession = Depends(get_session)):
     status_atk = penalties.get("attack_penalty", 0) if penalties else 0
     advantage_mode = resolve_advantage_mode(advantage_mode, penalties)
 
-    # If advantage/disadvantage, do server-side rolling
-    if advantage_mode in ("advantage", "disadvantage"):
+    # If advantage/disadvantage OR explicit multi-dice, do server-side rolling
+    _want_multi = advantage_mode in ("advantage", "disadvantage") or (
+        isinstance(hit_dice_count, int) and hit_dice_count > 1
+    )
+    if _want_multi:
         def _single():
             d = random.randint(1, 20)
             t = d + base_mod + sum(modifier_values) + item_atk + status_atk
             return t, d
-        adv = apply_advantage(_single, advantage_mode)
+        adv = apply_advantage(_single, advantage_mode, dice_count=hit_dice_count)
         d20 = adv.all_details[adv.chosen_index]
         result = calculate_attack_roll(d20, base_mod, modifier_values, item_bonuses=item_bonuses, status_penalties=penalties)
-        adv_bd = format_advantage_breakdown(advantage_mode, list(adv.all_details), adv.chosen_index, "D20")
+        adv_bd = format_advantage_breakdown(advantage_mode, list(adv.all_totals), adv.chosen_index, "D20")
         all_d20s = list(adv.all_details)
         chosen_idx = adv.chosen_index
     else:

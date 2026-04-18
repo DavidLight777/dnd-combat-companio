@@ -160,7 +160,7 @@ dnd-companion/
 | Модель | Описание |
 |--------|----------|
 | `Race` | Раса (bonuses JSON, special_abilities) |
-| `CharacterClass` | Класс (bonuses, hit_die) |
+| `CharacterClass` | Профессия (bonuses, special_abilities) |
 | `NpcFolder` | Папка в библиотеке NPC (вложенные) |
 | `NpcTemplate` | Шаблон NPC (все статы, default_equipment, shop_items) |
 | `EventTemplate` | Шаблон события (группа NPC для спавна) |
