@@ -1,13 +1,27 @@
-"""AI chat endpoints."""
+"""AI chat endpoints.
 
-import os, json, httpx
+Rework v3: the former ``/generate-npc`` route had its own bespoke prompt that
+duplicated — and disagreed with — the main system prompt. It's now a thin
+shim around the envelope agent so both routes speak the same schema.
+"""
+
+import json
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import Session, AIConversation
-from app.ai_agent import chat_with_ai, get_conversation_history
+from app.ai_agent import (
+    chat_with_ai,
+    get_conversation_history,
+    parse_envelope,
+    run_actions,
+    _load_config,
+    _load_system_prompt,
+    _call_openrouter,
+)
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -15,7 +29,7 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 @router.post("/chat")
 async def ai_chat(body: dict, db: AsyncSession = Depends(get_session)):
     session_code = body.get("session_code")
-    message = body.get("message", "").strip()
+    message = body.get("message", "").strip() if isinstance(body.get("message"), str) else ""
     if not session_code or not message:
         raise HTTPException(400, "session_code and message required")
 
@@ -24,8 +38,7 @@ async def ai_chat(body: dict, db: AsyncSession = Depends(get_session)):
     if not session:
         raise HTTPException(404, "Session not found")
 
-    response = await chat_with_ai(session.id, message, db)
-    return response
+    return await chat_with_ai(session.id, message, db)
 
 
 @router.get("/history/{session_code}")
@@ -46,85 +59,59 @@ async def clear_ai_history(session_code: str, db: AsyncSession = Depends(get_ses
     if not session:
         raise HTTPException(404, "Session not found")
 
-    from sqlalchemy import delete
     await db.execute(delete(AIConversation).where(AIConversation.session_id == session.id))
     await db.commit()
     return {"ok": True}
 
 
-NPC_GEN_PROMPT = """You are an NPC generator for a D&D-style tabletop RPG.
-Given a description, create an NPC with the following JSON fields:
-{
-  "name": "string",
-  "description": "string (1-2 sentences)",
-  "max_hp": integer,
-  "armor_class": integer,
-  "strength": integer (1-20),
-  "dexterity": integer (1-20),
-  "constitution": integer (1-20),
-  "intelligence": integer (1-20),
-  "wisdom": integer (1-20),
-  "charisma": integer (1-20),
-  "initiative_bonus": integer,
-  "is_merchant": boolean,
-  "notes": "string (personality traits, motivations, secrets)"
-}
-Respond ONLY with valid JSON, no markdown fences, no extra text."""
-
-
+# ── Legacy generate-npc shim ────────────────────────────────────────
+# Old clients expected a flat JSON NPC dict back. Keep that contract but
+# now fuelled by the full envelope prompt, so the model has the right
+# schema in its context and won't hallucinate fields.
 @router.post("/generate-npc")
-async def generate_npc(body: dict):
-    description = body.get("description", "").strip()
+async def generate_npc(body: dict, db: AsyncSession = Depends(get_session)):
+    description = (body.get("description") or "").strip()
     if not description:
         raise HTTPException(400, "description is required")
 
-    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "config.json")
-    config = {}
-    if os.path.exists(config_path):
-        with open(config_path) as f:
-            config = json.load(f)
+    config = _load_config()
+    system_prompt = _load_system_prompt()
+    session_code = body.get("session_code")
+    session_id = None
+    if session_code:
+        res = await db.execute(select(Session).where(Session.code == session_code))
+        session_obj = res.scalar_one_or_none()
+        if session_obj:
+            session_id = session_obj.id
 
-    api_key = config.get("openrouter_api_key", "")
-    if not api_key:
-        raise HTTPException(500, "Set openrouter_api_key in config.json")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": (
+            f"Create an NPC based on this description and emit a single "
+            f'create_npc action. Description: "{description}".'
+        )},
+    ]
 
-    model = config.get("ai_npc_model", "google/gemma-3-27b-it:free")
+    reply, err = await _call_openrouter(messages, config)
+    if err:
+        # Preserve the old status code semantics: 500 for missing key,
+        # 504 for timeout, 502 otherwise — all without crashing the chat.
+        if "timed out" in err:
+            raise HTTPException(504, err)
+        if "API key" in err:
+            raise HTTPException(500, err)
+        raise HTTPException(502, err)
 
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": NPC_GEN_PROMPT},
-                        {"role": "user", "content": f"Create an NPC: {description}"},
-                    ],
-                    "temperature": 0.9,
-                },
-            )
-        if resp.status_code != 200:
-            raise HTTPException(502, f"AI API error ({resp.status_code})")
+    say, actions, parse_err = parse_envelope(reply)
+    npc_actions = [a for a in actions if a["kind"] == "create_npc"]
+    if not npc_actions:
+        raise HTTPException(502, f"AI returned no NPC action ({parse_err or 'bad shape'})")
 
-        data = resp.json()
-        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        # Parse JSON from reply (strip markdown fences if any)
-        reply = reply.strip()
-        if reply.startswith("```"):
-            reply = reply.split("\n", 1)[1] if "\n" in reply else reply[3:]
-            if reply.endswith("```"):
-                reply = reply[:-3]
-            reply = reply.strip()
+    if session_id is not None:
+        # Actually persist; return the created row + hint.
+        results = await run_actions(session_id, npc_actions[:1], db)
+        created = results[0] if results else {"ok": False, "error": "dispatch-failed"}
+        return {"say": say, "created": created, "payload": npc_actions[0]["payload"]}
 
-        npc = json.loads(reply)
-        return npc
-
-    except json.JSONDecodeError:
-        raise HTTPException(502, "AI returned invalid JSON. Try again.")
-    except httpx.TimeoutException:
-        raise HTTPException(504, "AI request timed out.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"AI request failed: {str(e)[:200]}")
+    # No session context → legacy behaviour: return the payload only.
+    return {"say": say, "payload": npc_actions[0]["payload"]}

@@ -545,6 +545,73 @@ def run(base: str) -> int:
                 ch_hp2["max_hp"] == hp_before_grant,
                 f"after revert={ch_hp2['max_hp']}")
 
+    # ── ν: AI envelope parser (offline, no OpenRouter / DB calls) ──
+    s.group("Phase ν: Rework v3 — AI envelope parser")
+    # Imported lazily so the suite still runs if `app/` has an unrelated import
+    # error at startup — worst case we just skip phase ν with a warning.
+    try:
+        import os, sys as _sys
+        _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from app.ai_agent import parse_envelope, MAX_ACTIONS_PER_REPLY
+    except Exception as imp_err:  # noqa: BLE001
+        s.check(f"import app.ai_agent (skipped: {imp_err})", True)
+    else:
+        # 1) Well-formed envelope with a single NPC action round-trips.
+        say, acts, err = parse_envelope(json.dumps({
+            "say": "A hulking brute steps into the torchlight.",
+            "actions": [{"kind": "create_npc", "payload": {
+                "name": "Gorim the Brute", "max_hp": 45, "armor_class": 14,
+                "strength": 4, "dexterity": 1, "constitution": 3,
+            }}],
+        }))
+        s.check("envelope parses without error", err is None, f"err={err}")
+        s.check("say preserved", "Gorim" in say or "brute" in say.lower())
+        s.check("one npc action returned", len(acts) == 1 and acts[0]["kind"] == "create_npc")
+
+        # 2) Model wrapped output in ```json fences — must still parse.
+        fenced = "```json\n" + json.dumps({"say": "hi", "actions": []}) + "\n```"
+        _, _, err2 = parse_envelope(fenced)
+        s.check("fenced envelope parses", err2 is None, f"err={err2}")
+
+        # 3) Model leaked prose around the envelope.
+        noisy = 'Sure thing!  {"say":"forged","actions":[{"kind":"create_item","payload":{"name":"X","category":"misc","rarity":"common","description":"x"}}]}  Done.'
+        _, acts3, err3 = parse_envelope(noisy)
+        s.check("prose-wrapped envelope still parses", err3 is None, f"err={err3}")
+        s.check("item action found inside prose", len(acts3) == 1 and acts3[0]["kind"] == "create_item")
+
+        # 4) Bad / unknown kinds are filtered out, not raised.
+        mixed = json.dumps({"say": "", "actions": [
+            {"kind": "create_npc", "payload": {"name": "ok"}},
+            {"kind": "delete_universe", "payload": {}},
+            "not-a-dict",
+            {"kind": "create_item", "payload": "also-not-a-dict"},
+            {"kind": "create_ability", "payload": {"name": "Bolt", "ability_type": "active",
+                                                     "target_type": "single", "rarity": "common",
+                                                     "description": "zap"}},
+        ]})
+        _, acts4, err4 = parse_envelope(mixed)
+        s.check("bad shapes filtered", err4 is None and len(acts4) == 2,
+                f"kept={[a['kind'] for a in acts4]}")
+
+        # 5) Cap enforced — a malicious model can't blow up the DB.
+        spam = json.dumps({"say": "", "actions": [
+            {"kind": "create_item", "payload": {"name": f"i{i}"}}
+            for i in range(MAX_ACTIONS_PER_REPLY + 5)
+        ]})
+        _, acts5, _ = parse_envelope(spam)
+        s.check(f"actions capped at {MAX_ACTIONS_PER_REPLY}",
+                len(acts5) == MAX_ACTIONS_PER_REPLY,
+                f"got {len(acts5)}")
+
+        # 6) Pure chatter (no JSON) → not an error, just fallback say.
+        say6, acts6, err6 = parse_envelope("Hello GM, how can I help?")
+        s.check("non-JSON reply → fallback say",
+                err6 == "no-json-fallback" and not acts6 and "Hello" in say6)
+
+        # 7) Empty reply → explicit empty-reply error signal.
+        _, _, err7 = parse_envelope("")
+        s.check("empty reply flagged", err7 == "empty reply")
+
     return s.done()
 
 

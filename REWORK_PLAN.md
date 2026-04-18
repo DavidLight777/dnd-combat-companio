@@ -270,6 +270,44 @@ below is now merged and exercised by `tests/test_rework_v2.py` (75/75 OK).
   display a read-only "Damage: 1d6 (fixed by weapon)" line. Multi-mode
   weapons show a dropdown of the presets.
 
+### AI — full rewrite (envelope protocol + dispatcher)
+
+* Before: `/api/ai/chat` returned free-form text. The GM client regex-matched
+  any `{"name":"..."}` blob and POSTed it to `/api/items` — so "make me a
+  bandit NPC" silently created an **item** row, and items themselves had
+  almost no fields (no stats, no bonuses, no weapon dice, no damage modes).
+* Now the AI speaks a strict envelope:
+  ```json
+  { "say": "<short>", "actions": [ {"kind":"...","payload":{...}} ] }
+  ```
+  with `kind ∈ create_item | create_npc | create_ability`. The server
+  validates every action via the new **in-process dispatcher** (`ai_agent.py`:
+  `_dispatch_create_item` / `_dispatch_create_npc` / `_dispatch_create_ability`)
+  which writes real DB rows with full schema: bonuses, weapon_stats +
+  damage_modes, use_effect, passive_effect, requires_hit_roll, etc. Every
+  AI-created row is tagged `created_by_ai=true`.
+* `ai_system_prompt.txt` rewritten from 15 lines to a complete but compact
+  (~800-token) schema reference: three action kinds, full enum lists for
+  category / rarity / bonus_type / damage_type / effect-type / target_type,
+  examples for offensive vs healing vs passive abilities, and behaviour
+  rules (one clarifying question on ambiguous requests, one action per
+  emitted NPC, no markdown fences).
+* `build_game_context` trimmed from "every stat + inventory + 10 log lines"
+  to "players L/HP, NPCs L/HP, last 3 combat-log lines". Saves ~200-400
+  tokens per turn of conversation on a busy session.
+* Conversation history truncated 20 → 14 entries (same rationale).
+* `/api/ai/generate-npc` kept for backward compatibility but now fed by the
+  same envelope prompt, so the returned payload is always the richer
+  `create_npc` shape. Preserves original 500 / 502 / 504 semantics.
+* GM panel (`static/js/gm-app.js`): regex matching removed. The chat bubble
+  shows the parsed `say`; each action becomes its own card
+  ("✓ 🎭 NPC created — Gorim (HP 45 · AC 14)"), failed actions render in
+  red with the dispatcher error. Relevant list-views (`loadItems`, etc.)
+  auto-refresh when an action succeeds, and a toast announces each new row.
+* Offline regression phase **ν** in `tests/test_rework_v2.py` exercises
+  `parse_envelope` against seven hostile inputs (fenced, prose-wrapped,
+  wrong shapes, spam over `MAX_ACTIONS_PER_REPLY`, empty, non-JSON, valid).
+
 ### P2P targeting — UI fixes
 
 * Potion / Use-Item picker (`_mountItemConfirm`) previously shipped an

@@ -3677,55 +3677,57 @@ async function loadAIHistory() {
   } catch { /* silent */ }
 }
 
-function appendAIMessage(role, content) {
+// Rework v3: the server now returns a parsed envelope
+// ({reply, say, actions:[{kind, ok, id, name, error}], parse_error}).
+// We render `say` in the bubble and render each action as its own card so
+// the GM can see exactly what was created (or why it failed).
+function _renderAIMessageText(div, content) {
+  const safe = String(content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  div.innerHTML = safe
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+}
+
+function _renderAIActionCard(action) {
+  const card = document.createElement('div');
+  card.className = 'ai-item-preview';
+  const KIND_LABEL = {
+    create_item: '📦 Item',
+    create_npc: '🎭 NPC',
+    create_ability: '✨ Ability',
+  };
+  const label = KIND_LABEL[action.kind] || action.kind;
+  if (action.ok === false || action.error) {
+    card.style.borderLeft = '3px solid var(--accent-red)';
+    card.innerHTML = `<strong>${label}</strong> <span style="color:var(--accent-red)">failed</span><br>
+      <span style="font-size:0.75rem;color:var(--text-muted)">${action.error || 'unknown error'}</span>`;
+    return card;
+  }
+  const extras = [];
+  if (action.rarity) extras.push(action.rarity);
+  if (action.category) extras.push(action.category);
+  if (action.max_hp) extras.push(`HP ${action.max_hp}`);
+  if (action.armor_class) extras.push(`AC ${action.armor_class}`);
+  if (action.ability_type) extras.push(action.ability_type);
+  if (action.target_type) extras.push(action.target_type);
+  card.innerHTML = `
+    <div>✓ <strong>${label}</strong> created — <strong>${action.name || ''}</strong>
+      ${extras.length ? `<span style="font-size:0.72rem;color:var(--text-muted)">(${extras.join(' · ')})</span>` : ''}
+    </div>
+    <div style="font-size:0.72rem;color:var(--text-muted)">id #${action.id}</div>`;
+  return card;
+}
+
+function appendAIMessage(role, content, actions) {
   const container = $('#ai-messages');
   const div = document.createElement('div');
   div.className = `ai-msg ${role}`;
 
   if (role === 'assistant') {
-    // Try to detect JSON item in the response
-    const jsonMatch = content.match(/\{[^{}]*"name"\s*:\s*"[^"]+"/s);
-    let itemJson = null;
-    if (jsonMatch) {
-      try {
-        // Find the full JSON object
-        const start = content.indexOf(jsonMatch[0]);
-        let depth = 0, end = start;
-        for (let i = start; i < content.length; i++) {
-          if (content[i] === '{') depth++;
-          if (content[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
-        }
-        itemJson = JSON.parse(content.substring(start, end));
-      } catch { itemJson = null; }
-    }
-
-    // Simple markdown rendering
-    let html = content.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/\n/g, '<br>');
-    div.innerHTML = html;
-
-    if (itemJson && itemJson.name) {
-      const preview = document.createElement('div');
-      preview.className = 'ai-item-preview';
-      preview.innerHTML = `
-        <strong>${itemJson.name}</strong> (${itemJson.rarity || 'common'} ${itemJson.category || 'misc'})<br>
-        ${itemJson.description || ''}<br>
-        Price: ${itemJson.base_price || 0}g${itemJson.effect_type ? ` · ${itemJson.effect_type}: ${itemJson.effect_value}` : ''}
-        <br><button class="btn btn-primary btn-xs ai-add-item-btn">+ Add to Database</button>
-      `;
-      preview.querySelector('.ai-add-item-btn').addEventListener('click', async () => {
-        try {
-          await api.post('/api/items', itemJson);
-          showToast(`Item "${itemJson.name}" added to database!`);
-          preview.querySelector('.ai-add-item-btn').textContent = '✓ Added';
-          preview.querySelector('.ai-add-item-btn').disabled = true;
-        } catch (e) { showToast('Failed to add item: ' + e.message); }
-      });
-      div.appendChild(preview);
-    }
+    _renderAIMessageText(div, content || '');
+    for (const a of (actions || [])) div.appendChild(_renderAIActionCard(a));
   } else {
     div.textContent = content;
   }
@@ -3747,7 +3749,17 @@ async function sendAIMessage(msg) {
     if (res.error) {
       appendAIMessage('assistant', `⚠️ ${res.error}`);
     } else {
-      appendAIMessage('assistant', res.reply);
+      // Prefer the parsed `say` for display. Fall back to raw reply if the
+      // model failed to emit a valid envelope (parse_error != null).
+      const text = res.say || res.reply || '';
+      appendAIMessage('assistant', text, res.actions || []);
+      // Toast any new items/NPCs so other GM panels refresh immediately.
+      for (const a of (res.actions || [])) {
+        if (a.ok === false || a.error) continue;
+        if (a.kind === 'create_item')    { showToast(`📦 ${a.name} added`);   if (typeof loadItems     === 'function') loadItems();     }
+        if (a.kind === 'create_npc')     { showToast(`🎭 ${a.name} spawned`); if (typeof loadCharacters === 'function') loadCharacters(); }
+        if (a.kind === 'create_ability') { showToast(`✨ ${a.name} forged`);  if (typeof loadAbilities  === 'function') loadAbilities();  }
+      }
     }
   } catch (e) {
     appendAIMessage('assistant', `⚠️ Error: ${e.message}`);
@@ -3766,11 +3778,13 @@ $('#ai-input').addEventListener('keydown', e => {
 $$('[data-ai-quick]').forEach(btn => {
   btn.addEventListener('click', () => {
     const action = btn.dataset.aiQuick;
+    // Rework v3 prompts — the model is envelope-schema aware, so tell it
+    // which kind of action we want (or none) instead of asking for free JSON.
     const prompts = {
-      narrate: 'Describe the current combat situation dramatically. Set the scene for the players.',
-      npc: 'Based on the current game state, what should the NPCs do on their turn? Consider their health, position, and tactical options.',
-      item: 'Generate a creative fantasy item appropriate for the current session. Respond with a JSON object in the item creation format.',
-      summary: 'Summarize everything that has happened in this session so far. Include key events, damage dealt, items used, and notable moments.',
+      narrate: 'Narrate the current combat situation dramatically in <=300 chars. Emit no actions.',
+      npc:     'Analyze the battlefield and suggest what each NPC should do this turn. Short bullets. Emit no actions.',
+      item:    'Invent ONE creative fantasy item themed to this session and emit it via a single create_item action. Keep "say" under 200 chars.',
+      summary: 'Summarize this session so far in <=400 chars (key events, damage, items, moments). Emit no actions.',
     };
     if (prompts[action]) sendAIMessage(prompts[action]);
   });
