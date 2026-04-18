@@ -312,7 +312,6 @@ async def get_npc_shop(npc_id: int, player_id: int = 0, db: AsyncSession = Depen
             "description": item.description,
             "category": item.category,
             "rarity": item.rarity,
-            "weight": item.weight,
             "base_price_bronze": base_price,
             "final_price_bronze": final_price,
             "final_price": bronze_to_display(final_price, _rates),

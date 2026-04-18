@@ -295,6 +295,17 @@ input[type="checkbox"], input[type="radio"] {
 .rarity-badge.uncommon  { background: rgba(74,156,93,0.15); color: var(--rarity-uncommon); }
 .rarity-badge.rare      { background: rgba(74,127,192,0.15); color: var(--rarity-rare); }
 .rarity-badge.epic      { background: rgba(138,74,191,0.15); color: var(--rarity-epic); }
+
+/* Rework v2: shared rarity chip (lobby / player / GM) */
+.rarity-chip {
+  display: inline-block; padding: 1px 6px; border-radius: 8px;
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.rarity-chip.rarity-common    { background: rgba(170,170,170,0.2); color: #bbb; }
+.rarity-chip.rarity-uncommon  { background: rgba(30,200,80,0.2);  color: #5fe080; }
+.rarity-chip.rarity-rare      { background: rgba(50,130,240,0.2); color: #73a8ff; }
+.rarity-chip.rarity-epic      { background: rgba(170,90,220,0.25);color: #d088ff; }
+.rarity-chip.rarity-legendary { background: rgba(230,170,30,0.25);color: #ffc94a; }
 .rarity-badge.legendary { background: rgba(192,138,42,0.15); color: var(--rarity-legendary); }
 .rarity-badge.mythic    { background: rgba(224,64,128,0.15); color: var(--rarity-mythic); }
 .rarity-badge.divine    {

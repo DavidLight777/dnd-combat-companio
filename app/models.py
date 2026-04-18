@@ -43,23 +43,28 @@ class Character(Base):
     is_npc: Mapped[bool] = mapped_column(Boolean, default=False)
     is_gm_controlled: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    armor_class: Mapped[int] = mapped_column(Integer, default=10)
-    current_hp: Mapped[int] = mapped_column(Integer, default=20)
-    max_hp: Mapped[int] = mapped_column(Integer, default=20)
-    strength: Mapped[int] = mapped_column(Integer, default=10)
-    dexterity: Mapped[int] = mapped_column(Integer, default=10)
-    constitution: Mapped[int] = mapped_column(Integer, default=10)
-    intelligence: Mapped[int] = mapped_column(Integer, default=10)
-    wisdom: Mapped[int] = mapped_column(Integer, default=10)
-    charisma: Mapped[int] = mapped_column(Integer, default=10)
+    # Rework v2: everyone starts at level 0 with baseline 0 AC and 0 HP —
+    # HP is rolled in the creation wizard (Step 6) from the race's HP die.
+    armor_class: Mapped[int] = mapped_column(Integer, default=0)
+    current_hp: Mapped[int] = mapped_column(Integer, default=0)
+    max_hp: Mapped[int] = mapped_column(Integer, default=0)
+    # Rework v2: each stat value IS the bonus (STR 1 → +1 to hit/damage).
+    # Default 1 for accept; Step 4 of the wizard may zero them out in
+    # exchange for advantage on the feature roll.
+    strength: Mapped[int] = mapped_column(Integer, default=1)
+    dexterity: Mapped[int] = mapped_column(Integer, default=1)
+    constitution: Mapped[int] = mapped_column(Integer, default=1)
+    intelligence: Mapped[int] = mapped_column(Integer, default=1)
+    wisdom: Mapped[int] = mapped_column(Integer, default=1)
+    charisma: Mapped[int] = mapped_column(Integer, default=1)
 
     initiative_bonus: Mapped[int] = mapped_column(Integer, default=0)
     initiative_roll: Mapped[int | None] = mapped_column(Integer, nullable=True)
     initiative_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    hp_dice_count: Mapped[int] = mapped_column(Integer, default=2)
-    hp_dice_type: Mapped[int] = mapped_column(Integer, default=12)
-    hp_recovery_modifier: Mapped[int] = mapped_column(Integer, default=0)
+    # Rework v3: hp_dice_count / hp_dice_type / hp_recovery_modifier retired —
+    # healing now comes from race HP die (level-up), potions, abilities, and
+    # the GM's Full Rest button.
 
     attack_dice_count: Mapped[int] = mapped_column(Integer, default=1)
     attack_dice_type: Mapped[int] = mapped_column(Integer, default=8)
@@ -75,8 +80,9 @@ class Character(Base):
     is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
     gold: Mapped[int] = mapped_column(Integer, default=0)
     wealth_bronze: Mapped[int] = mapped_column(Integer, default=0)  # total wealth in bronze
-    mana_current: Mapped[int] = mapped_column(Integer, default=0)
-    mana_max: Mapped[int] = mapped_column(Integer, default=0)
+    # Rework v2: everyone starts with 10 mana (features may override).
+    mana_current: Mapped[int] = mapped_column(Integer, default=10)
+    mana_max: Mapped[int] = mapped_column(Integer, default=10)
     mana_regen_per_turn: Mapped[int] = mapped_column(Integer, default=0)
     can_edit_own_items: Mapped[bool] = mapped_column(Boolean, default=False)
     place_at_table: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -84,8 +90,8 @@ class Character(Base):
     gm_notes: Mapped[str] = mapped_column(Text, default="")
 
     race_id: Mapped[int | None] = mapped_column(ForeignKey("races.id", ondelete="SET NULL"), nullable=True)
-    # class_id — DEPRECATED: kept for back-compat. Use character_professions table instead.
-    class_id: Mapped[int | None] = mapped_column(ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
+    # Rework v2: class_id is GONE from the lobby — professions are assigned
+    # by the GM post-creation via the character_professions M:N table.
     level: Mapped[int] = mapped_column(Integer, default=0)
     experience: Mapped[int] = mapped_column(Integer, default=0)
     # Rework: rank chain common → uncommon → rare → epic → legendary → mythic → divine
@@ -93,6 +99,16 @@ class Character(Base):
 
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Rework v2: identity (cosmetic only)
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gender: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Rework v2: inventory slot cap. Formula on creation:
+    #   slots = (declined_stats ? 10 : 12) + 2 × constitution
+    # GM can override on NPCs. 0 = unlimited (NPC default).
+    max_inventory_slots: Mapped[int] = mapped_column(Integer, default=12)
+    # Rework v2: did the player decline stats for an advantage roll?
+    declined_stats: Mapped[bool] = mapped_column(Boolean, default=False)
 
     session: Mapped["Session"] = relationship(
         back_populates="characters", foreign_keys=[session_id]
@@ -300,7 +316,7 @@ class Item(Base):
     rarity: Mapped[str] = mapped_column(String(20), default="common")  # common/uncommon/rare/epic/legendary/mythic/divine
     base_price: Mapped[int] = mapped_column(Integer, default=0)  # legacy gold price
     base_price_bronze: Mapped[int] = mapped_column(Integer, default=0)
-    weight: Mapped[float] = mapped_column(Float, default=0.0)
+    # Rework v2: item weight is removed — items only occupy inventory slots.
     effect_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # legacy single effect
     effect_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     equippable: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -545,6 +561,9 @@ class Race(Base):
     bonuses: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of bonus objects
     special_abilities: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Rework v2: race defines the HP die rolled at creation + every level-up.
+    hp_die: Mapped[int] = mapped_column(Integer, default=8)           # d4/d6/d8/d10/d12
+    hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)    # usually 1
 
 
 class CharacterClass(Base):
@@ -595,12 +614,14 @@ class NpcTemplate(Base):
     is_merchant: Mapped[bool] = mapped_column(Boolean, default=False)
     max_hp: Mapped[int] = mapped_column(Integer, default=20)
     armor_class: Mapped[int] = mapped_column(Integer, default=10)
-    strength: Mapped[int] = mapped_column(Integer, default=10)
-    dexterity: Mapped[int] = mapped_column(Integer, default=10)
-    constitution: Mapped[int] = mapped_column(Integer, default=10)
-    intelligence: Mapped[int] = mapped_column(Integer, default=10)
-    wisdom: Mapped[int] = mapped_column(Integer, default=10)
-    charisma: Mapped[int] = mapped_column(Integer, default=10)
+    # NPC template defaults stay at 2 — NPCs are not bound by the
+    # level-0 player baseline and the GM tunes them freely.
+    strength: Mapped[int] = mapped_column(Integer, default=2)
+    dexterity: Mapped[int] = mapped_column(Integer, default=2)
+    constitution: Mapped[int] = mapped_column(Integer, default=2)
+    intelligence: Mapped[int] = mapped_column(Integer, default=2)
+    wisdom: Mapped[int] = mapped_column(Integer, default=2)
+    charisma: Mapped[int] = mapped_column(Integer, default=2)
     initiative_bonus: Mapped[int] = mapped_column(Integer, default=0)
     token_color: Mapped[str] = mapped_column(Text, default="#e05252")
     default_equipment: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
@@ -752,6 +773,17 @@ class Ability(Base):
     effect: Mapped[str] = mapped_column(Text, default="{}")  # JSON — same schema as use_effect
     range: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ── Rework v2 — unified "особенность или умение" pool ─────────
+    # Rarity bucket used by the creation-wizard feature roll.
+    rarity: Mapped[str] = mapped_column(String(20), default="common")
+    # If true, this entry is eligible for the Step-5 random draw.
+    is_in_starting_pool: Mapped[bool] = mapped_column(Boolean, default=False)
+    # null = infinite uses. Otherwise, the total count across the whole game.
+    max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A flavor-only feature with no mechanics — GM runs it narratively.
+    is_conditional: Mapped[bool] = mapped_column(Boolean, default=False)
+    conditional_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class CharacterAbility(Base):
     __tablename__ = "character_abilities"
@@ -761,6 +793,10 @@ class CharacterAbility(Base):
     ability_id: Mapped[int] = mapped_column(ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False)
     is_unlocked: Mapped[bool] = mapped_column(Boolean, default=True)
     cooldown_remaining: Mapped[int] = mapped_column(Integer, default=0)
+    # Rework v2: mirrors Ability.max_uses at grant time. null = infinite.
+    current_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Rework v2: provenance — tells UI whether this came from the wizard.
+    granted_from: Mapped[str] = mapped_column(String(20), default="gm")  # gm / wizard / level_up
 
     ability: Mapped["Ability"] = relationship(lazy="selectin")
 

@@ -34,9 +34,6 @@ def _serialize_char(c: Character) -> dict:
         "intelligence": c.intelligence,
         "wisdom": c.wisdom,
         "charisma": c.charisma,
-        "hp_dice_count": c.hp_dice_count,
-        "hp_dice_type": c.hp_dice_type,
-        "hp_recovery_modifier": c.hp_recovery_modifier,
         "initiative_bonus": c.initiative_bonus,
         "token_color": c.token_color,
         "is_alive": c.is_alive,
@@ -61,9 +58,13 @@ def _serialize_char(c: Character) -> dict:
             for e in c.effects
         ],
         "race_id": c.race_id,
-        "class_id": c.class_id,  # deprecated — use professions[]
         "level": c.level,
         "experience": c.experience,
+        # Rework v2: cosmetic identity + inventory/decline
+        "age": c.age,
+        "gender": c.gender,
+        "max_inventory_slots": c.max_inventory_slots,
+        "declined_stats": bool(c.declined_stats),
         # Rework Phase 1: rank chain + Phase 4: multi-profession list
         "rank": getattr(c, "rank", "common") or "common",
         "professions": [
@@ -102,10 +103,24 @@ def _serialize_char(c: Character) -> dict:
 # ── Get character ────────────────────────────────────────────
 @router.get("/characters/{char_id}")
 async def get_character(char_id: int, db: AsyncSession = Depends(get_session)):
+    from app.models import Race
     c = await db.get(Character, char_id)
     if not c:
         raise HTTPException(404, "Character not found")
-    return _serialize_char(c)
+    payload = _serialize_char(c)
+    # Rework v2: surface race HP die for the level-up preview.
+    hp_die, hp_dice_count, race_name = 8, 1, None
+    if c.race_id:
+        race = await db.get(Race, c.race_id)
+        if race:
+            hp_die = int(race.hp_die or 8)
+            hp_dice_count = int(race.hp_dice_count or 1)
+            race_name = race.name
+    payload["hp_die"] = hp_die
+    payload["hp_dice_count"] = hp_dice_count
+    payload["race_name"] = race_name
+    payload["xp_to_next"] = xp_to_next(c.level)
+    return payload
 
 
 # ── Update character ─────────────────────────────────────────
@@ -229,9 +244,21 @@ async def grant_xp(char_id: int, body: dict, db: AsyncSession = Depends(get_sess
 
 @router.post("/characters/{char_id}/level-up")
 async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
-    """Manually advance to the next level if the character has enough XP.
-    Body may include {"force": true} to bypass the XP threshold check (GM override).
+    """Rework v2: level-up rolls a race HP die and applies ONE chosen benefit.
+
+    Body:
+      {
+        "choice": "stats" | "upgrade_feature",
+        "stat_a": "strength",            # required for "stats"
+        "stat_b": "dexterity",           # required for "stats" (must differ from stat_a)
+        "character_ability_id": 17,      # required for "upgrade_feature"
+        "force": false                   # optional GM bypass of the XP threshold
+      }
+    Return: {level, hp_rolls, hp_gained, chosen, ...}
     """
+    import random
+    from app.models import Race, Ability, CharacterAbility, StatModifier
+
     body = body or {}
     c = await db.get(Character, char_id)
     if not c:
@@ -244,9 +271,102 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
             "have": c.experience or 0,
             "need": threshold,
         })
-    # Consume threshold worth of XP
+
+    choice = str(body.get("choice", "")).lower()
+    if choice not in ("stats", "upgrade_feature"):
+        raise HTTPException(400, "`choice` must be 'stats' or 'upgrade_feature'")
+
+    # ── 1. Roll the race HP die (+ apply to max & current)
+    hp_die = 8
+    hp_dice_count = 1
+    if c.race_id:
+        race = await db.get(Race, c.race_id)
+        if race:
+            hp_die = int(race.hp_die or 8)
+            hp_dice_count = int(race.hp_dice_count or 1)
+    # Rework v3: passive-ability bonuses may bump the die size or count.
+    hp_die_bonus = sum(
+        int(m.value or 0) for m in c.stat_modifiers
+        if m.is_active and m.stat_name == "hp_die_bonus"
+    )
+    hp_die_count_bonus = sum(
+        int(m.value or 0) for m in c.stat_modifiers
+        if m.is_active and m.stat_name == "hp_die_count_bonus"
+    )
+    hp_die = max(1, hp_die + hp_die_bonus)
+    hp_dice_count = max(1, hp_dice_count + hp_die_count_bonus)
+    rolls = [random.randint(1, hp_die) for _ in range(max(1, hp_dice_count))]
+    hp_gained = sum(rolls)
+    c.max_hp += hp_gained
+    c.current_hp += hp_gained
+
+    chosen: dict = {"choice": choice, "hp_rolls": rolls, "hp_die": hp_die,
+                    "hp_dice_count": hp_dice_count, "hp_gained": hp_gained}
+
+    # ── 2. Apply chosen benefit
+    if choice == "stats":
+        a = body.get("stat_a")
+        b = body.get("stat_b")
+        valid = {"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+        if a not in valid or b not in valid or a == b:
+            raise HTTPException(400, "Provide two distinct stats (stat_a != stat_b)")
+        setattr(c, a, int(getattr(c, a) or 0) + 1)
+        setattr(c, b, int(getattr(c, b) or 0) + 1)
+        chosen["stat_a"] = a
+        chosen["stat_b"] = b
+
+    else:  # upgrade_feature
+        cab_id = body.get("character_ability_id")
+        if not cab_id:
+            raise HTTPException(400, "`character_ability_id` is required for upgrade_feature")
+        cab = await db.get(CharacterAbility, int(cab_id))
+        if not cab or cab.character_id != c.id:
+            raise HTTPException(404, "Feature not owned by this character")
+        old_ab = cab.ability
+        if not old_ab:
+            raise HTTPException(404, "Feature template missing")
+
+        RANKS = ["common", "uncommon", "rare", "epic", "legendary"]
+        cur_rar = (old_ab.rarity or "common").lower()
+        if cur_rar not in RANKS or RANKS.index(cur_rar) >= len(RANKS) - 1:
+            raise HTTPException(400, "Feature is already at the highest rarity")
+        new_rar = RANKS[RANKS.index(cur_rar) + 1]
+
+        # Pull pool at new rarity, same session-or-global scope
+        q = await db.execute(
+            select(Ability)
+            .where(Ability.is_in_starting_pool == True)       # noqa: E712
+            .where(Ability.rarity == new_rar)
+            .where((Ability.session_id == c.session_id) | (Ability.session_id.is_(None)))
+            .order_by(Ability.id)
+        )
+        pool = list(q.scalars().all())
+        if not pool:
+            raise HTTPException(
+                400,
+                f"No {new_rar} feature available to upgrade to. Ask the GM to add some.",
+            )
+        bucket = pool[:4]
+        d_size = len(bucket)
+        d_rolled = random.randint(1, d_size)
+        new_ab = bucket[d_rolled - 1]
+
+        # Replace the CharacterAbility (same row, new template)
+        cab.ability_id = new_ab.id
+        cab.current_uses = new_ab.max_uses
+        cab.cooldown_remaining = 0
+        cab.granted_from = "level_up"
+        chosen["character_ability_id"] = cab.id
+        chosen["old_ability_id"] = old_ab.id
+        chosen["new_ability_id"] = new_ab.id
+        chosen["new_rarity"] = new_rar
+        chosen["d_size"] = d_size
+        chosen["d_rolled"] = d_rolled
+
+    # ── 3. Consume XP + advance level
     c.experience = max(0, (c.experience or 0) - threshold)
     c.level = cur_level + 1
+
     await db.commit()
     await db.refresh(c)
     await _broadcast_char(c.session_id, c.id)
@@ -255,6 +375,9 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
         "level": c.level,
         "rank": getattr(c, "rank", "common"),
         "xp_to_next": xp_to_next(c.level),
+        "max_hp": c.max_hp,
+        "current_hp": c.current_hp,
+        "chosen": chosen,
     }
 
 
@@ -613,7 +736,8 @@ async def roll_characteristic(char_id: int, body: CharacteristicRollBody, db: As
     if not stat_key:
         raise HTTPException(400, f"Invalid stat: {body.stat}")
 
-    base_val = getattr(c, stat_key, 10)
+    # Rework v2: stat value IS the bonus (0..N). Missing field falls back to 0.
+    base_val = getattr(c, stat_key, 0) or 0
     # Add active stat modifiers (race/class/gm)
     stat_mods = [m for m in c.stat_modifiers if m.stat_name == stat_key and m.is_active]
     mod_from_mods = sum(m.value for m in stat_mods)

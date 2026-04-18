@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, Character, CombatLog, InventoryItem, Item, Race, CharacterClass, StatModifier
+from app.models import Session, Character, CombatLog, InventoryItem, Item, Race, StatModifier, CharacterWizardState, CharacterAbility
+from app.websocket_manager import manager
 from app.schemas import SessionCreate, SessionJoin, SessionCreated, SessionJoined, SessionOut
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -65,51 +66,73 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
     if player_count >= 10:
         raise HTTPException(400, "Session is full (max 10 players)")
 
-    # Create character for player
+    # Rework v2: create character with level-0 baseline.
+    # Stats start at 1 (decline in wizard Step 4 will zero them out).
+    # HP/AC are 0 and will be computed during wizard finalize (Step 6).
+    # Mana defaults to 10 from the model.
     player_token = secrets.token_hex(16)
     character = Character(
         session_id=session.id,
         player_token=player_token,
         name=body.player_name,
-        current_hp=20,
-        max_hp=20,
+        current_hp=0,
+        max_hp=0,
+        armor_class=0,
         race_id=body.race_id,
-        class_id=body.class_id,
+        age=body.age,
+        gender=body.gender,
+        strength=1, dexterity=1, constitution=1,
+        intelligence=1, wisdom=1, charisma=1,
+        level=0,
+        experience=0,
+        declined_stats=False,
+        # slot cap is finalized in wizard Step 6; use the default until then
+        max_inventory_slots=12,
     )
     db.add(character)
     await db.flush()
 
-    # Apply race & class bonuses as locked stat modifiers
+    # Rework v2: atomically open the 6-step creation wizard.
+    wizard = CharacterWizardState(
+        character_id=character.id,
+        session_id=session.id,
+        current_step=1,
+        is_completed=False,
+        data="{}",
+        gm_approved=False,
+    )
+    db.add(wizard)
+
+    # Apply race bonuses (stat_bonus / hp_bonus / initiative_bonus) as locked
+    # stat modifiers. Race bonuses stay even if the player declines stats —
+    # that was explicitly confirmed (Q1 in REWORK_PLAN.md).
     hp_bonus = 0
     initiative_bonus = 0
-    for source_type, source_id in [("race", body.race_id), ("class", body.class_id)]:
-        if not source_id:
-            continue
-        if source_type == "race":
-            obj = await db.get(Race, source_id)
-        else:
-            obj = await db.get(CharacterClass, source_id)
-        if not obj:
-            continue
-        bonuses = json.loads(obj.bonuses) if obj.bonuses else []
-        for b in bonuses:
-            btype = b.get("type", "")
-            if btype == "stat_bonus":
-                stat = b.get("stat", "")
-                val = int(b.get("value", 0))
-                if stat and val:
-                    db.add(StatModifier(
-                        character_id=character.id,
-                        stat_name=stat,
-                        name=f"{obj.name} ({source_type})",
-                        value=val,
-                        source=source_type,
-                    ))
-            elif btype == "hp_bonus":
-                hp_bonus += int(b.get("value", 0))
-            elif btype == "initiative_bonus":
-                initiative_bonus += int(b.get("value", 0))
+    if body.race_id:
+        race = await db.get(Race, body.race_id)
+        if race:
+            bonuses = json.loads(race.bonuses) if race.bonuses else []
+            for b in bonuses:
+                btype = b.get("type", "")
+                if btype == "stat_bonus":
+                    stat = b.get("stat", "")
+                    val = int(b.get("value", 0))
+                    if stat and val:
+                        db.add(StatModifier(
+                            character_id=character.id,
+                            stat_name=stat,
+                            name=f"{race.name} (race)",
+                            value=val,
+                            source="race",
+                        ))
+                elif btype == "hp_bonus":
+                    hp_bonus += int(b.get("value", 0))
+                elif btype == "initiative_bonus":
+                    initiative_bonus += int(b.get("value", 0))
 
+    # HP bonus is stored for later — the actual HP roll happens in finalize.
+    # We still stash it now so finalize can read it. Simplest: precompute max_hp
+    # deltas on the character now; finalize will add the race die roll on top.
     if hp_bonus:
         character.max_hp += hp_bonus
         character.current_hp += hp_bonus
@@ -224,6 +247,55 @@ async def update_session_status(code: str, body: dict, db: AsyncSession = Depend
     session.status = new_status
     await db.commit()
     return {"status": session.status}
+
+
+# ── Full Rest (GM-only long-rest for all living players) ─────
+@router.post("/{code}/full-rest")
+async def full_rest(code: str, db: AsyncSession = Depends(get_session)):
+    """Rework v3: restore HP, mana, cooldowns, and use-counters for every
+    living player character in the session. NPCs are untouched.
+
+    Returns a summary of how many characters were affected.
+    """
+    result = await db.execute(select(Session).where(Session.code == code))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    chars_q = await db.execute(
+        select(Character).where(
+            Character.session_id == session.id,
+            Character.is_npc == False,        # noqa: E712
+            Character.is_alive == True,       # noqa: E712
+        )
+    )
+    chars = chars_q.scalars().all()
+
+    healed = 0
+    for c in chars:
+        c.current_hp = c.max_hp or 0
+        c.mana_current = c.mana_max or 0
+        # Reset cooldowns and per-day uses on every assigned ability.
+        ca_q = await db.execute(
+            select(CharacterAbility).where(CharacterAbility.character_id == c.id)
+        )
+        for ca in ca_q.scalars().all():
+            ca.cooldown_remaining = 0
+            if ca.current_uses is not None and ca.ability is not None:
+                ca.current_uses = ca.ability.max_uses
+        healed += 1
+
+    await db.commit()
+
+    # Broadcast so every connected client refreshes their state.
+    try:
+        await manager.broadcast_to_session(session.code, "session.full_rest", {
+            "healed_count": healed,
+        })
+    except Exception:
+        pass
+
+    return {"ok": True, "healed_count": healed}
 
 
 # ── Export session as JSON ───────────────────────────────────

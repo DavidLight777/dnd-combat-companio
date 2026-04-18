@@ -27,73 +27,73 @@ DEFAULT_CATEGORIES = [
 # category_name → list of items with bonuses & weapon_stats
 DEFAULT_ITEMS_SPEC = [
     # ── WEAPONS ─────────────────────────────────────────────────
-    {"name": "Iron Sword", "description": "A sturdy iron blade.", "cat": "Weapon", "rarity": "common", "price_copper": 1500, "weight": 3.0, "equippable": True,
+    {"name": "Iron Sword", "description": "A sturdy iron blade.", "cat": "Weapon", "rarity": "common", "price_copper": 1500, "equippable": True,
      "weapon": {"dice_count": 1, "dice_type": 6, "damage_type": "physical", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 1}]},
-    {"name": "Steel Longsword", "description": "Well-forged steel longsword with leather grip.", "cat": "Weapon", "rarity": "uncommon", "price_copper": 5000, "weight": 3.5, "equippable": True,
+    {"name": "Steel Longsword", "description": "Well-forged steel longsword with leather grip.", "cat": "Weapon", "rarity": "uncommon", "price_copper": 5000, "equippable": True,
      "weapon": {"dice_count": 1, "dice_type": 8, "damage_type": "physical", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 2}, {"bonus_type": "attack_bonus", "value": 1}]},
-    {"name": "Flamebrand", "description": "A blade wreathed in eternal flame.", "cat": "Weapon", "rarity": "rare", "price_copper": 30000, "weight": 3.0, "equippable": True, "tags": '["magic","fire"]',
+    {"name": "Flamebrand", "description": "A blade wreathed in eternal flame.", "cat": "Weapon", "rarity": "rare", "price_copper": 30000, "equippable": True, "tags": '["magic","fire"]',
      "weapon": {"dice_count": 1, "dice_type": 8, "damage_type": "fire", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 4}, {"bonus_type": "attack_bonus", "value": 2}]},
-    {"name": "Doom Cleaver", "description": "An axe forged in the abyss, whispers of the damned echo from its edge.", "cat": "Weapon", "rarity": "epic", "price_copper": 80000, "weight": 5.0, "equippable": True, "tags": '["two-handed","cursed"]',
+    {"name": "Doom Cleaver", "description": "An axe forged in the abyss, whispers of the damned echo from its edge.", "cat": "Weapon", "rarity": "epic", "price_copper": 80000, "equippable": True, "tags": '["two-handed","cursed"]',
      "weapon": {"dice_count": 2, "dice_type": 8, "damage_type": "physical", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 6}, {"bonus_type": "attack_bonus", "value": 3}, {"bonus_type": "stat_bonus", "stat_name": "strength", "value": 2}]},
-    {"name": "Godslayer", "description": "A legendary weapon said to have felled a deity.", "cat": "Weapon", "rarity": "legendary", "price_copper": 500000, "weight": 4.0, "equippable": True, "tags": '["magic","divine"]',
+    {"name": "Godslayer", "description": "A legendary weapon said to have felled a deity.", "cat": "Weapon", "rarity": "legendary", "price_copper": 500000, "equippable": True, "tags": '["magic","divine"]',
      "weapon": {"dice_count": 2, "dice_type": 10, "damage_type": "magic", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 10}, {"bonus_type": "attack_bonus", "value": 5}, {"bonus_type": "stat_bonus", "stat_name": "strength", "value": 4}]},
-    {"name": "Elven Shortbow", "description": "A graceful bow crafted by elven artisans.", "cat": "Weapon", "rarity": "uncommon", "price_copper": 8000, "weight": 1.5, "equippable": True, "tags": '["magic"]',
+    {"name": "Elven Shortbow", "description": "A graceful bow crafted by elven artisans.", "cat": "Weapon", "rarity": "uncommon", "price_copper": 8000, "equippable": True, "tags": '["magic"]',
      "weapon": {"dice_count": 1, "dice_type": 6, "damage_type": "physical", "range": "60ft"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 2}, {"bonus_type": "initiative_bonus", "value": 1}]},
-    {"name": "Shadow Dagger", "description": "A dagger that drinks the light around it.", "cat": "Weapon", "rarity": "rare", "price_copper": 25000, "weight": 1.0, "equippable": True, "tags": '["magic","stealth"]',
+    {"name": "Shadow Dagger", "description": "A dagger that drinks the light around it.", "cat": "Weapon", "rarity": "rare", "price_copper": 25000, "equippable": True, "tags": '["magic","stealth"]',
      "weapon": {"dice_count": 1, "dice_type": 4, "damage_type": "magic", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 3}, {"bonus_type": "stat_bonus", "stat_name": "dexterity", "value": 2}]},
-    {"name": "Voidhammer", "description": "A mythic warhammer pulsing with void energy.", "cat": "Weapon", "rarity": "mythic", "price_copper": 1200000, "weight": 6.0, "equippable": True, "tags": '["two-handed","magic","void"]',
+    {"name": "Voidhammer", "description": "A mythic warhammer pulsing with void energy.", "cat": "Weapon", "rarity": "mythic", "price_copper": 1200000, "equippable": True, "tags": '["two-handed","magic","void"]',
      "weapon": {"dice_count": 3, "dice_type": 8, "damage_type": "magic", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 12}, {"bonus_type": "attack_bonus", "value": 6}, {"bonus_type": "stat_bonus", "stat_name": "strength", "value": 6}]},
-    {"name": "Eternity's Edge", "description": "A divine blade forged from the fabric of time itself. Those struck age decades in an instant.", "cat": "Weapon", "rarity": "divine", "price_copper": 5000000, "weight": 3.0, "equippable": True, "tags": '["magic","divine","time"]',
+    {"name": "Eternity's Edge", "description": "A divine blade forged from the fabric of time itself. Those struck age decades in an instant.", "cat": "Weapon", "rarity": "divine", "price_copper": 5000000, "equippable": True, "tags": '["magic","divine","time"]',
      "weapon": {"dice_count": 4, "dice_type": 10, "damage_type": "magic", "range": "melee"},
      "bonuses": [{"bonus_type": "damage_bonus", "value": 20}, {"bonus_type": "attack_bonus", "value": 10}, {"bonus_type": "stat_bonus", "stat_name": "strength", "value": 8}, {"bonus_type": "stat_bonus", "stat_name": "dexterity", "value": 4}]},
     # ── ARMOR ──────────────────────────────────────────────────
-    {"name": "Leather Armor", "description": "Basic leather protection.", "cat": "Armor", "rarity": "common", "price_copper": 1000, "weight": 5.0, "equippable": True,
+    {"name": "Leather Armor", "description": "Basic leather protection.", "cat": "Armor", "rarity": "common", "price_copper": 1000, "equippable": True,
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 5}]},
-    {"name": "Chain Mail", "description": "Interlocking metal rings provide solid defense.", "cat": "Armor", "rarity": "uncommon", "price_copper": 7500, "weight": 12.0, "equippable": True,
+    {"name": "Chain Mail", "description": "Interlocking metal rings provide solid defense.", "cat": "Armor", "rarity": "uncommon", "price_copper": 7500, "equippable": True,
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 10}]},
-    {"name": "Plate Armor", "description": "Heavy plate offering superior protection.", "cat": "Armor", "rarity": "rare", "price_copper": 40000, "weight": 25.0, "equippable": True,
+    {"name": "Plate Armor", "description": "Heavy plate offering superior protection.", "cat": "Armor", "rarity": "rare", "price_copper": 40000, "equippable": True,
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 15}, {"bonus_type": "flat_damage_reduction", "value": 2}]},
-    {"name": "Dragonscale Mail", "description": "Armor crafted from the scales of an ancient dragon.", "cat": "Armor", "rarity": "epic", "price_copper": 120000, "weight": 18.0, "equippable": True, "tags": '["magic"]',
+    {"name": "Dragonscale Mail", "description": "Armor crafted from the scales of an ancient dragon.", "cat": "Armor", "rarity": "epic", "price_copper": 120000, "equippable": True, "tags": '["magic"]',
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 20}, {"bonus_type": "flat_damage_reduction", "value": 4}, {"bonus_type": "hp_bonus", "value": 10}]},
-    {"name": "Aegis of the Immortal", "description": "A legendary shield-armor that defies death itself.", "cat": "Armor", "rarity": "legendary", "price_copper": 600000, "weight": 15.0, "equippable": True, "tags": '["magic","divine"]',
+    {"name": "Aegis of the Immortal", "description": "A legendary shield-armor that defies death itself.", "cat": "Armor", "rarity": "legendary", "price_copper": 600000, "equippable": True, "tags": '["magic","divine"]',
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 30}, {"bonus_type": "flat_damage_reduction", "value": 8}, {"bonus_type": "hp_bonus", "value": 25}]},
-    {"name": "Cloak of Shadows", "description": "A dark cloak that bends light around the wearer.", "cat": "Armor", "rarity": "rare", "price_copper": 35000, "weight": 2.0, "equippable": True, "tags": '["magic","stealth"]',
+    {"name": "Cloak of Shadows", "description": "A dark cloak that bends light around the wearer.", "cat": "Armor", "rarity": "rare", "price_copper": 35000, "equippable": True, "tags": '["magic","stealth"]',
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 8}, {"bonus_type": "stat_bonus", "stat_name": "dexterity", "value": 3}]},
-    {"name": "Titanweave Vestments", "description": "Mythic robes woven from threads of pure mana.", "cat": "Armor", "rarity": "mythic", "price_copper": 1500000, "weight": 4.0, "equippable": True, "tags": '["magic"]',
+    {"name": "Titanweave Vestments", "description": "Mythic robes woven from threads of pure mana.", "cat": "Armor", "rarity": "mythic", "price_copper": 1500000, "equippable": True, "tags": '["magic"]',
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 25}, {"bonus_type": "flat_damage_reduction", "value": 6}, {"bonus_type": "hp_bonus", "value": 30}, {"bonus_type": "stat_bonus", "stat_name": "constitution", "value": 4}]},
-    {"name": "Mantle of the Eternal", "description": "A divine armor born from the essence of creation. The wearer becomes nearly untouchable.", "cat": "Armor", "rarity": "divine", "price_copper": 8000000, "weight": 8.0, "equippable": True, "tags": '["magic","divine"]',
+    {"name": "Mantle of the Eternal", "description": "A divine armor born from the essence of creation. The wearer becomes nearly untouchable.", "cat": "Armor", "rarity": "divine", "price_copper": 8000000, "equippable": True, "tags": '["magic","divine"]',
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 40}, {"bonus_type": "flat_damage_reduction", "value": 15}, {"bonus_type": "hp_bonus", "value": 50}, {"bonus_type": "stat_bonus", "stat_name": "constitution", "value": 8}]},
-    # ── POTIONS ────────────────────────────────────────────────
-    {"name": "Health Potion (Minor)", "description": "Restores 10 HP.", "cat": "Potion", "rarity": "common", "price_copper": 500, "weight": 0.3, "consumable": True,
+    # ── POTIONS ────────────────────────────────────────
+    {"name": "Health Potion (Minor)", "description": "Restores 10 HP.", "cat": "Potion", "rarity": "common", "price_copper": 500, "consumable": True,
      "bonuses": [{"bonus_type": "hp_bonus", "value": 10}]},
-    {"name": "Health Potion (Greater)", "description": "Restores 25 HP.", "cat": "Potion", "rarity": "uncommon", "price_copper": 2500, "weight": 0.3, "consumable": True,
+    {"name": "Health Potion (Greater)", "description": "Restores 25 HP.", "cat": "Potion", "rarity": "uncommon", "price_copper": 2500, "consumable": True,
      "bonuses": [{"bonus_type": "hp_bonus", "value": 25}]},
-    {"name": "Health Potion (Supreme)", "description": "Restores 50 HP.", "cat": "Potion", "rarity": "rare", "price_copper": 10000, "weight": 0.3, "consumable": True,
+    {"name": "Health Potion (Supreme)", "description": "Restores 50 HP.", "cat": "Potion", "rarity": "rare", "price_copper": 10000, "consumable": True,
      "bonuses": [{"bonus_type": "hp_bonus", "value": 50}]},
-    {"name": "Potion of Resistance", "description": "Grants 10% damage reduction for 3 turns.", "cat": "Potion", "rarity": "uncommon", "price_copper": 4000, "weight": 0.3, "consumable": True,
+    {"name": "Potion of Resistance", "description": "Grants 10% damage reduction for 3 turns.", "cat": "Potion", "rarity": "uncommon", "price_copper": 4000, "consumable": True,
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 10, "is_conditional": True, "condition_description": "3 turns after use"}]},
-    {"name": "Elixir of Fortitude", "description": "Grants 20% damage reduction for 3 turns.", "cat": "Potion", "rarity": "rare", "price_copper": 12000, "weight": 0.3, "consumable": True,
+    {"name": "Elixir of Fortitude", "description": "Grants 20% damage reduction for 3 turns.", "cat": "Potion", "rarity": "rare", "price_copper": 12000, "consumable": True,
      "bonuses": [{"bonus_type": "percent_damage_reduction", "value": 20, "is_conditional": True, "condition_description": "3 turns after use"}]},
-    {"name": "Potion of Giant Strength", "description": "Temporarily grants immense strength.", "cat": "Potion", "rarity": "epic", "price_copper": 50000, "weight": 0.3, "consumable": True,
+    {"name": "Potion of Giant Strength", "description": "Temporarily grants immense strength.", "cat": "Potion", "rarity": "epic", "price_copper": 50000, "consumable": True,
      "bonuses": [{"bonus_type": "stat_bonus", "stat_name": "strength", "value": 6, "is_conditional": True, "condition_description": "5 turns after use"}]},
-    {"name": "Elixir of Ascension", "description": "A mythic draught that briefly elevates the drinker beyond mortal limits.", "cat": "Potion", "rarity": "mythic", "price_copper": 500000, "weight": 0.5, "consumable": True,
+    {"name": "Elixir of Ascension", "description": "A mythic draught that briefly elevates the drinker beyond mortal limits.", "cat": "Potion", "rarity": "mythic", "price_copper": 500000, "consumable": True,
      "bonuses": [{"bonus_type": "hp_bonus", "value": 100}, {"bonus_type": "stat_bonus", "stat_name": "constitution", "value": 6, "is_conditional": True, "condition_description": "10 turns after use"}]},
     # ── MISC ───────────────────────────────────────────────────
-    {"name": "Torch", "description": "Provides light in dark places.", "cat": "Misc", "rarity": "common", "price_copper": 100, "weight": 1.0},
-    {"name": "Rope (50 ft)", "description": "Sturdy hempen rope.", "cat": "Misc", "rarity": "common", "price_copper": 200, "weight": 5.0},
-    {"name": "Lockpick Set", "description": "Tools for opening locks.", "cat": "Misc", "rarity": "uncommon", "price_copper": 2500, "weight": 0.5},
-    {"name": "Bag of Holding", "description": "A magical bag with infinite interior space.", "cat": "Misc", "rarity": "rare", "price_copper": 50000, "weight": 0.5, "tags": '["magic"]'},
+    {"name": "Torch", "description": "Provides light in dark places.", "cat": "Misc", "rarity": "common", "price_copper": 100},
+    {"name": "Rope (50 ft)", "description": "Sturdy hempen rope.", "cat": "Misc", "rarity": "common", "price_copper": 200},
+    {"name": "Lockpick Set", "description": "Tools for opening locks.", "cat": "Misc", "rarity": "uncommon", "price_copper": 2500},
+    {"name": "Bag of Holding", "description": "A magical bag with infinite interior space.", "cat": "Misc", "rarity": "rare", "price_copper": 50000, "tags": '["magic"]'},
     # ── QUEST ──────────────────────────────────────────────────
-    {"name": "Mysterious Amulet", "description": "A quest item pulsing with unknown energy.", "cat": "Quest", "rarity": "rare", "price_copper": 0, "weight": 0.2},
-    {"name": "Crown of the Fallen King", "description": "A tarnished crown whispering forgotten commands.", "cat": "Quest", "rarity": "legendary", "price_copper": 0, "weight": 0.5},
+    {"name": "Mysterious Amulet", "description": "A quest item pulsing with unknown energy.", "cat": "Quest", "rarity": "rare", "price_copper": 0},
+    {"name": "Crown of the Fallen King", "description": "A tarnished crown whispering forgotten commands.", "cat": "Quest", "rarity": "legendary", "price_copper": 0},
 ]
 
 
@@ -123,7 +123,6 @@ async def _ensure_default_items(db: AsyncSession):
             rarity=spec.get("rarity", "common"),
             base_price=spec.get("price_copper", 0) // 100,  # legacy gold
             base_price_bronze=spec.get("price_copper", 0),
-            weight=spec.get("weight", 0.0),
             equippable=spec.get("equippable", False),
             consumable=spec.get("consumable", False),
             tags=spec.get("tags", "[]"),
@@ -235,7 +234,6 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
         rarity=body.get("rarity", "common"),
         base_price=body.get("base_price", body.get("base_price_bronze", body.get("base_price_copper", 0)) // 100),
         base_price_bronze=body.get("base_price_bronze", body.get("base_price_copper", body.get("base_price", 0) * 100)),
-        weight=body.get("weight", 0.0),
         effect_type=body.get("effect_type"),
         effect_value=body.get("effect_value"),
         equippable=_equippable,
@@ -272,6 +270,9 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
             range=ws.get("range"),
             weapon_range=ws.get("weapon_range", "melee"),
             weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
+            # Rework Phase 2: stat that adds its value as bonus to hit / damage rolls
+            hit_stat=ws.get("hit_stat", "strength"),
+            damage_stat=ws.get("damage_stat") if ws.get("damage_stat") is not None else "strength",
         ))
     await db.commit()
     await db.refresh(item)
@@ -284,7 +285,7 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
     if not item:
         raise HTTPException(404, detail={"error": True, "code": "NOT_FOUND", "message": "Item not found"})
     for k in ["name", "description", "category", "category_id", "rarity", "base_price",
-              "base_price_bronze", "weight", "effect_type", "effect_value", "equippable",
+              "base_price_bronze", "effect_type", "effect_value", "equippable",
               "consumable", "mana_cost", "created_by_ai",
               # FIX 6: potion identity
               "is_potion", "potion_icon"]:
@@ -313,7 +314,8 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
     ws = body.get("weapon_stats")
     if ws is not None:
         if item.weapon_stats:
-            for k in ["dice_count", "dice_type", "damage_type", "range", "weapon_range"]:
+            # Rework Phase 2: also accept hit_stat / damage_stat
+            for k in ["dice_count", "dice_type", "damage_type", "range", "weapon_range", "hit_stat", "damage_stat"]:
                 if k in ws:
                     setattr(item.weapon_stats, k, ws[k])
             if "weapon_properties" in ws:
@@ -326,6 +328,8 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
                 **{k: ws[k] for k in ["dice_count", "dice_type", "damage_type", "range"] if k in ws},
                 weapon_range=ws.get("weapon_range", "melee"),
                 weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
+                hit_stat=ws.get("hit_stat", "strength"),
+                damage_stat=ws.get("damage_stat") if ws.get("damage_stat") is not None else "strength",
             ))
     await db.commit()
     await db.refresh(item)
@@ -407,7 +411,6 @@ def _item_dict(i: Item) -> dict:
         "id": i.id, "session_id": i.session_id, "name": i.name, "description": i.description,
         "category": i.category, "category_id": i.category_id, "rarity": i.rarity,
         "base_price": i.base_price, "base_price_copper": i.base_price_bronze, "base_price_bronze": i.base_price_bronze,
-        "weight": i.weight,
         "effect_type": i.effect_type, "effect_value": i.effect_value,
         "equippable": i.equippable, "consumable": i.consumable,
         "mana_cost": i.mana_cost or 0,
@@ -428,6 +431,9 @@ def _item_dict(i: Item) -> dict:
             "damage_type": ws.damage_type, "range": ws.range,
             "weapon_range": ws.weapon_range or "melee",
             "weapon_properties": json.loads(ws.weapon_properties) if ws.weapon_properties else [],
+            # Rework Phase 2: expose hit_stat / damage_stat so GM editor can show them
+            "hit_stat": getattr(ws, "hit_stat", None) or "strength",
+            "damage_stat": getattr(ws, "damage_stat", None),
         }
     return d
 
@@ -471,19 +477,14 @@ async def get_character_inventory(
     )
     entries = result.scalars().all()
     items = []
-    total_weight = 0.0       # legacy: all items
-    total_weight_bag = 0.0   # Rework: only non-equipped (what the bag carries)
     bag_count = 0
     equipped_count = 0
     for e in entries:
         d = _inventory_item_dict(e)
-        w = (d.get("weight", 0) or 0) * e.quantity
-        total_weight += w
         if d.get("is_equipped"):
             equipped_count += 1
         else:
             bag_count += 1
-            total_weight_bag += w
         items.append(d)
 
     # Rework Phase 3: optional server-side filter for tab
@@ -499,14 +500,19 @@ async def get_character_inventory(
     wb = char.wealth_bronze or 0
     currency = _bronze_to_display(wb)
 
+    # Rework v2: slot meter. One distinct InventoryItem row = 1 slot
+    # (stackables collapse), equipped items still count as slots.
+    slots_used = bag_count + equipped_count
+    slots_max = int(char.max_inventory_slots or 0)
+
     return {
         "items": items_out,
         "tab": tab_norm,
-        "total_weight": round(total_weight, 1),
-        # Rework Phase 3: bag-only weight (equipped doesn't count)
-        "total_weight_bag": round(total_weight_bag, 1),
         "bag_count": bag_count,
         "equipped_count": equipped_count,
+        # Rework v2: slot meter (0 max = unlimited)
+        "slots_used": slots_used,
+        "slots_max": slots_max,
         "gold_copper": wb,
         "wealth_bronze": wb,
         "currency": currency,
@@ -542,6 +548,21 @@ async def add_to_inventory(character_id: int, body: dict, db: AsyncSession = Dep
     if existing:
         existing.quantity += quantity
     else:
+        # Rework v2: enforce the inventory slot cap. Stacks on an existing
+        # row count as one slot, so we only validate when a *new* row is added.
+        # `max_inventory_slots = 0` means unlimited (GM/NPC default).
+        cap = int(char.max_inventory_slots or 0)
+        if cap > 0:
+            slot_q = await db.execute(
+                select(InventoryItem).where(InventoryItem.character_id == character_id)
+            )
+            used = len(slot_q.scalars().all())
+            if used >= cap:
+                raise HTTPException(
+                    400,
+                    {"error": True, "code": "INVENTORY_FULL",
+                     "message": f"Inventory full ({used}/{cap} slots). Drop or stack something first."},
+                )
         db.add(InventoryItem(
             character_id=character_id,
             item_id=item_id,
@@ -618,12 +639,126 @@ async def change_quantity(inventory_id: int, body: dict, db: AsyncSession = Depe
     return {"ok": True, "quantity": entry.quantity if entry.quantity > 0 else 0}
 
 
+@router.post("/inventory/{inventory_id}/transfer")
+async def transfer_inventory(inventory_id: int, body: dict,
+                             db: AsyncSession = Depends(get_session)):
+    """Rework v3 — hand an inventory item over to another character in the
+    same session. Respects the receiver's slot cap.
+
+    Body: ``{"target_character_id": N, "quantity": int}``.
+    ``quantity`` defaults to the full stack. Equipped items are unequipped
+    automatically on transfer.
+    """
+    from app.websocket_manager import manager as _ws
+
+    entry = await db.get(InventoryItem, inventory_id)
+    if not entry:
+        raise HTTPException(404, "Inventory entry not found")
+
+    sender = await db.get(Character, entry.character_id)
+    if not sender:
+        raise HTTPException(404, "Sender not found")
+
+    target_id = int(body.get("target_character_id") or 0)
+    if not target_id:
+        raise HTTPException(400, "target_character_id required")
+    if target_id == sender.id:
+        raise HTTPException(400, "Cannot transfer to yourself")
+
+    target = await db.get(Character, target_id)
+    if not target:
+        raise HTTPException(404, "Target character not found")
+    if target.session_id != sender.session_id:
+        raise HTTPException(400, "Both players must be in the same session")
+
+    item = await db.get(Item, entry.item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    qty = int(body.get("quantity") or entry.quantity)
+    qty = max(1, min(qty, entry.quantity))
+
+    # Look up an existing non-equipped stack on the receiver.
+    dst_q = await db.execute(
+        select(InventoryItem).where(
+            InventoryItem.character_id == target.id,
+            InventoryItem.item_id == item.id,
+            InventoryItem.is_equipped == False,   # noqa: E712
+        )
+    )
+    dst = dst_q.scalars().first()
+
+    # Slot-cap check only when a new row would be created.
+    if dst is None:
+        cap = int(target.max_inventory_slots or 0)
+        if cap > 0:
+            used_q = await db.execute(
+                select(InventoryItem).where(InventoryItem.character_id == target.id)
+            )
+            used = len(used_q.scalars().all())
+            if used >= cap:
+                raise HTTPException(
+                    400,
+                    {"error": True, "code": "TARGET_INVENTORY_FULL",
+                     "message": f"{target.name} has no free inventory slots ({used}/{cap})"},
+                )
+        dst = InventoryItem(
+            character_id=target.id,
+            item_id=item.id,
+            quantity=0,
+            acquired_at=datetime.now(timezone.utc),
+        )
+        db.add(dst)
+        await db.flush()
+
+    dst.quantity += qty
+    entry.quantity -= qty
+    # If we moved the last copy of an equipped item, make sure the slot is freed.
+    if entry.quantity <= 0:
+        await db.delete(entry)
+    await db.commit()
+
+    # Broadcast so both players refresh their inventory UI.
+    try:
+        await _ws.broadcast_to_session(
+            (await db.get(Session, sender.session_id)).code,
+            "inventory.transferred",
+            {
+                "from_character_id": sender.id,
+                "from_character_name": sender.name,
+                "to_character_id": target.id,
+                "to_character_name": target.name,
+                "item_name": item.name,
+                "quantity": qty,
+            },
+        )
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "from_character_id": sender.id,
+        "to_character_id": target.id,
+        "item_name": item.name,
+        "quantity": qty,
+    }
+
+
 @router.post("/inventory/{inventory_id}/use")
-async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_session)):
+async def use_consumable(inventory_id: int, body: dict | None = None,
+                         db: AsyncSession = Depends(get_session)):
+    """Consume an inventory item.
+
+    Rework v3 — body may optionally carry ``{"target_id": N}`` to apply the
+    item's effect(s) on another character instead of the owner. Resource costs
+    (mana) are always paid by the owner. Quantity is always decremented from
+    the owner's inventory row.
+    """
     import random
     from app.game_mechanics import spend_mana, get_effective_mana_max, restore_mana as _restore_mana
     from app.models import StatModifier, CharacterStatusEffect, StatusEffectTemplate
 
+    body = body or {}
     entry = await db.get(InventoryItem, inventory_id)
     if not entry:
         raise HTTPException(404)
@@ -635,13 +770,22 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
     if not char:
         raise HTTPException(404, "Character not found")
 
-    # FIX 6: snapshot before for response delta
+    # Rework v3: resolve optional target.
+    target_id = body.get("target_id")
+    if target_id and int(target_id) != char.id:
+        target = await db.get(Character, int(target_id))
+        if not target:
+            target = char
+    else:
+        target = char
+
+    # FIX 6: snapshot before for response delta (owner-side)
     _hp_before = char.current_hp
     _mana_before = char.mana_current
 
     results = []
 
-    # 1. Mana cost check
+    # 1. Mana cost check — always paid by the CASTER (owner), never the target.
     mana_cost = item.mana_cost or 0
     if mana_cost > 0:
         eff_max = get_effective_mana_max(char.mana_max)
@@ -662,6 +806,9 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
         except (json.JSONDecodeError, AttributeError):
             pass
 
+    def _tgt_tag():
+        return "" if target.id == char.id else f" → {target.name}"
+
     for eff in effects_list:
         etype = eff.get("type", "")
 
@@ -671,19 +818,19 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
             flat_bonus = eff.get("flat_bonus", 0)
             rolls = [random.randint(1, dice_type) for _ in range(dice_count)]
             total_heal = sum(rolls) + flat_bonus
-            old_hp = char.current_hp
-            char.current_hp = min(char.max_hp, char.current_hp + total_heal)
-            actual = char.current_hp - old_hp
+            old_hp = target.current_hp
+            target.current_hp = min(target.max_hp, target.current_hp + total_heal)
+            actual = target.current_hp - old_hp
             roll_str = "+".join(str(r) for r in rolls)
-            results.append(f"Heal: {dice_count}d{dice_type}+{flat_bonus} ({roll_str}+{flat_bonus}={total_heal}) → +{actual} HP ({old_hp}→{char.current_hp})")
+            results.append(f"Heal: {dice_count}d{dice_type}+{flat_bonus} ({roll_str}+{flat_bonus}={total_heal}) → +{actual} HP{_tgt_tag()}")
 
         elif etype == "restore_mana":
             amount = eff.get("amount", 0)
-            eff_max = get_effective_mana_max(char.mana_max)
-            old_mana = char.mana_current
-            char.mana_current = _restore_mana(char.mana_current, eff_max, amount=amount)
-            actual = char.mana_current - old_mana
-            results.append(f"Mana: +{actual} ({old_mana}→{char.mana_current})")
+            eff_max = get_effective_mana_max(target.mana_max)
+            old_mana = target.mana_current
+            target.mana_current = _restore_mana(target.mana_current, eff_max, amount=amount)
+            actual = target.mana_current - old_mana
+            results.append(f"Mana: +{actual}{_tgt_tag()}")
 
         elif etype == "apply_status":
             template_id = eff.get("template_id")
@@ -692,7 +839,7 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
                 tmpl = await db.get(StatusEffectTemplate, template_id)
                 if tmpl:
                     cse = CharacterStatusEffect(
-                        character_id=char.id,
+                        character_id=target.id,
                         template_id=tmpl.id,
                         name=tmpl.name,
                         icon=tmpl.icon,
@@ -701,7 +848,8 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
                         remaining_turns=duration if duration else tmpl.default_duration,
                     )
                     db.add(cse)
-                    results.append(f"Applied status: {tmpl.icon} {tmpl.name}" + (f" ({duration} turns)" if duration else ""))
+                    results.append(f"Applied status: {tmpl.icon} {tmpl.name}{_tgt_tag()}"
+                                   + (f" ({duration} turns)" if duration else ""))
 
         elif etype == "stat_boost":
             stat = eff.get("stat", "strength")
@@ -710,7 +858,7 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
             from datetime import timedelta
             expires = datetime.now(timezone.utc) + timedelta(minutes=duration_turns * 2)
             mod = StatModifier(
-                character_id=char.id,
+                character_id=target.id,
                 stat_name=stat,
                 name=f"{item.name} boost",
                 value=value,
@@ -719,20 +867,20 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
                 expires_at=expires,
             )
             db.add(mod)
-            results.append(f"Stat boost: +{value} {stat.capitalize()} for {duration_turns} turns")
+            results.append(f"Stat boost: +{value} {stat.capitalize()} for {duration_turns} turns{_tgt_tag()}")
 
         elif etype == "remove_status":
             status_name = eff.get("status_name", "")
             if status_name:
                 res = await db.execute(
                     select(CharacterStatusEffect).where(
-                        CharacterStatusEffect.character_id == char.id,
+                        CharacterStatusEffect.character_id == target.id,
                         CharacterStatusEffect.name == status_name,
                     )
                 )
                 for cse in res.scalars().all():
                     await db.delete(cse)
-                results.append(f"Removed status: {status_name}")
+                results.append(f"Removed status: {status_name}{_tgt_tag()}")
 
         elif etype == "damage":
             dice_count = eff.get("dice_count", 1)
@@ -740,30 +888,30 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
             flat_bonus = eff.get("flat_bonus", 0)
             rolls = [random.randint(1, dice_type) for _ in range(dice_count)]
             total_dmg = sum(rolls) + flat_bonus
-            old_hp = char.current_hp
-            char.current_hp = max(0, char.current_hp - total_dmg)
-            if char.current_hp <= 0:
-                char.is_alive = False
-            actual = old_hp - char.current_hp
-            results.append(f"Damage: {dice_count}d{dice_type}+{flat_bonus}={total_dmg} → -{actual} HP ({old_hp}→{char.current_hp})")
+            old_hp = target.current_hp
+            target.current_hp = max(0, target.current_hp - total_dmg)
+            if target.current_hp <= 0:
+                target.is_alive = False
+            actual = old_hp - target.current_hp
+            results.append(f"Damage: {dice_count}d{dice_type}+{flat_bonus}={total_dmg} → -{actual} HP to {target.name}")
 
         elif etype == "custom":
             desc = eff.get("description", "")
             results.append(f"Effect: {desc}")
 
-    # 3. Legacy single-effect fallback (if no use_effect)
+    # 3. Legacy single-effect fallback (if no use_effect) — respect target too.
     if not effects_list:
-        if item.effect_type == "hp_bonus" and item.effect_value and char:
-            old_hp = char.current_hp
-            char.current_hp = min(char.max_hp, char.current_hp + int(item.effect_value))
-            results.append(f"+{char.current_hp - old_hp} HP ({old_hp}→{char.current_hp})")
+        if item.effect_type == "hp_bonus" and item.effect_value:
+            old_hp = target.current_hp
+            target.current_hp = min(target.max_hp, target.current_hp + int(item.effect_value))
+            results.append(f"+{target.current_hp - old_hp} HP{_tgt_tag()}")
         for bonus in (item.bonuses or []):
             if bonus.bonus_type == "hp_bonus":
-                old_hp = char.current_hp
-                char.current_hp = min(char.max_hp, char.current_hp + int(bonus.value))
-                results.append(f"+{char.current_hp - old_hp} HP ({old_hp}→{char.current_hp})")
+                old_hp = target.current_hp
+                target.current_hp = min(target.max_hp, target.current_hp + int(bonus.value))
+                results.append(f"+{target.current_hp - old_hp} HP{_tgt_tag()}")
 
-    # 4. Reduce quantity
+    # 4. Reduce quantity on the caster's inventory (always).
     entry.quantity -= 1
     qty_left = max(0, entry.quantity)
     if entry.quantity <= 0:
@@ -779,7 +927,10 @@ async def use_consumable(inventory_id: int, db: AsyncSession = Depends(get_sessi
         "breakdown": "; ".join(results) if results else "",
         "result": f"Used {item.name}: " + "; ".join(results) if results else f"Used {item.name}",
         "character_id": char.id,
-        # FIX 6: before/after for UI deltas
+        # Rework v3: the character who actually received the effect.
+        "target_id":   target.id,
+        "target_name": target.name,
+        # FIX 6: before/after for UI deltas (owner-side)
         "hp_before":   _hp_before,
         "hp_after":    char.current_hp,
         "mana_before": _mana_before,
@@ -836,12 +987,9 @@ async def get_inventory_legacy(character_id: int, db: AsyncSession = Depends(get
     )
     entries = result.scalars().all()
     items = []
-    total_weight = 0.0
     for e in entries:
-        d = _inventory_item_dict(e)
-        total_weight += (d.get("weight", 0) or 0) * e.quantity
-        items.append(d)
-    return {"items": items, "total_weight": round(total_weight, 1)}
+        items.append(_inventory_item_dict(e))
+    return {"items": items}
 
 
 @router.post("/inventory/grant")

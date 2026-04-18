@@ -1,0 +1,459 @@
+"""Rework v2 — consolidated regression test.
+
+Runs against a live server (default: http://127.0.0.1:8000). It creates a
+throw-away session per run so it never clashes with an active game.
+
+Usage:
+    # Terminal 1
+    python main.py
+    # Terminal 2
+    python tests/test_rework_v2.py          # full suite
+    python tests/test_rework_v2.py --base http://host:port
+
+Exit code 0 on success, 1 on any assertion failure. There are no pytest
+fixtures — we keep this dependency-light so it can be run from the repo
+root without installing anything extra.
+
+Covered areas (matches REWORK_PLAN.md §5):
+
+    α  Models & destructive migration        (schema shape in character JSON)
+    β  Backend endpoints                     (wizard 6-step, abilities pool,
+                                              slot enforcement, level-up)
+    γ  Lobby 6-step wizard                   (roll-item → propose → approve
+                                              → stat-choice → roll-feature →
+                                              finalize)
+    δ  Player UI data surface                (identity, slot meter, features)
+    ε  GM UI data surface                    (pending approvals, ability
+                                              filters, race HP die round-trip)
+    ζ  Level-up                              (stats & upgrade_feature paths,
+                                              XP gate)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import urllib.error
+import urllib.request
+
+
+# ── HTTP helpers ──────────────────────────────────────────────
+def _request(base, method, path, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json"} if body is not None else {}
+    req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        return resp.status, json.loads(resp.read().decode() or "null")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode() or "null")
+
+
+# ── Test runner ───────────────────────────────────────────────
+class Suite:
+    def __init__(self, base: str):
+        self.base = base.rstrip("/")
+        self.passed = 0
+        self.failed = 0
+        self.groups: list[tuple[str, bool, str]] = []
+        self._current_group = "(setup)"
+
+    def group(self, name: str) -> None:
+        self._current_group = name
+        print(f"\n── {name} " + "─" * max(2, 60 - len(name) - 4))
+
+    def check(self, label: str, cond: bool, extra: str = "") -> None:
+        marker = "[OK]" if cond else "[!!]"
+        suffix = f" — {extra}" if extra else ""
+        print(f"  {marker} {label}{suffix}")
+        if cond:
+            self.passed += 1
+        else:
+            self.failed += 1
+            self.groups.append((self._current_group, False, f"{label}{suffix}"))
+
+    def req(self, method: str, path: str, body=None):
+        return _request(self.base, method, path, body)
+
+    def done(self) -> int:
+        total = self.passed + self.failed
+        print("\n" + "=" * 64)
+        print(f"  {self.passed} / {total} checks passed")
+        if self.failed:
+            print("  Failures:")
+            for group, _, label in self.groups:
+                print(f"    · [{group}] {label}")
+            return 1
+        print("  REWORK v2 REGRESSION — ALL PASSED")
+        return 0
+
+
+# ── Main scenario ─────────────────────────────────────────────
+def run(base: str) -> int:
+    s = Suite(base)
+
+    # ── γ/δ/ε setup: session + GM-only race + starting-pool seed ──
+    s.group("Setup: session + race + ability pool")
+    code, data = s.req("POST", "/api/sessions/create", {"name": "Rework v2 regression"})
+    s.check("POST /sessions/create → 200", code == 200, f"status={code}")
+    sid = data["session_id"]
+    scode = data["session_code"]
+
+    # Race with hp_die=10, +1 CON. Verifies Phase α migration exposed hp_die.
+    code, race = s.req("POST", "/api/races-classes/races", {
+        "session_id": sid,
+        "name": "Stoneborn", "description": "Stone-skinned folk",
+        "hp_die": 10, "hp_dice_count": 1,
+        "bonuses": [{"type": "stat_bonus", "stat": "constitution", "value": 1}],
+        "is_available": True,
+    })
+    s.check("race POST carries hp_die=10", race.get("hp_die") == 10, f"hp_die={race.get('hp_die')}")
+    s.check("race bonuses round-trip",
+            race.get("bonuses", [{}])[0].get("stat") == "constitution")
+    # Force the PUT path too (covered Phase ε GM editor save).
+    code, race = s.req("PUT", f"/api/races-classes/races/{race['id']}", {
+        "name": "Stoneborn", "description": "Stone-skinned folk",
+        "hp_die": 12, "hp_dice_count": 1,
+        "bonuses": [{"type": "stat_bonus", "stat": "constitution", "value": 1}],
+        "special_abilities": [], "is_available": True,
+    })
+    s.check("race PUT updates hp_die → 12", race.get("hp_die") == 12)
+    race_id = race["id"]
+
+    # Seed a full pool — every non-legendary rarity gets 4 entries so Step 5
+    # and the upgrade path always have a destination bucket.
+    for rarity in ("common", "uncommon", "rare", "epic", "legendary"):
+        for n in range(4):
+            s.req("POST", "/api/abilities", {
+                "session_id": sid,
+                "name": f"Pool {rarity} #{n}",
+                "description": f"Test {rarity}",
+                "rarity": rarity, "is_in_starting_pool": True,
+                "max_uses": 2 if rarity == "rare" else None,
+                "is_conditional": rarity == "rare",
+                "conditional_text": "When the moon is full" if rarity == "rare" else None,
+                "ability_type": "active", "target_type": "self",
+            })
+
+    code, abs_pool = s.req("GET", f"/api/abilities?session_id={sid}&in_starting_pool=true")
+    s.check("abilities filter in_starting_pool=true", len(abs_pool) >= 12, f"count={len(abs_pool)}")
+    code, rares = s.req("GET", f"/api/abilities?session_id={sid}&rarity=rare")
+    s.check("abilities filter rarity=rare", all(a["rarity"] == "rare" for a in rares))
+    s.check("rare abilities carry is_conditional", all(a["is_conditional"] for a in rares if a["name"].startswith("Pool rare")))
+
+    # ── γ: walk the full wizard ──
+    s.group("Phase γ: 6-step wizard")
+
+    code, join = s.req("POST", "/api/sessions/join", {
+        "session_code": scode, "player_name": "Regress Hero",
+        "race_id": race_id, "age": 27, "gender": "Any",
+    })
+    s.check("join returns character_id", bool(join.get("character_id")))
+    cid = join["character_id"]
+
+    code, ws = s.req("GET", f"/api/wizard/{cid}")
+    s.check("wizard auto-created on join", ws.get("current_step", 0) >= 1)
+
+    code, rolled = s.req("POST", f"/api/wizard/{cid}/roll-item")
+    s.check("roll-item returns valid rarity",
+            rolled["rarity"] in {"common", "uncommon", "rare", "epic", "legendary"},
+            f"d20={rolled['d20']} → {rolled['rarity']}")
+
+    code, _ = s.req("POST", f"/api/wizard/{cid}/propose-item", {
+        "name": "Regression Dagger", "description": "A test blade.",
+        "category": "weapon",
+        "weapon": {
+            "dice_count": 1, "dice_type": 6,
+            "hit_stat": "dexterity", "damage_stat": "dexterity",
+            "damage_type": "physical",
+        },
+    })
+    s.check("propose-item (weapon) returns 200", code == 200)
+
+    # decline so we can verify advantage path + stats=0 + slots=10.
+    code, _ = s.req("POST", f"/api/wizard/{cid}/stat-choice", {"declined": True})
+    s.check("stat-choice decline → 200", code == 200)
+
+    code, feat = s.req("POST", f"/api/wizard/{cid}/roll-feature")
+    s.check("roll-feature returns an ability",
+            bool(feat.get("ability", {}).get("name")), f"got={feat.get('ability', {}).get('name')}")
+    s.check("decline grants 2d20 advantage",
+            feat["roll"]["advantage"] is True and len(feat["roll"]["d20_rolls"]) == 2,
+            f"rolls={feat['roll']['d20_rolls']}")
+
+    code, final = s.req("POST", f"/api/wizard/{cid}/finalize")
+    s.check("finalize returns is_completed=True", final.get("is_completed") is True)
+
+    # ── δ: character serialization ──
+    s.group("Phase δ: player UI surfaces")
+
+    code, ch = s.req("GET", f"/api/characters/{cid}")
+    s.check("character age round-trip", ch.get("age") == 27)
+    s.check("character gender round-trip", ch.get("gender") == "Any")
+    s.check("character declined_stats=True", ch.get("declined_stats") is True)
+    s.check("declined → all stats are 0",
+            all(ch[k] == 0 for k in ("strength", "dexterity", "constitution",
+                                     "intelligence", "wisdom", "charisma")))
+    s.check("character mana_max = 10 default", ch.get("mana_max") == 10)
+    s.check("character armor_class = 0 default", ch.get("armor_class") == 0)
+    # declined → slots = 10; formula: (declined?10:12) + 2*CON. CON=0 here.
+    s.check("max_inventory_slots = 10 (declined formula)", ch.get("max_inventory_slots") == 10)
+    s.check("character exposes race_name", ch.get("race_name") == "Stoneborn")
+    s.check("character exposes hp_die/hp_dice_count",
+            ch.get("hp_die") == 12 and ch.get("hp_dice_count") == 1)
+    s.check("character exposes xp_to_next = 100 (L0)", ch.get("xp_to_next") == 100)
+
+    code, inv = s.req("GET", f"/api/characters/{cid}/inventory")
+    s.check("inventory GET exposes slots_used", "slots_used" in inv)
+    s.check("inventory GET exposes slots_max",  "slots_max"  in inv)
+    s.check("slots_max follows declined value", inv["slots_max"] == 10)
+
+    code, abs_ = s.req("GET", f"/api/characters/{cid}/abilities")
+    s.check("at least one character ability (wizard Step 5)", len(abs_) >= 1)
+    a = abs_[0]
+    for field in ("rarity", "max_uses", "current_uses",
+                  "is_conditional", "conditional_text", "granted_from"):
+        s.check(f"ability exposes `{field}`", field in a)
+    s.check("granted_from is set", bool(a.get("granted_from")))
+
+    # ── ε: GM pending-approval hub ──
+    s.group("Phase ε: GM approvals hub")
+
+    code, pending = s.req("GET", f"/api/wizard/session/{sid}/pending")
+    s.check("pending list has our character", any(p["character_id"] == cid for p in pending))
+
+    code, appr = s.req("POST", f"/api/wizard/{cid}/approve-item",
+                       {"rarity_override": "uncommon", "note": "nice concept"})
+    s.check("approve-item endpoint (not `gm-approve`) returns 200", code == 200,
+            f"status={code}")
+    s.check("approve-item returns approved=True", appr.get("approved") is True)
+
+    code, pending2 = s.req("GET", f"/api/wizard/session/{sid}/pending")
+    s.check("pending empty after approval", len(pending2) == 0)
+
+    # Slot enforcement — stage enough items to hit the cap of 10.
+    s.group("Phase β: inventory slot cap enforcement")
+
+    # First make a known item we can add many times.
+    code, _item = s.req("POST", "/api/items", {
+        "session_id": sid, "name": "Stone Pebble",
+        "description": "A pebble", "category": "misc",
+        "rarity": "common",
+    })
+    pebble_id = _item["id"]
+    # Add unique items by creating N distinct items (stackables don't eat slots).
+    item_ids = [pebble_id]
+    for n in range(20):
+        code, it = s.req("POST", "/api/items", {
+            "session_id": sid, "name": f"Pebble #{n}",
+            "description": f"#{n}", "category": "misc",
+            "rarity": "common",
+        })
+        item_ids.append(it["id"])
+
+    added = 0
+    hit_cap_at = None
+    for iid in item_ids:
+        code, _resp = s.req("POST", f"/api/characters/{cid}/inventory",
+                            {"item_id": iid, "quantity": 1})
+        if code == 200:
+            added += 1
+        elif code == 400:
+            hit_cap_at = added
+            break
+
+    s.check("inventory add starts succeeding", added >= 1)
+    s.check("inventory add rejects at slot cap", hit_cap_at is not None,
+            f"added={added}, cap hit at={hit_cap_at}")
+    # Inventory already had 1 slot used by the approved starting item, so cap
+    # is hit between 8 and 10 additions depending on prior state.
+    s.check("cap hit within sensible window",
+            hit_cap_at is not None and 5 <= hit_cap_at <= 10,
+            f"hit_cap_at={hit_cap_at}")
+
+    # ── ζ: level-up (force past XP gate both paths) ──
+    s.group("Phase ζ: level-up")
+
+    code, ch0 = s.req("GET", f"/api/characters/{cid}")
+    code, lu = s.req("POST", f"/api/characters/{cid}/level-up", {
+        "choice": "stats", "stat_a": "strength", "stat_b": "dexterity",
+        "force": True,
+    })
+    s.check("level-up stats 200", code == 200, f"code={code}")
+    s.check("level advanced L0 → L1", lu["level"] == ch0["level"] + 1)
+    s.check("HP roll within race die", 1 <= lu["chosen"]["hp_gained"] <= 12)
+
+    code, ch1 = s.req("GET", f"/api/characters/{cid}")
+    s.check("STR +1", ch1["strength"] == ch0["strength"] + 1)
+    s.check("DEX +1", ch1["dexterity"] == ch0["dexterity"] + 1)
+    s.check("xp_to_next reflects new level = 200", ch1["xp_to_next"] == 200)
+
+    code, abs_after = s.req("GET", f"/api/characters/{cid}/abilities")
+    cab = abs_after[0]
+    code, lu2 = s.req("POST", f"/api/characters/{cid}/level-up", {
+        "choice": "upgrade_feature",
+        "character_ability_id": cab["character_ability_id"],
+        "force": True,
+    })
+    s.check("level-up upgrade 200", code == 200, f"body={lu2}")
+    s.check("upgrade → next rarity",
+            lu2["chosen"]["new_rarity"] != cab["rarity"],
+            f"{cab['rarity']} → {lu2['chosen']['new_rarity']}")
+
+    # Reject cases
+    code, _bad = s.req("POST", f"/api/characters/{cid}/level-up", {
+        "choice": "stats", "stat_a": "strength", "stat_b": "strength", "force": True,
+    })
+    s.check("level-up rejects stat_a == stat_b", code == 400)
+    code, _bad = s.req("POST", f"/api/characters/{cid}/level-up", {
+        "choice": "stats", "stat_a": "strength", "stat_b": "dexterity",
+    })
+    s.check("level-up XP gate blocks without force", code == 400)
+
+    # ══════════════════════════════════════════════════════════════
+    # REWORK v3 — new capabilities
+    # ══════════════════════════════════════════════════════════════
+
+    # ── η: retired heal-widget columns are truly gone ──
+    s.group("Phase η: Rework v3 — heal columns dropped")
+    code, ch_shape = s.req("GET", f"/api/characters/{cid}")
+    s.check("character no longer exposes hp_dice_type",
+            "hp_dice_type" not in ch_shape)
+    s.check("character no longer exposes hp_recovery_modifier",
+            "hp_recovery_modifier" not in ch_shape)
+    # items should also no longer expose weight
+    code, _items = s.req("GET", f"/api/items?session_id={sid}")
+    if _items:
+        s.check("items no longer expose `weight` field",
+                all("weight" not in i for i in _items))
+
+    # ── θ: Full Rest ──
+    s.group("Phase θ: Rework v3 — Full Rest")
+    # Direct PATCH so we stay above 0 HP (dropping to 0 via /hp flips
+    # is_alive=False which would exclude us from the full-rest filter).
+    s.req("PATCH", f"/api/characters/{cid}",
+          {"current_hp": 1, "mana_current": 0, "is_alive": True})
+    code, ch_before = s.req("GET", f"/api/characters/{cid}")
+    s.check("HP drained before full-rest",
+            ch_before["current_hp"] < ch_before["max_hp"])
+    s.check("mana drained before full-rest", ch_before["mana_current"] == 0)
+    code, rest = s.req("POST", f"/api/sessions/{scode}/full-rest", {})
+    s.check("full-rest returns 200", code == 200, f"status={code}")
+    s.check("full-rest reports at least one healed char", rest.get("healed_count", 0) >= 1)
+    code, ch_after = s.req("GET", f"/api/characters/{cid}")
+    s.check("full-rest sets current_hp = max_hp",
+            ch_after["current_hp"] == ch_after["max_hp"],
+            f"{ch_after['current_hp']}/{ch_after['max_hp']}")
+    s.check("full-rest sets mana_current = mana_max",
+            ch_after["mana_current"] == ch_after["mana_max"])
+
+    # ── ι: Player-to-Player interactions ──
+    s.group("Phase ι: Rework v3 — P2P heal / item transfer")
+    code, join2 = s.req("POST", "/api/sessions/join", {
+        "session_code": scode, "player_name": "Ally Target",
+        "race_id": race_id, "age": 22, "gender": "Any",
+    })
+    tid = join2["character_id"]
+    # Quick-finalize target through the wizard so they have max_hp > 0.
+    s.req("POST", f"/api/wizard/{tid}/roll-item")
+    s.req("POST", f"/api/wizard/{tid}/propose-item", {
+        "name": "Ally Stick", "description": "Stick.", "category": "misc",
+    })
+    s.req("POST", f"/api/wizard/{tid}/approve-item", {"note": "ok"})
+    s.req("POST", f"/api/wizard/{tid}/stat-choice", {"declined": False})
+    s.req("POST", f"/api/wizard/{tid}/roll-feature")
+    s.req("POST", f"/api/wizard/{tid}/finalize")
+
+    # Damage the target to 1 HP (stay alive so heal is observable).
+    s.req("PATCH", f"/api/characters/{tid}", {"current_hp": 1, "is_alive": True})
+    code, tgt_dmg = s.req("GET", f"/api/characters/{tid}")
+    s.check("target damaged below max", tgt_dmg["current_hp"] < tgt_dmg["max_hp"])
+
+    # Create a healing potion and give the caster a stack of 2.
+    code, heal_item = s.req("POST", "/api/items", {
+        "session_id": sid, "name": "Ally Tonic",
+        "description": "Heals a friend.", "category": "potion",
+        "rarity": "common", "consumable": True, "is_potion": True,
+        "use_effect": {"effects": [{"type": "heal_hp", "dice_count": 1,
+                                     "dice_type": 4, "flat_bonus": 3}]},
+    })
+    # Bump caster's slot cap — the slot-cap test filled them earlier.
+    s.req("PATCH", f"/api/characters/{cid}", {"max_inventory_slots": 50})
+    s.req("POST", f"/api/characters/{cid}/inventory",
+          {"item_id": heal_item["id"], "quantity": 2})
+    code, caster_inv = s.req("GET", f"/api/characters/{cid}/inventory")
+    potion_row = next((i for i in caster_inv["items"] if i.get("id") == heal_item["id"]), None)
+    s.check("caster holds Ally Tonic ×2",
+            potion_row is not None and potion_row["quantity"] == 2)
+    potion_inv_id = potion_row["inventory_id"] if potion_row else None
+
+    tgt_hp_before = tgt_dmg["current_hp"]
+    code, use_res = s.req("POST", f"/api/inventory/{potion_inv_id}/use",
+                          {"target_id": tid})
+    s.check("potion use-on-target returns 200", code == 200, f"body={use_res}")
+    s.check("use response echoes target_id", use_res.get("target_id") == tid)
+    code, tgt_after = s.req("GET", f"/api/characters/{tid}")
+    s.check("target HP went UP (P2P heal)",
+            tgt_after["current_hp"] > tgt_hp_before,
+            f"{tgt_hp_before} → {tgt_after['current_hp']}")
+    code, caster_inv2 = s.req("GET", f"/api/characters/{cid}/inventory")
+    potion_row2 = next((i for i in caster_inv2["items"] if i.get("id") == heal_item["id"]), None)
+    s.check("caster stack decremented by 1",
+            potion_row2 is not None and potion_row2["quantity"] == 1)
+
+    # Transfer the remaining potion from caster to target.
+    code, xfer = s.req("POST", f"/api/inventory/{potion_row2['inventory_id']}/transfer",
+                       {"target_character_id": tid, "quantity": 1})
+    s.check("transfer returns 200", code == 200, f"body={xfer}")
+    s.check("transfer echoes item_name", xfer.get("item_name") == "Ally Tonic")
+    code, caster_inv3 = s.req("GET", f"/api/characters/{cid}/inventory")
+    s.check("caster no longer holds Ally Tonic",
+            not any(i.get("id") == heal_item["id"] for i in caster_inv3["items"]))
+    code, target_inv = s.req("GET", f"/api/characters/{tid}/inventory")
+    s.check("target now holds Ally Tonic",
+            any(i.get("id") == heal_item["id"] for i in target_inv["items"]))
+
+    # ── κ: Passive ability direct-mutation bonuses (max_hp_bonus) ──
+    s.group("Phase κ: Rework v3 — new passive bonus types")
+    code, boost = s.req("POST", "/api/abilities", {
+        "session_id": sid, "name": "Ironhide",
+        "description": "+10 Max HP passively.",
+        "ability_type": "passive", "is_passive": True,
+        "target_type": "self", "rarity": "common",
+        "passive_effect": {"bonuses": [{"bonus_type": "max_hp_bonus", "value": 10}]},
+    })
+    code, ch_hp0 = s.req("GET", f"/api/characters/{tid}")
+    hp_before_grant = ch_hp0["max_hp"]
+    code, assign = s.req("POST", f"/api/characters/{tid}/abilities",
+                         {"ability_id": boost["id"]})
+    s.check("assign passive returns 200", code == 200)
+    assigned_ca_id = assign.get("character_ability_id") or assign.get("id")
+    code, ch_hp1 = s.req("GET", f"/api/characters/{tid}")
+    s.check("max_hp_bonus applied +10 on grant",
+            ch_hp1["max_hp"] == hp_before_grant + 10,
+            f"{hp_before_grant} → {ch_hp1['max_hp']}")
+    if assigned_ca_id:
+        s.req("DELETE", f"/api/character-abilities/{assigned_ca_id}")
+        code, ch_hp2 = s.req("GET", f"/api/characters/{tid}")
+        s.check("max_hp_bonus reversed on unassign",
+                ch_hp2["max_hp"] == hp_before_grant,
+                f"after revert={ch_hp2['max_hp']}")
+
+    return s.done()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Rework v2 regression suite")
+    parser.add_argument("--base", default="http://127.0.0.1:8000",
+                        help="Base URL of a running server (default: %(default)s)")
+    args = parser.parse_args()
+    try:
+        return run(args.base)
+    except (urllib.error.URLError, ConnectionError) as e:
+        print(f"[!!] Could not reach server at {args.base}: {e}")
+        print("     Start it first with `python main.py` and re-run.")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

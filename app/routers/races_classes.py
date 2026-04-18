@@ -19,6 +19,9 @@ class RaceBody(BaseModel):
     bonuses: list = []
     special_abilities: list = []
     is_available: bool = True
+    # Rework v2: race defines the HP die rolled at creation + every level-up
+    hp_die: int = 8
+    hp_dice_count: int = 1
 
 
 class ClassBody(BaseModel):
@@ -41,6 +44,8 @@ def _ser_race(r: Race) -> dict:
         "bonuses": json.loads(r.bonuses) if r.bonuses else [],
         "special_abilities": json.loads(r.special_abilities) if r.special_abilities else [],
         "is_available": r.is_available,
+        "hp_die": r.hp_die or 8,
+        "hp_dice_count": r.hp_dice_count or 1,
     }
 
 
@@ -86,6 +91,8 @@ async def create_race(body: RaceBody, db: AsyncSession = Depends(get_session)):
         bonuses=json.dumps(body.bonuses),
         special_abilities=json.dumps(body.special_abilities),
         is_available=body.is_available,
+        hp_die=max(1, int(body.hp_die or 8)),
+        hp_dice_count=max(1, int(body.hp_dice_count or 1)),
     )
     db.add(r)
     await db.commit()
@@ -104,6 +111,8 @@ async def update_race(race_id: int, body: RaceBody, db: AsyncSession = Depends(g
     r.bonuses = json.dumps(body.bonuses)
     r.special_abilities = json.dumps(body.special_abilities)
     r.is_available = body.is_available
+    r.hp_die = max(1, int(body.hp_die or 8))
+    r.hp_dice_count = max(1, int(body.hp_dice_count or 1))
     await db.commit()
     await db.refresh(r)
     return _ser_race(r)
@@ -186,42 +195,50 @@ async def delete_class(class_id: int, db: AsyncSession = Depends(get_session)):
 # ══════════════════════════════════════════════════════════════
 # SEED DATA
 # ══════════════════════════════════════════════════════════════
+# Rework v2: every seed race carries an HP die size. Chosen roughly in line
+# with the flavor: small/nimble → d6, balanced → d8, tough/heavy → d10.
 SEED_RACES = [
     {
         "name": "Human",
         "description": "Versatile and adaptable, humans excel in all areas.",
         "bonuses": [{"type": "stat_bonus", "stat": "strength", "value": 1}, {"type": "stat_bonus", "stat": "charisma", "value": 1}],
         "special_abilities": ["Versatility: +1 to two stats", "Extra skill proficiency"],
+        "hp_die": 8, "hp_dice_count": 1,
     },
     {
         "name": "Elf",
         "description": "Graceful and long-lived, with keen senses and natural magic affinity.",
         "bonuses": [{"type": "stat_bonus", "stat": "dexterity", "value": 2}],
         "special_abilities": ["Darkvision (60 ft)", "Fey Ancestry: advantage vs charm", "Trance: 4 hours rest"],
+        "hp_die": 6, "hp_dice_count": 1,
     },
     {
         "name": "Dwarf",
         "description": "Stout and hardy, skilled in craftsmanship and combat.",
         "bonuses": [{"type": "stat_bonus", "stat": "constitution", "value": 2}],
         "special_abilities": ["Darkvision (60 ft)", "Dwarven Resilience: poison resistance", "Stonecunning"],
+        "hp_die": 10, "hp_dice_count": 1,
     },
     {
         "name": "Orc",
         "description": "Powerful and fierce, orcs are born warriors.",
         "bonuses": [{"type": "stat_bonus", "stat": "strength", "value": 2}, {"type": "stat_bonus", "stat": "constitution", "value": 1}],
         "special_abilities": ["Aggressive: bonus action dash toward enemy", "Relentless Endurance: drop to 1 HP instead of 0 (1/day)"],
+        "hp_die": 10, "hp_dice_count": 1,
     },
     {
         "name": "Halfling",
         "description": "Small and nimble, with surprising bravery and luck.",
         "bonuses": [{"type": "stat_bonus", "stat": "dexterity", "value": 2}],
         "special_abilities": ["Lucky: reroll natural 1s", "Brave: advantage vs frightened", "Halfling Nimbleness"],
+        "hp_die": 6, "hp_dice_count": 1,
     },
     {
         "name": "Tiefling",
         "description": "Bearing the blood of fiends, tieflings wield infernal powers.",
         "bonuses": [{"type": "stat_bonus", "stat": "charisma", "value": 2}, {"type": "stat_bonus", "stat": "intelligence", "value": 1}],
         "special_abilities": ["Darkvision (60 ft)", "Hellish Resistance: fire resistance", "Infernal Legacy: thaumaturgy cantrip"],
+        "hp_die": 8, "hp_dice_count": 1,
     },
 ]
 
@@ -288,6 +305,8 @@ async def seed_races_classes(db: AsyncSession = Depends(get_session)):
                 description=rd["description"],
                 bonuses=json.dumps(rd["bonuses"]),
                 special_abilities=json.dumps(rd["special_abilities"]),
+                hp_die=int(rd.get("hp_die", 8)),
+                hp_dice_count=int(rd.get("hp_dice_count", 1)),
             ))
             races_added += 1
 

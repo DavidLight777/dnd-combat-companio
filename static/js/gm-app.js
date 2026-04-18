@@ -596,7 +596,7 @@ async function renderCharDetail() {
         <div class="detail-body">
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:0.78rem">
             <span id="gm-char-race" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Race: <strong>${c.race_id ? '...' : 'None'}</strong></span>
-            <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)" title="Legacy class_id; see Professions panel">Profession: <strong>${c.class_id ? '...' : (Array.isArray(c.professions)&&c.professions.length ? c.professions.map(p=>p.name+' L'+p.level).join(' / ') : 'None')}</strong></span>
+            <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)" title="Assigned in Professions panel">Profession: <strong>${Array.isArray(c.professions)&&c.professions.length ? c.professions.map(p=>p.name+' L'+p.level).join(' / ') : 'None'}</strong></span>
             <!-- Rework Phase 8: Level / Rank / XP progression badge -->
             <span id="gm-char-progression" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">
               <span title="Rank" style="text-transform:capitalize">${(c.rank||'common')}</span>
@@ -1299,12 +1299,7 @@ async function renderCharDetail() {
         if (el) el.innerHTML = `Race: <strong>${r.name}</strong>`;
       }).catch(() => {});
     }
-    if (c.class_id) {
-      api.get(`/api/races-classes/classes/${c.class_id}`).then(r => {
-        const el = area.querySelector('#gm-char-class');
-        if (el) el.innerHTML = `Class: <strong>${r.name}</strong>`;
-      }).catch(() => {});
-    }
+    // Rework v2: Character.class_id is gone; professions panel handles this.
 
     // XP/Level edit
     const xpBtn = area.querySelector('#btn-edit-xp');
@@ -2392,8 +2387,8 @@ $('#btn-show-npc-form').addEventListener('click', () => {
   `;
   $('#btn-create-npc').addEventListener('click', async () => {
     const name = $('#npc-name').value.trim() || 'NPC';
-    const hp = parseInt($('#npc-hp').value) || 20;
-    const kd = parseInt($('#npc-kd').value) || 10;
+    const hp = parseInt($('#npc-hp').value) || 0;
+    const kd = parseInt($('#npc-kd').value) || 0;
     await api.post(`/api/sessions/${SESSION_CODE}/npc`, { name, is_npc: true, max_hp: hp, armor_class: kd });
     area.classList.add('hidden');
     await refreshChars();
@@ -2839,6 +2834,22 @@ function renderInitiativeOrder(order) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// FULL REST (Rework v3)
+// ══════════════════════════════════════════════════════════════
+$('#btn-full-rest')?.addEventListener('click', async () => {
+  if (!confirm('🌙 Full Rest: restore HP, mana, cooldowns, and uses for every living player. Proceed?')) return;
+  try {
+    const res = await api.post(`/api/sessions/${SESSION_CODE}/full-rest`, {});
+    const n = res?.healed_count ?? 0;
+    showToast(`🌙 Full Rest applied — ${n} player${n === 1 ? '' : 's'} restored`);
+    addLog('gm.rest', `Full Rest: ${n} players fully restored`);
+    await refreshChars();
+  } catch (e) {
+    showToast(`Full Rest failed: ${e.message || e}`);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
 // END SESSION
 // ══════════════════════════════════════════════════════════════
 $('#btn-end-session').addEventListener('click', async () => {
@@ -2946,21 +2957,103 @@ async function openGmWizardApprovalModal(charId) {
   overlay.querySelector('#gmw-reject').addEventListener('click', async () => {
     const note = overlay.querySelector('#gmw-note').value.trim();
     try {
-      await api.post(`/api/wizard/${charId}/gm-reject`, { note });
+      await api.post(`/api/wizard/${charId}/reject-item`, { note });
       addLog('gm.wizard', `Rejected starting-item for ${char.name}`);
       overlay.remove();
+      loadWizardPending();
     } catch { showToast('Failed to reject'); }
   });
   overlay.querySelector('#gmw-approve').addEventListener('click', async () => {
     const rarity_override = overlay.querySelector('#gmw-rarity').value;
     const note = overlay.querySelector('#gmw-note').value.trim();
     try {
-      const res = await api.post(`/api/wizard/${charId}/gm-approve`, { rarity_override, note });
+      const res = await api.post(`/api/wizard/${charId}/approve-item`, { rarity_override, note });
       addLog('gm.wizard', `Approved starting-item for ${char.name} (${res.rarity})`);
       overlay.remove();
+      loadWizardPending();
     } catch { showToast('Failed to approve'); }
   });
 }
+
+// ══════════════════════════════════════════════════════════════
+// Rework v2 — Pending starting-item approvals (GM topbar badge)
+// ══════════════════════════════════════════════════════════════
+let _wizardPending = [];
+async function loadWizardPending() {
+  const btn   = document.getElementById('btn-wizard-pending');
+  const badge = document.getElementById('wizard-pending-count');
+  if (!btn || !badge) return;
+  if (!SESSION_ID) { btn.style.display = 'none'; return; }
+  try {
+    _wizardPending = await api.get(`/api/wizard/session/${SESSION_ID}/pending`);
+  } catch { _wizardPending = []; }
+  if (!_wizardPending.length) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = 'inline-flex';
+  badge.textContent = _wizardPending.length;
+}
+
+function openWizardPendingList() {
+  if (!_wizardPending.length) return;
+  // One pending → open the approval modal directly.
+  if (_wizardPending.length === 1) {
+    openGmWizardApprovalModal(_wizardPending[0].character_id);
+    return;
+  }
+  // Multiple → picker list.
+  if (document.getElementById('gm-wiz-pending-list')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'gm-wiz-pending-list';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:440px">
+      <h2 style="margin-top:0">🎁 Pending Starting-Item Approvals</h2>
+      <div style="display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow-y:auto">
+        ${_wizardPending.map(p => `
+          <button class="btn btn-ghost btn-sm" data-wiz-pick="${p.character_id}"
+                  style="justify-content:flex-start;text-align:left;padding:8px 10px">
+            <div style="display:flex;flex-direction:column;gap:2px;width:100%">
+              <div style="display:flex;align-items:center;gap:6px">
+                <strong>${p.character_name}</strong>
+                ${p.starting_roll ? `<span class="rarity-chip rarity-${p.starting_roll.rarity}">${p.starting_roll.rarity}</span>` : ''}
+                ${p.wizard_completed ? '<span style="font-size:0.62rem;color:var(--accent-orange);margin-left:auto">in-game</span>' : ''}
+              </div>
+              <div style="font-size:0.72rem;color:var(--text-muted)">
+                ${(p.proposed_item && p.proposed_item.name) || '(unnamed)'} —
+                ${(p.proposed_item && p.proposed_item.category) || 'misc'}
+              </div>
+            </div>
+          </button>
+        `).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-ghost btn-sm" id="gm-wiz-pending-close">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#gm-wiz-pending-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelectorAll('[data-wiz-pick]').forEach(b => {
+    b.addEventListener('click', () => {
+      const cid = parseInt(b.dataset.wizPick);
+      overlay.remove();
+      openGmWizardApprovalModal(cid);
+    });
+  });
+}
+
+// Wire topbar pending button
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('btn-wizard-pending');
+  if (btn) btn.addEventListener('click', openWizardPendingList);
+});
+// Refresh when any wizard event fires
+ws.on('wizard.update',         () => loadWizardPending());
+ws.on('wizard.item_approved',  () => loadWizardPending());
+ws.on('wizard.item_rejected',  () => loadWizardPending());
+ws.on('wizard.completed',      () => loadWizardPending());
 
 // ══════════════════════════════════════════════════════════════
 // ITEM DATABASE
@@ -3059,7 +3152,6 @@ function renderItemGrid() {
         <div class="ic-desc">${item.description || ''}</div>
         <div class="ic-meta">
           <span class="ic-price price-display">${bronzeToDisplay(item.base_price_bronze || item.base_price_copper)}</span>
-          ${item.weight ? `<span>${item.weight}lb</span>` : ''}
           ${item.equippable ? '<span>📎 Equip</span>' : ''}
           ${item.consumable ? '<span>🧪 Use</span>' : ''}
           ${item.mana_cost ? `<span style="color:#60a5fa">🔮${item.mana_cost}</span>` : ''}
@@ -3095,7 +3187,6 @@ function openItemEditor(itemId = null) {
     $('#item-ed-price-s').value = Math.floor(_rem / 10); _rem %= 10;
     $('#item-ed-price-b').value = _rem;
     $('#item-ed-price').value = _bp;
-    $('#item-ed-weight').value = item.weight || 0;
     $('#item-ed-equippable').checked = item.equippable && !item.is_potion;
     $('#item-ed-equippable').disabled = !!item.is_potion;
     $('#item-ed-consumable').checked = item.consumable;
@@ -3114,6 +3205,9 @@ function openItemEditor(itemId = null) {
       $('#item-ed-wdice-type').value = item.weapon_stats.dice_type;
       $('#item-ed-wdmg-type').value = item.weapon_stats.damage_type;
       $('#item-ed-wrange').value = item.weapon_stats.range || '';
+      // Rework Phase 2: which stat contributes the +bonus for hit / damage
+      $('#item-ed-whitstat').value = item.weapon_stats.hit_stat || 'strength';
+      $('#item-ed-wdmgstat').value = item.weapon_stats.damage_stat ?? 'strength';
     }
     tempBonuses = (item.bonuses || []).map(b => ({...b}));
     // Use effects
@@ -3128,7 +3222,6 @@ function openItemEditor(itemId = null) {
     $('#item-ed-desc').value = '';
     $('#item-ed-rarity').value = 'common';
     $('#item-ed-price').value = 0;
-    $('#item-ed-weight').value = 0;
     $('#item-ed-equippable').checked = false;
     $('#item-ed-consumable').checked = false;
     $('#item-ed-mana-cost').value = 0;
@@ -3210,7 +3303,6 @@ async function saveItem() {
     category: (allCategories.find(c => c.id === parseInt($('#item-ed-category').value))?.name || 'Misc').toLowerCase(),
     rarity: $('#item-ed-rarity').value,
     base_price_bronze: (parseInt($('#item-ed-price-p').value)||0)*1000 + (parseInt($('#item-ed-price-g').value)||0)*100 + (parseInt($('#item-ed-price-s').value)||0)*10 + (parseInt($('#item-ed-price-b').value)||0),
-    weight: parseFloat($('#item-ed-weight').value) || 0,
     equippable: $('#item-ed-equippable').checked,
     consumable: $('#item-ed-consumable').checked,
     mana_cost: parseInt($('#item-ed-mana-cost').value) || 0,
@@ -3239,6 +3331,9 @@ async function saveItem() {
       dice_type: parseInt($('#item-ed-wdice-type').value) || 6,
       damage_type: $('#item-ed-wdmg-type').value || 'physical',
       range: $('#item-ed-wrange').value.trim() || null,
+      // Rework Phase 2: stat-bonus sources for hit / damage rolls
+      hit_stat: $('#item-ed-whitstat').value || 'strength',
+      damage_stat: $('#item-ed-wdmgstat').value || null,
     };
   }
 
@@ -3737,11 +3832,11 @@ function renderPreparingCombat(panel) {
     const parts = activeCombat.participants || [];
     const players = parts.filter(p => !p.is_npc).map(p => {
       const ch = characters.find(x => x.id === p.character_id);
-      return { max_hp: ch?.max_hp || 20, armor_class: ch?.armor_class || 10, level: ch?.level || 1 };
+      return { max_hp: ch?.max_hp ?? 0, armor_class: ch?.armor_class ?? 0, level: ch?.level ?? 0 };
     });
     const npcs = parts.filter(p => p.is_npc).map(p => {
       const ch = characters.find(x => x.id === p.character_id);
-      return { max_hp: ch?.max_hp || 20, armor_class: ch?.armor_class || 10 };
+      return { max_hp: ch?.max_hp ?? 0, armor_class: ch?.armor_class ?? 0 };
     });
     if (!players.length || !npcs.length) { badge.textContent = ''; return; }
     try {
@@ -4534,7 +4629,8 @@ function renderRCList() {
     <div style="padding:8px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface-2)${!r.is_available?';opacity:0.5':''}">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:700;font-size:0.85rem">${r.name}</span>
-        <div style="display:flex;gap:4px">
+        <div style="display:flex;gap:4px;align-items:center">
+          <span style="font-size:0.62rem;padding:1px 6px;border-radius:10px;background:rgba(200,60,60,0.22);color:#ff9494;font-weight:700" title="HP die rolled at creation and every level-up">${r.hp_dice_count || 1}d${r.hp_die || 8}</span>
           <button class="btn btn-ghost btn-xs" data-edit-race="${r.id}">✏️</button>
           <button class="btn btn-ghost btn-xs" data-del-race="${r.id}" style="color:var(--accent-red)">🗑</button>
         </div>
@@ -4545,6 +4641,7 @@ function renderRCList() {
     </div>
   `).join('') : '<span class="text-muted" style="font-size:0.8rem">No races. Click "Seed Defaults" or create one.</span>';
 
+  // Rework v2: internal table still "classes" but UI reads "Professions"
   cList.innerHTML = rcClasses.length ? rcClasses.map(c => `
     <div style="padding:8px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-surface-2)${!c.is_available?';opacity:0.5':''}">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -4559,7 +4656,7 @@ function renderRCList() {
       <div>${(c.bonuses||[]).map(b => `<span style="display:inline-block;font-size:0.6rem;padding:1px 5px;border-radius:8px;background:var(--accent)20;color:var(--accent);margin-right:2px">${bonusLabel(b)}</span>`).join('')}</div>
       ${!c.is_available ? '<div style="font-size:0.6rem;color:var(--accent-red)">Hidden from players</div>' : ''}
     </div>
-  `).join('') : '<span class="text-muted" style="font-size:0.8rem">No classes. Click "Seed Defaults" or create one.</span>';
+  `).join('') : '<span class="text-muted" style="font-size:0.8rem">No professions. Click "Seed Defaults" or create one.</span>';
 
   // Wire edit/delete
   rList.querySelectorAll('[data-edit-race]').forEach(btn => {
@@ -4592,8 +4689,10 @@ function renderRCList() {
 
 function openRCEditorModal(kind, existing) {
   const isEdit = !!existing;
-  const title = isEdit ? `Edit ${kind === 'race' ? 'Race' : 'Class'}` : `Create ${kind === 'race' ? 'Race' : 'Class'}`;
-  const data = existing || { name: '', description: '', bonuses: [], special_abilities: [], is_available: true, hit_die: 8 };
+  const kindLabel = kind === 'race' ? 'Race' : 'Profession';   // Rework v2 UI rename
+  const title = isEdit ? `Edit ${kindLabel}` : `Create ${kindLabel}`;
+  const data = existing || { name: '', description: '', bonuses: [], special_abilities: [], is_available: true,
+                             hit_die: 8, hp_die: 8, hp_dice_count: 1 };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -4603,6 +4702,19 @@ function openRCEditorModal(kind, existing) {
       <div class="modal-body">
         <div class="form-group"><label>Name</label><input type="text" id="rc-ed-name" value="${data.name}"></div>
         <div class="form-group"><label>Description</label><textarea id="rc-ed-desc" rows="2" style="width:100%;resize:vertical">${data.description}</textarea></div>
+        ${kind === 'race' ? `
+          <div class="form-group" style="display:flex;gap:10px;align-items:flex-end">
+            <div style="flex:1">
+              <label title="Rolled at creation and on every level-up">HP Die</label>
+              <select id="rc-ed-hpdie">
+                ${[4,6,8,10,12].map(d => `<option value="${d}"${(data.hp_die||8)===d?' selected':''}>d${d}</option>`).join('')}
+              </select>
+            </div>
+            <div style="flex:1">
+              <label>HP Dice Count</label>
+              <input type="number" id="rc-ed-hpcount" min="1" max="5" value="${data.hp_dice_count || 1}">
+            </div>
+          </div>` : ''}
         ${kind === 'class' ? `<div class="form-group"><label>Hit Die</label><select id="rc-ed-hitdie">
           ${[4,6,8,10,12].map(d => `<option value="${d}"${data.hit_die===d?' selected':''}>d${d}</option>`).join('')}
         </select></div>` : ''}
@@ -4706,6 +4818,10 @@ function openRCEditorModal(kind, existing) {
 
     if (kind === 'class') {
       body.hit_die = parseInt(overlay.querySelector('#rc-ed-hitdie')?.value) || 8;
+    }
+    if (kind === 'race') {
+      body.hp_die = parseInt(overlay.querySelector('#rc-ed-hpdie')?.value) || 8;
+      body.hp_dice_count = Math.max(1, Math.min(5, parseInt(overlay.querySelector('#rc-ed-hpcount')?.value) || 1));
     }
 
     if (isEdit) {
@@ -4931,7 +5047,7 @@ function openQuestEditorModal(tplId = null) {
         <label style="font-size:0.75rem;font-weight:600">Rewards</label>
         <div style="display:flex;gap:6px;align-items:center">
           <label style="font-size:0.72rem">Gold (copper):</label>
-          <input type="number" id="qt-gold" value="${existing ? existing.reward_gold_copper : 0}" style="width:80px;font-size:0.78rem">
+          <input type="number" id="qt-gold" value="${existing ? (existing.reward_gold_bronze ?? existing.reward_gold_copper ?? 0) : 0}" style="width:80px;font-size:0.78rem">
         </div>
         <input type="text" id="qt-reward-desc" value="${existing ? existing.reward_description : ''}" placeholder="Reward description (shown to player)" style="font-size:0.78rem">
         <label style="font-size:0.72rem;display:flex;align-items:center;gap:4px">
@@ -4979,7 +5095,7 @@ function openQuestEditorModal(tplId = null) {
       title,
       description: modal.querySelector('#qt-desc').value.trim(),
       source_npc_id: parseInt(modal.querySelector('#qt-npc').value) || null,
-      reward_gold_copper: parseInt(modal.querySelector('#qt-gold').value) || 0,
+      reward_gold_bronze: parseInt(modal.querySelector('#qt-gold').value) || 0,
       reward_item_ids: [],
       reward_description: modal.querySelector('#qt-reward-desc').value.trim(),
       reward_is_hidden: modal.querySelector('#qt-hidden').checked,
@@ -5169,7 +5285,7 @@ function openQuickAssignModal() {
           title,
           description: modal.querySelector('#qa-custom-desc').value.trim(),
           source_npc_name: modal.querySelector('#qa-custom-npc').value.trim() || null,
-          reward_gold_copper: parseInt(modal.querySelector('#qa-custom-gold').value) || 0,
+          reward_gold_bronze: parseInt(modal.querySelector('#qa-custom-gold').value) || 0,
           reward_description: modal.querySelector('#qa-custom-reward').value.trim(),
           reward_is_hidden: modal.querySelector('#qa-custom-hidden').checked,
           stages: [],
@@ -5402,8 +5518,9 @@ function openFolderModal(existing) {
 function openNpcTemplateModal(existing) {
   const isEdit = !!existing;
   const d = existing || {
-    name: '', description: '', is_merchant: false, max_hp: 20, armor_class: 10,
-    strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10,
+    // Rework v2: baseline 0 across the board — GM tunes per NPC.
+    name: '', description: '', is_merchant: false, max_hp: 0, armor_class: 0,
+    strength: 0, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 0, charisma: 0,
     initiative_bonus: 0, token_color: '#e05252', default_equipment: [], shop_items: [], notes: '',
     folder_id: null,
   };
@@ -5462,15 +5579,15 @@ function openNpcTemplateModal(existing) {
       name: overlay.querySelector('#nt-name').value.trim(),
       description: overlay.querySelector('#nt-desc').value.trim(),
       folder_id: overlay.querySelector('#nt-folder').value ? parseInt(overlay.querySelector('#nt-folder').value) : null,
-      max_hp: parseInt(overlay.querySelector('#nt-hp').value) || 20,
-      armor_class: parseInt(overlay.querySelector('#nt-ac').value) || 10,
+      max_hp: parseInt(overlay.querySelector('#nt-hp').value) || 0,
+      armor_class: parseInt(overlay.querySelector('#nt-ac').value) || 0,
       initiative_bonus: parseInt(overlay.querySelector('#nt-init').value) || 0,
-      strength: parseInt(overlay.querySelector('#nt-str').value) || 10,
-      dexterity: parseInt(overlay.querySelector('#nt-dex').value) || 10,
-      constitution: parseInt(overlay.querySelector('#nt-con').value) || 10,
-      intelligence: parseInt(overlay.querySelector('#nt-int').value) || 10,
-      wisdom: parseInt(overlay.querySelector('#nt-wis').value) || 10,
-      charisma: parseInt(overlay.querySelector('#nt-cha').value) || 10,
+      strength: parseInt(overlay.querySelector('#nt-str').value) || 0,
+      dexterity: parseInt(overlay.querySelector('#nt-dex').value) || 0,
+      constitution: parseInt(overlay.querySelector('#nt-con').value) || 0,
+      intelligence: parseInt(overlay.querySelector('#nt-int').value) || 0,
+      wisdom: parseInt(overlay.querySelector('#nt-wis').value) || 0,
+      charisma: parseInt(overlay.querySelector('#nt-cha').value) || 0,
       token_color: overlay.querySelector('#nt-color').value,
       is_merchant: overlay.querySelector('#nt-merchant').checked,
       notes: overlay.querySelector('#nt-notes').value.trim(),
@@ -5887,10 +6004,10 @@ function openAINpcModal(templateModal) {
           <h4 style="margin-bottom:6px">${res.name || 'NPC'}</h4>
           <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">${res.description || ''}</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.75rem">
-            <span>❤️ HP: ${res.max_hp || 10}</span><span>🛡️ AC: ${res.armor_class || 10}</span>
-            <span>STR: ${res.strength || 10}</span><span>DEX: ${res.dexterity || 10}</span>
-            <span>CON: ${res.constitution || 10}</span><span>INT: ${res.intelligence || 10}</span>
-            <span>WIS: ${res.wisdom || 10}</span><span>CHA: ${res.charisma || 10}</span>
+            <span>❤️ HP: ${res.max_hp ?? 0}</span><span>🛡️ AC: ${res.armor_class ?? 0}</span>
+            <span>STR: ${res.strength ?? 0}</span><span>DEX: ${res.dexterity ?? 0}</span>
+            <span>CON: ${res.constitution ?? 0}</span><span>INT: ${res.intelligence ?? 0}</span>
+            <span>WIS: ${res.wisdom ?? 0}</span><span>CHA: ${res.charisma ?? 0}</span>
           </div>
           ${res.notes ? `<p style="font-size:0.75rem;margin-top:6px;color:var(--text-muted)">Notes: ${res.notes}</p>` : ''}
         </div>
@@ -5954,6 +6071,8 @@ ws.on('session.timer_paused', d => {
 // PHASE 6 — GM ABILITY MANAGER
 // ══════════════════════════════════════════════════════════════
 let gmAbilities = [];
+// Rework v2: filter state for the ability list
+let _abFilter = { pool: false, rarity: '' };
 
 async function loadGmAbilities() {
   try {
@@ -5962,29 +6081,83 @@ async function loadGmAbilities() {
   } catch (e) { console.warn('loadGmAbilities:', e); }
 }
 
+// Wire ability filter controls once.
+document.addEventListener('DOMContentLoaded', () => {
+  const poolEl = document.getElementById('ab-filter-pool');
+  const rarEl  = document.getElementById('ab-filter-rarity');
+  if (poolEl) poolEl.addEventListener('change', () => { _abFilter.pool = poolEl.checked; renderGmAbilities(); });
+  if (rarEl)  rarEl .addEventListener('change', () => { _abFilter.rarity = rarEl.value;   renderGmAbilities(); });
+});
+
 const _AB_ICONS = ['⚡','⚔️','🔥','❄️','☠️','✨','🛡️','💨','🌊','🌑','💀','🌿','🪄','💫','🌟','⭐','🔮','❤️','🎯','👁️'];
 const _AB_DMGTYPES = ['physical','fire','ice','lightning','poison','holy','dark','arcane','custom'];
 const _AB_STATS = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
-const _AB_EFF_TYPES = ['heal_hp','restore_mana','apply_status','stat_boost','remove_status','damage','summon_npc','teleport','custom'];
+// Rework v3: added restore_hp_by_die (rolls the race HP die for healing).
+const _AB_EFF_TYPES = ['heal_hp','restore_hp_by_die','restore_mana','apply_status','stat_boost','remove_status','damage','summon_npc','teleport','custom'];
+// Rework v3: passive bonus types available in the ability editor dropdown.
+const _AB_PASSIVE_BONUS_TYPES = [
+  { value: 'attack_bonus',           label: '⚔️  ATK Bonus'                  },
+  { value: 'damage_bonus',           label: '💥  DMG Bonus'                  },
+  { value: 'stat_bonus',             label: '📊  Stat Bonus'                 },
+  { value: 'damage_reduction_flat',  label: '🛡  Dmg Reduction (flat)'       },
+  { value: 'damage_reduction_pct',   label: '🛡  Dmg Reduction (%)'          },
+  { value: 'max_hp_bonus',           label: '❤️  Max HP (+N)'                },
+  { value: 'max_mana_bonus',         label: '🔮  Max Mana (+N)'              },
+  { value: 'mana_regen_bonus',       label: '🔄  Mana Regen / turn (+N)'     },
+  { value: 'hp_die_bonus',           label: '🎲  HP Die size (+N)'           },
+  { value: 'hp_die_count_bonus',     label: '🎲  HP Dice count (+N)'         },
+];
 
 function renderGmAbilities() {
   const el = $('#gm-abilities-list');
   if (!el) return;
-  if (!gmAbilities.length) {
-    el.innerHTML = '<p class="text-muted">No abilities created yet. Click "+ New Ability" to add one.</p>';
+
+  // Rework v2: apply filters + starting-pool summary
+  const filtered = gmAbilities.filter(a => {
+    if (_abFilter.pool && !a.is_in_starting_pool) return false;
+    if (_abFilter.rarity && (a.rarity || 'common') !== _abFilter.rarity) return false;
+    return true;
+  });
+  const sumEl = document.getElementById('ab-pool-summary');
+  if (sumEl) {
+    const buckets = { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 };
+    gmAbilities.forEach(a => { if (a.is_in_starting_pool) buckets[a.rarity || 'common'] = (buckets[a.rarity || 'common'] || 0) + 1; });
+    sumEl.innerHTML = 'Starting pool: ' +
+      Object.entries(buckets).map(([r, n]) => `<span class="rarity-chip rarity-${r}" style="margin-left:4px">${r}: ${n}</span>`).join('');
+  }
+
+  if (!filtered.length) {
+    el.innerHTML = !gmAbilities.length
+      ? '<p class="text-muted">No abilities created yet. Click "+ New Ability" to add one.</p>'
+      : '<p class="text-muted" style="font-size:0.8rem">No abilities match the current filter.</p>';
     return;
   }
-  el.innerHTML = gmAbilities.map(a => {
+  el.innerHTML = filtered.map(a => {
     const tags = (Array.isArray(a.tags) ? a.tags : []).map(t => `<span style="font-size:0.62rem;padding:1px 5px;border-radius:8px;background:var(--bg-surface-2);border:1px solid var(--border)">${t}</span>`).join('');
     const typeBadge = a.ability_type === 'passive' ? '🔵 Passive' : a.ability_type === 'reaction' ? '⚡ Reaction' : '🟢 Active';
     const targetIcon = { self:'🙂', single:'🎯', aoe:'💥', none:'—' }[a.target_type] || '';
     const effCount = (a.effect?.effects || []).length;
+    const rarity = a.rarity || 'common';
+    const rarityChip = `<span class="rarity-chip rarity-${rarity}">${rarity}</span>`;
+    const poolChip   = a.is_in_starting_pool
+      ? `<span title="In starting pool — can be granted by wizard Step 5" style="font-size:0.62rem;padding:1px 6px;border-radius:8px;background:rgba(192,138,42,0.2);color:var(--accent);font-weight:700">🎁 Pool</span>`
+      : '';
+    const usesChip   = a.max_uses
+      ? `<span title="Max uses per grant" style="font-size:0.62rem;color:var(--accent-green);font-weight:600">⚡ ${a.max_uses}</span>`
+      : '';
+    const condChip   = a.is_conditional
+      ? `<span title="${(a.conditional_text || 'GM discretion').replace(/"/g,'&quot;')}" style="font-size:0.62rem;color:var(--accent);font-style:italic;cursor:help">※ Cond</span>`
+      : '';
     return `<div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--border);background:var(--bg-surface)">
       <div style="width:4px;background:${a.color||'#60a5fa'}"></div>
       <div style="flex:1;padding:8px 10px">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:1.1rem">${a.icon||'⚡'}</span>
           <span style="font-weight:700;font-size:0.85rem">${a.name}</span>
+          ${rarityChip}
+          ${poolChip}
+          ${usesChip}
+          ${condChip}
           <span style="font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--bg-surface-2);border:1px solid var(--border)">${typeBadge}</span>
           ${a.mana_cost ? `<span style="font-size:0.65rem;color:#60a5fa;font-weight:600">🔮 ${a.mana_cost}</span>` : ''}
           ${a.hp_cost ? `<span style="font-size:0.65rem;color:var(--accent-red);font-weight:600">❤️ ${a.hp_cost}</span>` : ''}
@@ -6131,6 +6304,33 @@ function showAbilityEditor(existing = null) {
       <button class="btn btn-ghost btn-xs" id="ab-add-effect" style="margin-top:4px">+ Add Effect</button>
     </fieldset>
 
+    <!-- Rework v2 Section: Pool, Rarity, Uses, Conditional -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">🎁 Starting Pool & Uses</legend>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px">Rarity
+          <select id="ab-rarity" style="font-size:0.78rem">
+            ${['common','uncommon','rare','epic','legendary'].map(r => `<option value="${r}" ${r===(d.rarity||'common')?'selected':''}>${r}</option>`).join('')}
+          </select>
+        </label>
+        <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ab-starting-pool" ${d.is_in_starting_pool?'checked':''}>
+          🎁 In starting pool (d4-pickable by wizard)
+        </label>
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px" title="Leave blank or 0 for infinite uses.">Max Uses
+          <input type="number" id="ab-max-uses" min="0" value="${d.max_uses ?? ''}" placeholder="∞" style="width:60px;font-size:0.78rem">
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ab-conditional" ${d.is_conditional?'checked':''}>
+          ※ Conditional (flavor-only, no mechanics)
+        </label>
+        <input id="ab-conditional-text" type="text" placeholder="When condition X is met…" value="${(d.conditional_text||'').replace(/"/g,'&quot;')}"
+               style="flex:1;font-size:0.78rem;display:${d.is_conditional?'':'none'}">
+      </div>
+    </fieldset>
+
     <!-- Section 6: Passive Effect (if passive type) -->
     <fieldset id="ab-passive-section" style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px;display:${d.ability_type==='passive'?'block':'none'}">
       <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">🔵 Passive Effect</legend>
@@ -6172,6 +6372,10 @@ function showAbilityEditor(existing = null) {
   overlay.querySelector('#ab-has-dmg').addEventListener('change', () => {
     overlay.querySelector('#ab-dmg-fields').style.display = overlay.querySelector('#ab-has-dmg').checked ? 'flex' : 'none';
   });
+  // Rework v2: conditional-text shown only when conditional is on
+  overlay.querySelector('#ab-conditional').addEventListener('change', () => {
+    overlay.querySelector('#ab-conditional-text').style.display = overlay.querySelector('#ab-conditional').checked ? '' : 'none';
+  });
 
   // ── Effects chain ──
   let editorEffects = [...effects];
@@ -6184,6 +6388,9 @@ function showAbilityEditor(existing = null) {
         fields = `<input type="number" data-ef="dice_count" value="${e.dice_count||1}" min="1" style="width:40px" placeholder="dc"> d <input type="number" data-ef="dice_type" value="${e.dice_type||6}" style="width:40px" placeholder="dt"> + <input type="number" data-ef="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" placeholder="bonus">`;
       } else if (e.type === 'restore_mana') {
         fields = `Amount: <input type="number" data-ef="amount" value="${e.amount||0}" style="width:50px">`;
+      } else if (e.type === 'restore_hp_by_die') {
+        // Rework v3: rolls caster's race HP die for healing. Only flat bonus is tunable.
+        fields = `<span style="color:var(--text-muted)" title="Rolls the caster's race HP die">🎲 race die</span> + <input type="number" data-ef="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" placeholder="bonus">`;
       } else if (e.type === 'apply_status') {
         fields = `Template ID: <input type="number" data-ef="template_id" value="${e.template_id||''}" style="width:50px"> Duration: <input type="number" data-ef="duration_turns" value="${e.duration_turns||3}" style="width:40px">t`;
       } else if (e.type === 'stat_boost') {
@@ -6238,17 +6445,21 @@ function showAbilityEditor(existing = null) {
   function renderPassiveEditor() {
     const el = overlay.querySelector('#ab-passive-list');
     if (!passiveBonuses.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No passive bonuses</span>'; return; }
-    el.innerHTML = passiveBonuses.map((b, i) => `<div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;font-size:0.72rem" data-pb-idx="${i}">
-      <select data-pb="bonus_type" style="font-size:0.72rem">
-        <option value="attack_bonus" ${b.bonus_type==='attack_bonus'?'selected':''}>ATK Bonus</option>
-        <option value="damage_bonus" ${b.bonus_type==='damage_bonus'?'selected':''}>DMG Bonus</option>
-        <option value="stat_bonus" ${b.bonus_type==='stat_bonus'?'selected':''}>Stat Bonus</option>
-        <option value="damage_reduction_flat" ${b.bonus_type==='damage_reduction_flat'?'selected':''}>Dmg Reduction (flat)</option>
-        <option value="damage_reduction_pct" ${b.bonus_type==='damage_reduction_pct'?'selected':''}>Dmg Reduction (%)</option>
-      </select>
-      Value: <input type="number" data-pb="value" value="${b.value||0}" style="width:50px">
-      <button class="btn btn-ghost btn-xs" data-rm-pb="${i}" style="color:var(--accent-red)">✕</button>
-    </div>`).join('');
+    el.innerHTML = passiveBonuses.map((b, i) => {
+      const opts = _AB_PASSIVE_BONUS_TYPES.map(t =>
+        `<option value="${t.value}" ${b.bonus_type===t.value?'selected':''}>${t.label}</option>`
+      ).join('');
+      const needsStat = b.bonus_type === 'stat_bonus';
+      const statOpts = _AB_STATS.map(s =>
+        `<option value="${s}" ${s===(b.stat||'strength')?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`
+      ).join('');
+      return `<div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;font-size:0.72rem;flex-wrap:wrap" data-pb-idx="${i}">
+        <select data-pb="bonus_type" style="font-size:0.72rem">${opts}</select>
+        <select data-pb="stat" style="font-size:0.72rem;display:${needsStat?'':'none'}">${statOpts}</select>
+        Value: <input type="number" data-pb="value" value="${b.value||0}" style="width:60px">
+        <button class="btn btn-ghost btn-xs" data-rm-pb="${i}" style="color:var(--accent-red)">✕</button>
+    </div>`;
+    }).join('');
     el.querySelectorAll('[data-pb]').forEach(inp => {
       inp.addEventListener('change', () => {
         const idx = parseInt(inp.closest('[data-pb-idx]').dataset.pbIdx);
@@ -6296,6 +6507,17 @@ function showAbilityEditor(existing = null) {
       is_passive: (overlay.querySelector('[name="ab-type"]:checked')?.value || 'active') === 'passive',
       passive_effect: passiveBonuses.length ? { bonuses: passiveBonuses } : null,
       effect: { effects: editorEffects },
+      // Rework v2 — pool / rarity / uses / conditional
+      rarity: overlay.querySelector('#ab-rarity').value || 'common',
+      is_in_starting_pool: overlay.querySelector('#ab-starting-pool').checked,
+      max_uses: (() => {
+        const v = overlay.querySelector('#ab-max-uses').value;
+        if (v === '' || v === null) return null;
+        const n = parseInt(v);
+        return (isNaN(n) || n <= 0) ? null : n;
+      })(),
+      is_conditional: overlay.querySelector('#ab-conditional').checked,
+      conditional_text: overlay.querySelector('#ab-conditional-text').value.trim() || null,
     };
 
     try {
@@ -6422,4 +6644,5 @@ loadQuests();
 loadAnnouncements();
 loadSessionTimer();
 loadGmAbilities();
+loadWizardPending();
 ws.connect();

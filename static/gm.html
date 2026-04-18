@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/gm.css">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv2">
+  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv2">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -22,6 +22,15 @@
       <button class="btn btn-ghost btn-xs" id="btn-timer-toggle" title="Start/Pause Timer">▶</button>
     </span>
     <span class="session-code-badge" id="session-code" title="Click to copy code">----</span>
+    <!-- Rework v2: pending wizard-item approvals badge -->
+    <button class="btn btn-ghost btn-sm" id="btn-wizard-pending" title="Pending starting-item approvals" style="display:none;gap:4px">
+      <span>🎁</span><span>Approvals</span>
+      <span id="wizard-pending-count" style="background:var(--accent);color:#000;padding:0 6px;border-radius:8px;font-weight:700;font-size:0.72rem">0</span>
+    </button>
+    <!-- Rework v3: Full Rest button (restores HP, mana, cooldowns, uses for all living players) -->
+    <button class="btn btn-ghost btn-sm" id="btn-full-rest" title="Full Rest — restore HP, mana, cooldowns, and uses for all living players" style="gap:4px">
+      <span>🌙</span><span>Full Rest</span>
+    </button>
     <button class="btn btn-ghost btn-sm" id="btn-end-session">End Session</button>
   </div>
 
@@ -65,14 +74,14 @@
         <button class="gm-tab" data-tab="map">Map</button>
         <button class="gm-tab" data-tab="actions">Quick Actions</button>
         <button class="gm-tab" data-tab="log">Event Log</button>
-        <button class="gm-tab" data-tab="races-classes">Races & Classes</button>
+        <button class="gm-tab" data-tab="races-classes">Races & Professions</button>
         <button class="gm-tab" data-tab="npc-library">NPC Library</button>
         <button class="gm-tab" data-tab="quests">📜 Quests</button>
         <button class="gm-tab" data-tab="announcements">📢 Board</button>
         <button class="gm-tab" data-tab="abilities">✨ Abilities</button>
       </div>
 
-      <!-- TAB: Abilities (Phase 6) -->
+      <!-- TAB: Abilities (Phase 6 + Rework v2 starting-pool filters) -->
       <div class="tab-content" id="tab-abilities" style="padding:16px">
         <div class="detail-panel">
           <div class="detail-header">
@@ -80,6 +89,25 @@
             <button class="btn btn-primary btn-sm" id="btn-new-ability">+ New Ability</button>
           </div>
           <div class="detail-body">
+            <!-- Rework v2 filter bar -->
+            <div id="ab-filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0 10px;border-bottom:1px dashed var(--border);margin-bottom:10px">
+              <span style="font-size:0.72rem;color:var(--text-muted)">Filter:</span>
+              <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+                <input type="checkbox" id="ab-filter-pool"> 🎁 Starting Pool only
+              </label>
+              <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+                Rarity:
+                <select id="ab-filter-rarity" style="font-size:0.75rem">
+                  <option value="">any</option>
+                  <option value="common">common</option>
+                  <option value="uncommon">uncommon</option>
+                  <option value="rare">rare</option>
+                  <option value="epic">epic</option>
+                  <option value="legendary">legendary</option>
+                </select>
+              </label>
+              <span id="ab-pool-summary" style="font-size:0.7rem;color:var(--text-muted);margin-left:auto"></span>
+            </div>
             <div id="gm-abilities-list"></div>
           </div>
         </div>
@@ -161,10 +189,6 @@
                 </div>
                 <input type="hidden" id="item-ed-price" value="0">
               </div>
-              <div class="form-group">
-                <label>Weight</label>
-                <input type="number" id="item-ed-weight" value="0" min="0" step="0.1">
-              </div>
               <div class="form-group" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
                 <label><input type="checkbox" id="item-ed-equippable"> Equippable</label>
                 <label><input type="checkbox" id="item-ed-consumable"> Consumable</label>
@@ -220,6 +244,29 @@
                 </select>
                 <label style="font-size:0.78rem">Range:</label>
                 <input type="text" id="item-ed-wrange" placeholder="melee" style="width:70px">
+              </div>
+              <!-- Rework: stat that contributes bonus to hit & damage rolls -->
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+                <label style="font-size:0.78rem">Hit stat:</label>
+                <select id="item-ed-whitstat">
+                  <option value="strength">Strength</option>
+                  <option value="dexterity">Dexterity</option>
+                  <option value="constitution">Constitution</option>
+                  <option value="intelligence">Intelligence</option>
+                  <option value="wisdom">Wisdom</option>
+                  <option value="charisma">Charisma</option>
+                </select>
+                <label style="font-size:0.78rem">Damage stat:</label>
+                <select id="item-ed-wdmgstat">
+                  <option value="strength">Strength</option>
+                  <option value="dexterity">Dexterity</option>
+                  <option value="constitution">Constitution</option>
+                  <option value="intelligence">Intelligence</option>
+                  <option value="wisdom">Wisdom</option>
+                  <option value="charisma">Charisma</option>
+                  <option value="">None</option>
+                </select>
+                <span style="font-size:0.68rem;color:var(--text-muted)">Bonus = stat value directly (e.g. STR 3 → +3).</span>
               </div>
             </div>
 
@@ -425,11 +472,11 @@
         </div>
       </div>
 
-      <!-- TAB: Races & Classes (Stage 6) -->
+      <!-- TAB: Races & Professions (Rework v2 — classes renamed to professions in UI) -->
       <div class="tab-content" id="tab-races-classes" style="padding:16px">
         <div class="detail-panel">
           <div class="detail-header">
-            <h2>🧬 Races & Classes</h2>
+            <h2>🧬 Races & Professions</h2>
             <div style="display:flex;gap:6px">
               <button class="btn btn-primary btn-xs" id="btn-seed-rc">Seed Defaults</button>
             </div>
@@ -444,11 +491,11 @@
                 </div>
                 <div id="rc-races-list"></div>
               </div>
-              <!-- Classes column -->
+              <!-- Professions column (internal ORM is still `CharacterClass` — UI-only rename) -->
               <div style="flex:1;min-width:280px">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                  <h3 style="font-size:0.85rem;flex:1">Classes</h3>
-                  <button class="btn btn-primary btn-xs" id="btn-create-class">+ Create Class</button>
+                  <h3 style="font-size:0.85rem;flex:1">Professions</h3>
+                  <button class="btn btn-primary btn-xs" id="btn-create-class">+ Create Profession</button>
                 </div>
                 <div id="rc-classes-list"></div>
               </div>
@@ -525,9 +572,9 @@
     </div>
   </div>
 
-  <script src="/static/js/websocket-client.js"></script>
-  <script src="/static/js/character-sheet-core.js"></script>
-  <script src="/static/js/map-canvas.js"></script>
-  <script src="/static/js/gm-app.js"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv2"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv2"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv2"></script>
+  <script src="/static/js/gm-app.js?v=reworkv2"></script>
 </body>
 </html>

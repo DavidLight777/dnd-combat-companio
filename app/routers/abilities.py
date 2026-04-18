@@ -18,11 +18,24 @@ router = APIRouter(prefix="/api", tags=["abilities"])
 
 # ── Ability templates CRUD ───────────────────────────────────
 @router.get("/abilities")
-async def list_abilities(session_id: int | None = None, db: AsyncSession = Depends(get_session)):
+async def list_abilities(
+    session_id: int | None = None,
+    in_starting_pool: bool | None = None,
+    rarity: str | None = None,
+    db: AsyncSession = Depends(get_session),
+):
+    """Rework v2: optional `in_starting_pool` / `rarity` filters for the GM
+    starting-pool manager UI."""
     q = select(Ability)
     if session_id is not None:
         q = q.where((Ability.session_id == session_id) | (Ability.session_id == None))
-    result = await db.execute(q.order_by(Ability.name))
+    if in_starting_pool is True:
+        q = q.where(Ability.is_in_starting_pool == True)      # noqa: E712
+    elif in_starting_pool is False:
+        q = q.where(Ability.is_in_starting_pool == False)     # noqa: E712
+    if rarity:
+        q = q.where(Ability.rarity == rarity)
+    result = await db.execute(q.order_by(Ability.rarity, Ability.name))
     return [_ability_dict(a) for a in result.scalars().all()]
 
 
@@ -35,6 +48,9 @@ _ABILITY_FIELDS = (
     "requires_hit_roll", "hit_stat", "damage_stat",
     "damage_dice_count", "damage_dice_type",
     "is_passive", "range",
+    # Rework v2: unified "особенность или умение" pool fields
+    "rarity", "is_in_starting_pool", "max_uses",
+    "is_conditional", "conditional_text",
 )
 _ABILITY_JSON_FIELDS = ("effect", "passive_effect", "tags")
 
@@ -88,6 +104,12 @@ async def duplicate_ability(ability_id: int, db: AsyncSession = Depends(get_sess
         damage_dice_count=src.damage_dice_count, damage_dice_type=src.damage_dice_type,
         is_passive=src.is_passive, passive_effect=src.passive_effect,
         effect=src.effect, range=src.range,
+        # Rework v2: carry the pool flags on duplicate
+        rarity=src.rarity,
+        is_in_starting_pool=src.is_in_starting_pool,
+        max_uses=src.max_uses,
+        is_conditional=src.is_conditional,
+        conditional_text=src.conditional_text,
     )
     db.add(dup)
     await db.commit()
@@ -152,6 +174,12 @@ def _ability_dict(a: Ability) -> dict:
         # Effects
         "effect": _parse_json_field(a.effect),
         "range": a.range,
+        # Rework v2: pool-related fields
+        "rarity": a.rarity or "common",
+        "is_in_starting_pool": bool(a.is_in_starting_pool),
+        "max_uses": a.max_uses,
+        "is_conditional": bool(a.is_conditional),
+        "conditional_text": a.conditional_text,
     }
 
 
@@ -167,6 +195,9 @@ async def get_character_abilities(char_id: int, db: AsyncSession = Depends(get_s
         d["character_ability_id"] = ca.id
         d["is_unlocked"] = ca.is_unlocked
         d["cooldown_remaining"] = ca.cooldown_remaining
+        # Rework v2: uses counter + provenance
+        d["current_uses"] = ca.current_uses
+        d["granted_from"] = ca.granted_from
         out.append(d)
     return out
 
@@ -195,6 +226,9 @@ async def assign_ability(char_id: int, body: dict, db: AsyncSession = Depends(ge
         character_id=char_id,
         ability_id=ability_id,
         is_unlocked=body.get("is_unlocked", True),
+        # Rework v2: mirror the template's max_uses on grant
+        current_uses=ability.max_uses,
+        granted_from=body.get("granted_from", "gm"),
     )
     db.add(ca)
     # Auto-apply passive bonuses
@@ -206,6 +240,8 @@ async def assign_ability(char_id: int, body: dict, db: AsyncSession = Depends(ge
     d["character_ability_id"] = ca.id
     d["is_unlocked"] = ca.is_unlocked
     d["cooldown_remaining"] = ca.cooldown_remaining
+    d["current_uses"] = ca.current_uses
+    d["granted_from"] = ca.granted_from
     return d
 
 
@@ -224,13 +260,30 @@ async def unassign_ability(ca_id: int, db: AsyncSession = Depends(get_session)):
 
 
 async def _apply_passive_bonuses(char_id: int, ability: Ability, db: AsyncSession):
-    """Apply passive ability bonuses as permanent modifiers."""
+    """Apply passive ability bonuses as permanent modifiers.
+
+    Supported bonus types:
+      * stat_bonus                — +N to a stat (stored in StatModifier)
+      * attack_bonus              — +N to attack rolls
+      * damage_bonus              — +N to damage rolls
+      * damage_reduction_flat/pct — flat / percent damage reduction
+      * max_hp_bonus              — +N to max HP (directly mutates character)
+      * max_mana_bonus            — +N to mana_max (directly mutates)
+      * mana_regen_bonus          — +N to mana_regen_per_turn (directly mutates)
+      * hp_die_bonus              — +N to race HP die size for level-up rolls
+      * hp_die_count_bonus        — +N to race HP dice count for level-up rolls
+    """
     pe = _parse_json_field(ability.passive_effect)
     bonuses = pe.get("bonuses", []) if isinstance(pe, dict) else []
     source_name = f"Ability: {ability.name}"
+
+    # Load character once for direct-mutation bonuses.
+    char = await db.get(Character, char_id)
+
     for b in bonuses:
         btype = b.get("bonus_type", "")
-        val = b.get("value", 0)
+        val = int(b.get("value", 0) or 0)
+
         if btype == "stat_bonus":
             stat = b.get("stat", "strength")
             db.add(StatModifier(
@@ -246,16 +299,67 @@ async def _apply_passive_bonuses(char_id: int, ability: Ability, db: AsyncSessio
                 character_id=char_id, name=source_name, value=val, is_active=True,
             ))
         elif btype in ("damage_reduction_flat", "damage_reduction_pct"):
-            # Store as stat modifier with special stat name
             db.add(StatModifier(
                 character_id=char_id, stat_name=btype,
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype in ("hp_die_bonus", "hp_die_count_bonus"):
+            # Consumed by the level-up HP roll; stored as StatModifier rows so
+            # they clean up automatically on unassign.
+            db.add(StatModifier(
+                character_id=char_id, stat_name=btype,
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "max_hp_bonus" and char:
+            char.max_hp = (char.max_hp or 0) + val
+            char.current_hp = (char.current_hp or 0) + val
+            db.add(StatModifier(
+                character_id=char_id, stat_name="max_hp_bonus",
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "max_mana_bonus" and char:
+            char.mana_max = (char.mana_max or 0) + val
+            char.mana_current = (char.mana_current or 0) + val
+            db.add(StatModifier(
+                character_id=char_id, stat_name="max_mana_bonus",
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "mana_regen_bonus" and char:
+            char.mana_regen_per_turn = (char.mana_regen_per_turn or 0) + val
+            db.add(StatModifier(
+                character_id=char_id, stat_name="mana_regen_bonus",
                 name=source_name, value=val, is_active=True, source="ability",
             ))
 
 
 async def _remove_passive_bonuses(char_id: int, ability: Ability, db: AsyncSession):
-    """Remove all modifiers created by a passive ability."""
+    """Remove all modifiers created by a passive ability.
+
+    For bonuses that directly mutate the character (max_hp / max_mana /
+    mana_regen), we reverse the mutation before deleting the StatModifier row.
+    """
     source_name = f"Ability: {ability.name}"
+    char = await db.get(Character, char_id)
+
+    # First reverse direct-mutation bonuses.
+    if char is not None:
+        result = await db.execute(
+            select(StatModifier).where(
+                StatModifier.character_id == char_id,
+                StatModifier.name == source_name,
+                StatModifier.stat_name.in_(("max_hp_bonus", "max_mana_bonus", "mana_regen_bonus")),
+            )
+        )
+        for m in result.scalars().all():
+            if m.stat_name == "max_hp_bonus":
+                char.max_hp = max(0, (char.max_hp or 0) - int(m.value or 0))
+                char.current_hp = max(0, min(char.max_hp, (char.current_hp or 0) - int(m.value or 0)))
+            elif m.stat_name == "max_mana_bonus":
+                char.mana_max = max(0, (char.mana_max or 0) - int(m.value or 0))
+                char.mana_current = max(0, min(char.mana_max, (char.mana_current or 0) - int(m.value or 0)))
+            elif m.stat_name == "mana_regen_bonus":
+                char.mana_regen_per_turn = max(0, (char.mana_regen_per_turn or 0) - int(m.value or 0))
+
     for Model in (StatModifier, AttackModifier, DamageModifier):
         result = await db.execute(
             select(Model).where(Model.character_id == char_id, Model.name == source_name)
@@ -293,6 +397,27 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     char = await db.get(Character, ca.character_id)
     if not char:
         raise HTTPException(404, "Character not found")
+
+    # Rework v2: limited-use check. null = infinite, 0 = depleted.
+    if ca.current_uses is not None and ca.current_uses <= 0:
+        raise HTTPException(400, {"error": True, "code": "NO_USES_LEFT",
+                                  "message": f"{ability.name} has no uses left."})
+
+    # Rework v2: conditional-only features have no mechanics — emit flavor log.
+    if ability.is_conditional:
+        if ca.current_uses is not None:
+            ca.current_uses = max(0, ca.current_uses - 1)
+        await db.commit()
+        return {
+            "ok": True,
+            "ability_name": ability.name,
+            "results": [ability.conditional_text or f"{ability.name} — GM call."],
+            "character_id": char.id,
+            "current_hp": char.current_hp,
+            "mana_current": char.mana_current,
+            "cooldown_remaining": ca.cooldown_remaining,
+            "current_uses": ca.current_uses,
+        }
 
     # Rework Phase 6: incoming hit roll (optional, only meaningful if requires_hit_roll)
     hit_info = body.get("hit_roll") or None
@@ -345,6 +470,18 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     except Exception:
         effects_list = []
 
+    # Rework v3 — Player-to-Player targeting. If body.target_id is set, heal /
+    # buff / cleanse / damage effects land on the TARGET instead of the caster.
+    # Resource costs (mana / HP cost) are always paid by the caster. When
+    # target_id is missing or equals the caster, everything stays self-cast.
+    target_id = body.get("target_id")
+    if target_id and int(target_id) != char.id:
+        target_char = await db.get(Character, int(target_id))
+        if not target_char:
+            target_char = char
+    else:
+        target_char = char
+
     for eff in effects_list:
         etype = eff.get("type", "")
 
@@ -356,17 +493,49 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
             actual_dc = dc * 2 if is_crit else dc
             rolls = [random.randint(1, dt) for _ in range(max(1, actual_dc))]
             total = sum(rolls) + fb
-            old_hp = char.current_hp
-            char.current_hp = min(char.max_hp, char.current_hp + total)
+            old_hp = target_char.current_hp
+            target_char.current_hp = min(target_char.max_hp, target_char.current_hp + total)
             crit_tag = " CRIT×2" if is_crit else ""
-            results.append(f"Heal{crit_tag}: {actual_dc}d{dt}+{fb}={total} → +{char.current_hp - old_hp} HP")
+            tgt_tag = "" if target_char.id == char.id else f" → {target_char.name}"
+            results.append(f"Heal{crit_tag}: {actual_dc}d{dt}+{fb}={total} → +{target_char.current_hp - old_hp} HP{tgt_tag}")
 
         elif etype == "restore_mana":
             amount = eff.get("amount", 0)
-            eff_max = get_effective_mana_max(char.mana_max)
-            old_mana = char.mana_current
-            char.mana_current = _restore_mana(char.mana_current, eff_max, amount=amount)
-            results.append(f"Mana: +{char.mana_current - old_mana}")
+            eff_max = get_effective_mana_max(target_char.mana_max)
+            old_mana = target_char.mana_current
+            target_char.mana_current = _restore_mana(target_char.mana_current, eff_max, amount=amount)
+            tgt_tag = "" if target_char.id == char.id else f" → {target_char.name}"
+            results.append(f"Mana: +{target_char.mana_current - old_mana}{tgt_tag}")
+
+        elif etype == "restore_hp_by_die":
+            # Rework v3: roll the caster's race HP die and heal that amount.
+            # Honors hp_die_bonus / hp_die_count_bonus passive modifiers of the CASTER.
+            from app.models import Race
+            hp_die = 8
+            hp_dice_count = 1
+            if char.race_id:
+                race = await db.get(Race, char.race_id)
+                if race:
+                    hp_die = int(race.hp_die or 8)
+                    hp_dice_count = int(race.hp_dice_count or 1)
+            die_bonus = sum(int(m.value or 0) for m in char.stat_modifiers
+                            if m.is_active and m.stat_name == "hp_die_bonus")
+            count_bonus = sum(int(m.value or 0) for m in char.stat_modifiers
+                              if m.is_active and m.stat_name == "hp_die_count_bonus")
+            hp_die = max(1, hp_die + die_bonus)
+            hp_dice_count = max(1, hp_dice_count + count_bonus)
+            rolls = [random.randint(1, hp_die) for _ in range(hp_dice_count)]
+            total = sum(rolls) + int(eff.get("flat_bonus", 0) or 0)
+            if is_crit:
+                total *= 2
+            old_hp = target_char.current_hp
+            target_char.current_hp = min(target_char.max_hp, target_char.current_hp + total)
+            crit_tag = " CRIT×2" if is_crit else ""
+            tgt_tag = "" if target_char.id == char.id else f" → {target_char.name}"
+            results.append(
+                f"Heal{crit_tag}: {hp_dice_count}d{hp_die}={sum(rolls)} → "
+                f"+{target_char.current_hp - old_hp} HP{tgt_tag}"
+            )
 
         elif etype == "apply_status":
             template_id = eff.get("template_id")
@@ -375,13 +544,14 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
                 tmpl = await db.get(StatusEffectTemplate, template_id)
                 if tmpl:
                     cse = CharacterStatusEffect(
-                        character_id=char.id, template_id=tmpl.id,
+                        character_id=target_char.id, template_id=tmpl.id,
                         name=tmpl.name, icon=tmpl.icon, color=tmpl.color,
                         effects=tmpl.effects,
                         remaining_turns=duration if duration else tmpl.default_duration,
                     )
                     db.add(cse)
-                    results.append(f"Applied: {tmpl.icon} {tmpl.name}")
+                    tgt_tag = "" if target_char.id == char.id else f" → {target_char.name}"
+                    results.append(f"Applied: {tmpl.icon} {tmpl.name}{tgt_tag}")
 
         elif etype == "stat_boost":
             from datetime import timedelta
@@ -389,26 +559,28 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
             value = eff.get("value", 0)
             dur = eff.get("duration_turns", 3)
             mod = StatModifier(
-                character_id=char.id, stat_name=stat,
+                character_id=target_char.id, stat_name=stat,
                 name=f"{ability.name} boost", value=value,
                 is_active=True, source="potion",
                 expires_at=datetime.now(timezone.utc) + timedelta(minutes=dur * 2),
             )
             db.add(mod)
-            results.append(f"+{value} {stat.capitalize()} for {dur} turns")
+            tgt_tag = "" if target_char.id == char.id else f" → {target_char.name}"
+            results.append(f"+{value} {stat.capitalize()} for {dur} turns{tgt_tag}")
 
         elif etype == "remove_status":
             status_name = eff.get("status_name", "")
             if status_name:
                 res = await db.execute(
                     select(CharacterStatusEffect).where(
-                        CharacterStatusEffect.character_id == char.id,
+                        CharacterStatusEffect.character_id == target_char.id,
                         CharacterStatusEffect.name == status_name,
                     )
                 )
                 for cse in res.scalars().all():
                     await db.delete(cse)
-                results.append(f"Removed: {status_name}")
+                tgt_tag = "" if target_char.id == char.id else f" → {target_char.name}"
+                results.append(f"Removed: {status_name}{tgt_tag}")
 
         elif etype == "damage":
             # Rework Phase 6: if a hit roll was required and it missed → skip damage entirely
@@ -419,18 +591,14 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
             dt = _override_dt(eff.get("dice_type", 6))
             fb = eff.get("flat_bonus", 0)
             actual_dc = dc * 2 if is_crit else dc
-            target_id = body.get("target_id")
-            target = await db.get(Character, target_id) if target_id else char
-            if not target:
-                target = char
             rolls = [random.randint(1, dt) for _ in range(max(1, actual_dc))]
             total = sum(rolls) + fb
-            old_hp = target.current_hp
-            target.current_hp = max(0, target.current_hp - total)
-            if target.current_hp <= 0:
-                target.is_alive = False
+            old_hp = target_char.current_hp
+            target_char.current_hp = max(0, target_char.current_hp - total)
+            if target_char.current_hp <= 0:
+                target_char.is_alive = False
             crit_tag = " CRIT×2" if is_crit else ""
-            results.append(f"Damage{crit_tag}: {actual_dc}d{dt}+{fb}={total} → -{old_hp - target.current_hp} HP to {target.name}")
+            results.append(f"Damage{crit_tag}: {actual_dc}d{dt}+{fb}={total} → -{old_hp - target_char.current_hp} HP to {target_char.name}")
 
         elif etype == "custom":
             results.append(f"Effect: {eff.get('description', '')}")
@@ -439,6 +607,10 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     if ability.cooldown_turns > 0:
         ca.cooldown_remaining = ability.cooldown_turns
         results.append(f"Cooldown: {ability.cooldown_turns} turns")
+
+    # Rework v2: decrement the per-use counter when set.
+    if ca.current_uses is not None:
+        ca.current_uses = max(0, ca.current_uses - 1)
 
     await db.commit()
     return {
@@ -449,4 +621,5 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
         "current_hp": char.current_hp,
         "mana_current": char.mana_current,
         "cooldown_remaining": ca.cooldown_remaining,
+        "current_uses": ca.current_uses,
     }

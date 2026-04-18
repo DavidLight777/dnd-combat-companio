@@ -516,10 +516,49 @@
 .ability-card.on-cooldown { opacity: 0.5; pointer-events: none; }
 .ability-card.passive { opacity: 0.85; cursor: default; }
 .ability-card.passive:hover { border-color: var(--border); }
-.ability-card .ab-name { font-weight: 700; font-size: 0.85rem; }
+.ability-card .ab-name { font-weight: 700; font-size: 0.85rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .ability-card .ab-cost { font-size: 0.7rem; color: #60a5fa; }
-.ability-card .ab-cd { font-size: 0.7rem; color: var(--accent-orange); }
+.ability-card .ab-cd   { font-size: 0.7rem; color: var(--accent-orange); }
 .ability-card .ab-desc { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.ability-card .ab-uses { font-size: 0.7rem; color: var(--accent-green); font-weight: 600; }
+.ability-card .ab-uses.depleted { color: var(--accent-red); text-decoration: line-through; }
+.ability-card .ab-cond { font-size: 0.7rem; color: var(--accent); font-style: italic; cursor: help; }
+.ability-card .ab-locked-note { font-size: 0.66rem; color: var(--accent-red); margin-top: 4px; font-style: italic; }
+.ability-card.depleted { opacity: 0.55; cursor: default; border-style: dashed; }
+.ability-card.depleted:hover { border-color: var(--border); }
+
+/* Rework v2: rarity chips moved to base.css (shared by lobby / player / GM) */
+
+/* Rework v2: Level-up CTA pulse + modal */
+@keyframes levelUpPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192,138,42,0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 8px rgba(192,138,42,0); transform: scale(1.03); }
+}
+.lvlup-choice {
+  padding: 12px; border: 2px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg-surface-2); cursor: pointer; transition: all .15s;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.lvlup-choice:hover { border-color: var(--accent); }
+.lvlup-choice.selected { border-color: var(--accent); background: rgba(192,138,42,0.12); }
+.lvlup-choice .lc-title { font-weight: 700; font-size: 0.9rem; }
+.lvlup-choice .lc-sub   { font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; }
+.lvlup-stat-pill {
+  padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-surface); font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; user-select: none; transition: all .12s;
+}
+.lvlup-stat-pill:hover { border-color: var(--accent); }
+.lvlup-stat-pill.picked { background: var(--accent); color: #000; border-color: var(--accent); }
+.lvlup-stat-pill.disabled { opacity: 0.35; cursor: not-allowed; }
+.lvlup-feature-row {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-surface); display: flex; align-items: center; gap: 8px;
+  cursor: pointer; transition: all .15s;
+}
+.lvlup-feature-row:hover { border-color: var(--accent); }
+.lvlup-feature-row.picked { border-color: var(--accent); background: rgba(192,138,42,0.12); }
+.lvlup-feature-row.legendary { opacity: 0.35; cursor: not-allowed; border-style: dashed; }
 
 /* Memory entry */
 .memory-entry {

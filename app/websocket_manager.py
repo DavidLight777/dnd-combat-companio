@@ -91,5 +91,47 @@ class ConnectionManager:
     def count_connected(self, session_code: str) -> int:
         return len(self._connections.get(session_code, []))
 
+    # ──────────────────────────────────────────────────────────
+    # Legacy shim: older routers call `manager.broadcast(session_id, msg)`
+    # with a full dict containing an "event" key. This method resolves
+    # session_id → session_code via DB and delegates to broadcast_to_session.
+    # Without this, those callers silently fail (no-op) because there is no
+    # `broadcast` method on the class — AttributeError was being swallowed
+    # by try/except in the callers.
+    # ──────────────────────────────────────────────────────────
+    async def broadcast(self, session_id, msg: dict):
+        """Legacy shim. Accepts session_id (int) or session_code (str).
+
+        `msg` is expected to be a dict with an "event" key; remaining keys
+        become the payload `data`.
+        """
+        if not isinstance(msg, dict):
+            logger.warning("broadcast() called with non-dict msg, ignoring")
+            return
+        event = msg.get("event")
+        if not event:
+            logger.warning("broadcast() called without 'event' key, ignoring")
+            return
+        data = {k: v for k, v in msg.items() if k != "event"}
+
+        # Fast path: caller already passed a session_code string.
+        if isinstance(session_id, str):
+            await self.broadcast_to_session(session_id, event, data)
+            return
+
+        # Resolve int session_id → session_code via DB lookup.
+        try:
+            from app.database import async_session
+            from app.models import Session as SessionModel
+            async with async_session() as db:
+                sess = await db.get(SessionModel, session_id)
+                if not sess:
+                    logger.warning(f"broadcast(): session_id={session_id} not found")
+                    return
+                code = sess.code
+            await self.broadcast_to_session(code, event, data)
+        except Exception as e:
+            logger.warning(f"broadcast() shim failed (session_id={session_id}): {e}")
+
 
 manager = ConnectionManager()

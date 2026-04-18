@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Player</title>
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/player.css">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv2">
+  <link rel="stylesheet" href="/static/css/player.css?v=reworkv2">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -49,6 +49,8 @@
           <div class="cs-identity">
             <div class="cs-name" id="cs-name">Character</div>
             <div class="cs-rc" id="cs-rc"></div>
+            <!-- Rework v2: age / gender cosmetic line -->
+            <div class="cs-bio" id="cs-bio" style="font-size:0.68rem;color:var(--text-muted);margin-top:2px"></div>
           </div>
           <!-- HP -->
           <div class="cs-bar-block" id="cs-hp-block">
@@ -65,6 +67,11 @@
           <div class="cs-bar-block" id="cs-xp-block">
             <div class="cs-bar-head"><span class="cs-bar-lbl">⭐ XP</span><span class="cs-bar-val" id="cs-xp-value">0</span></div>
             <div class="cs-bar"><div class="cs-bar-fill" id="cs-xp-fill" style="background:#a78bfa"></div></div>
+            <!-- Rework v2: Level-up CTA, shown only when xp >= threshold -->
+            <button class="btn btn-primary btn-sm" id="btn-level-up"
+                    style="display:none;width:100%;margin-top:6px;background:linear-gradient(135deg,#a78bfa,#c08a2a);color:#000;font-weight:800;animation:levelUpPulse 1.6s ease-in-out infinite">
+              ⬆ LEVEL UP!
+            </button>
           </div>
           <!-- Currency (4-type: Platinum, Gold, Silver, Bronze) -->
           <div class="cs-currency" id="cs-currency">
@@ -381,7 +388,7 @@
               <span class="inv-curr-silver">🥈 <strong>0</strong>S</span>
               <span class="inv-curr-copper">🟤 <strong>0</strong>B</span>
             </span>
-            <span style="font-size:0.78rem;color:var(--text-muted)">Weight: <strong id="weight-display">0</strong></span>
+            <span class="slot-meter" id="slot-meter" title="Inventory slot usage" style="font-size:0.78rem;padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border);color:var(--text-muted)">🎒 <strong id="slot-meter-val">0 / 12</strong></span>
             <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>
           </div>
           <div class="panel-body">
@@ -487,9 +494,9 @@
     <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
   </nav>
 
-  <script src="/static/js/websocket-client.js"></script>
-  <script src="/static/js/character-sheet-core.js"></script>
-  <script src="/static/js/map-canvas.js"></script>
-  <script src="/static/js/player-app.js"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv2"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv2"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv2"></script>
+  <script src="/static/js/player-app.js?v=reworkv2"></script>
 </body>
 </html>

@@ -116,9 +116,8 @@ async function loadChar() {
   const profs = Array.isArray(char.professions) ? char.professions : [];
   if (profs.length) {
     badges.push(profs.map(p => `${p.name || 'Profession'} L${p.level}`).join(' / '));
-  } else if (char.class_id) {
-    try { const c = await api.get(`/api/races-classes/classes/${char.class_id}`); badges.push(c.name); } catch {}
   }
+  // Rework v2: Character.class_id is gone; professions are the sole source of truth.
   const rankLabel = (char.rank && char.rank !== 'common') ? ` · ${char.rank.charAt(0).toUpperCase()+char.rank.slice(1)}` : '';
   badges.push(`Lvl ${char.level ?? 0}${rankLabel}`);
   const el = $('#char-rc-badges');
@@ -295,6 +294,16 @@ function renderCharSidebar() {
   const initEl = $('#cs-avatar-initial'); if (initEl) initEl.textContent = (c.name || '?').trim().charAt(0).toUpperCase();
   const avatar = $('#cs-avatar'); if (avatar && c.token_color) avatar.style.background = `linear-gradient(135deg, ${c.token_color} 0%, var(--bg-surface-3) 100%)`;
 
+  // Rework v2: cosmetic age / gender line + declined-stats badge
+  const bioEl = $('#cs-bio');
+  if (bioEl) {
+    const parts = [];
+    if (c.age)    parts.push(`Age ${c.age}`);
+    if (c.gender) parts.push(c.gender);
+    if (c.declined_stats) parts.push('<span style="color:#dc5050;font-weight:600" title="Declined the gift of stats — rolls with advantage on the starting feature">⚔ Walked Alone</span>');
+    bioEl.innerHTML = parts.join(' · ');
+  }
+
   // HP
   const hpPct = c.max_hp > 0 ? Math.min(100, Math.max(0, c.current_hp / c.max_hp * 100)) : 0;
   const hpColor = hpPct > 50 ? 'var(--hp-high)' : hpPct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
@@ -315,18 +324,22 @@ function renderCharSidebar() {
     }
   }
 
-  // XP (level + experience). If no XP progress available, show XP raw + level hint.
+  // XP (level + experience).
   const xpBlk = $('#cs-xp-block');
   if (xpBlk) {
-    const level = c.level || 1;
+    const level = c.level ?? 0;
     const xp = c.experience || 0;
     const xpVal = $('#cs-xp-value');
     const xpFill = $('#cs-xp-fill');
-    // Fallback curve: each level needs level*100 xp
-    const nextThresh = level * 100;
+    // Rework v2 curve: threshold = 100 + 100 * level (matches backend xp_to_next)
+    const nextThresh = 100 + 100 * Math.max(0, level);
     const pct = Math.min(100, (xp / nextThresh) * 100);
     if (xpVal) xpVal.textContent = `Lvl ${level} · ${xp}/${nextThresh}`;
     if (xpFill) xpFill.style.width = pct + '%';
+
+    // Rework v2: expose the Level-up CTA exactly when ready.
+    const lvlBtn = $('#btn-level-up');
+    if (lvlBtn) lvlBtn.style.display = xp >= nextThresh ? '' : 'none';
   }
 }
 
@@ -407,7 +420,9 @@ function renderCharStatsSidebar() {
     { key: 'charisma', label: 'CHA' },
   ];
   grid.innerHTML = stats.map(s => {
-    const base = c[s.key] || 10;
+    // Rework v2: stat value IS the bonus (0..N). 0 is a legitimate value —
+    // declined characters have every stat at 0. Never fall back to 10.
+    const base = (typeof c[s.key] === 'number') ? c[s.key] : 0;
     const mods = (c.stat_modifiers || []).filter(m => m.stat_name === s.key && m.is_active);
     const modSum = mods.reduce((a, m) => a + m.value, 0);
     const total = base + modSum;
@@ -754,18 +769,18 @@ function renderDefense() {
 // HP RECOVERY
 // ══════════════════════════════════════════════════════════════
 function renderHeal() {
+  // Rework v3: the player-side "Roll & Heal" dice widget is retired. Healing
+  // now comes from potions, abilities, and the GM's Full Rest button. We
+  // keep a small manual-HP panel so the player can still toggle HP while
+  // roleplaying (e.g. "I drink a potion").
   const c = char; if (!c) return;
   const body = $('#heal-body');
+  if (!body) return;
   body.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:4px">${makeAdvToggle('heal')}</div>
-    <div class="field-group">
-      <label>Dice:</label><input type="number" id="heal-count" value="${c.hp_dice_count}" min="1" style="width:44px">
-      <label>d</label><input type="number" id="heal-die" value="${c.hp_dice_type}" min="1" style="width:44px">
-      <label>+</label><input type="number" id="heal-mod" value="${c.hp_recovery_modifier}" style="width:44px">
+    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px">
+      💡 Healing comes from <strong>potions</strong>, <strong>abilities</strong>,
+      or a GM <strong>Full Rest</strong>.
     </div>
-    <button class="btn btn-primary btn-sm" id="btn-roll-heal" style="margin:6px 0">💚 Roll & Heal</button>
-    <div class="result-box" id="heal-result"><span class="text-muted">Roll to heal</span></div>
-    <hr class="section-divider">
     <div class="field-group">
       <label>Manual HP:</label>
       <input type="number" id="manual-hp" value="0" style="width:60px">
@@ -773,23 +788,6 @@ function renderHeal() {
       <button class="btn btn-ghost btn-xs" id="btn-set-hp">Set</button>
     </div>
   `;
-  bindAdvToggle(body, 'heal');
-  $('#btn-roll-heal').addEventListener('click', async () => {
-    const cnt = parseInt($('#heal-count').value)||2;
-    const die = parseInt($('#heal-die').value)||12;
-    const mod = parseInt($('#heal-mod').value)||0;
-    const res = await api.post('/api/calc/hp-recovery', {
-      character_id: CHAR_ID, dice_count: cnt, die_type: die, modifier: mod,
-      advantage_mode: getAdvMode('heal'),
-    });
-    char = await api.get(`/api/characters/${CHAR_ID}`);
-    flash($('#hp-card'), 'flash-heal');
-    renderHP();
-    const text = `${res.breakdown || `Rolled: [${res.rolls.join(', ')}] + ${mod} = +${res.total_heal} HP`} → <strong class="heal-num">${res.new_hp}/${res.max_hp}</strong>`;
-    $('#heal-result').innerHTML = text;
-    addRollHistory('heal', `${cnt}d${die}+${mod} = +${res.total_heal}`, res.total_heal);
-    addLog(`[Heal] ${res.breakdown || `${cnt}d${die}+${mod}=[${res.rolls.join(',')}] → +${res.total_heal} HP`}`);
-  });
   $('#btn-add-hp').addEventListener('click', async () => {
     const v = parseInt($('#manual-hp').value)||0;
     if (!v) return;
@@ -1011,16 +1009,32 @@ async function loadInventory() {
   try {
     // Ask server for ALL items; client-side splits bag/equipped for snappy tab switching.
     inventoryData = await api.get(`/api/characters/${CHAR_ID}/inventory?tab=all`);
-    // Rework Phase 3: show bag weight in header (equipped doesn't count)
-    const wEl = $('#weight-display');
-    if (wEl) {
-      const bagW = (inventoryData.total_weight_bag !== undefined) ? inventoryData.total_weight_bag : inventoryData.total_weight;
-      wEl.textContent = bagW;
-    }
     const bagCount = $('#tab-count-bag');
     const eqCount = $('#tab-count-equipped');
     if (bagCount) bagCount.textContent = inventoryData.bag_count ?? '';
     if (eqCount)  eqCount.textContent  = inventoryData.equipped_count ?? '';
+
+    // Rework v2: inventory slot meter
+    const slotMeter    = $('#slot-meter');
+    const slotMeterVal = $('#slot-meter-val');
+    const used = inventoryData.slots_used ?? ((inventoryData.bag_count || 0) + (inventoryData.equipped_count || 0));
+    const cap  = inventoryData.slots_max ?? 0;
+    if (slotMeterVal) slotMeterVal.textContent = cap > 0 ? `${used} / ${cap}` : `${used} (∞)`;
+    if (slotMeter) {
+      slotMeter.classList.remove('slot-meter-warn','slot-meter-full');
+      if (cap > 0) {
+        if (used >= cap) {
+          slotMeter.style.borderColor = 'var(--accent-red)';
+          slotMeter.style.color = 'var(--accent-red)';
+        } else if (used >= cap - 2) {
+          slotMeter.style.borderColor = 'var(--accent-orange)';
+          slotMeter.style.color = 'var(--accent-orange)';
+        } else {
+          slotMeter.style.borderColor = 'var(--border)';
+          slotMeter.style.color = 'var(--text-muted)';
+        }
+      }
+    }
     updateCurrencyDisplay(inventoryData.currency);
     renderEquipmentSlots(inventoryData.items);
     applyInvTab();  // layout is driven by invTab
@@ -1132,14 +1146,16 @@ function renderInventoryGrid(items, opts = {}) {
       ${i.is_equipped ? `<span class="equip-badge">${i.equipped_slot ? SLOT_LABELS[i.equipped_slot] || i.equipped_slot : 'EQ'}</span>` : ''}
       <span class="inv-qty">x${i.quantity}</span>
       <div><span class="inv-icon">${icon}</span><span class="inv-name rarity-${i.rarity}">${i.name}</span></div>
-      <div class="inv-meta">${i.rarity} · ${i.weight}lb</div>
+      <div class="inv-meta">${i.rarity}</div>
       ${bonusText ? `<div class="inv-bonuses">${bonusText}</div>` : ''}
       ${weaponText ? `<div class="inv-weapon-stats">⚔️ ${weaponText}</div>` : ''}
       <div class="inv-desc">${i.description || ''}</div>
       <div class="inv-actions">
         ${i.equippable ? `<button class="btn btn-ghost btn-xs" data-inv-equip="${i.inventory_id}" data-is-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
         ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use="${i.inventory_id}">${i.mana_cost ? '🔮'+i.mana_cost+' ' : ''}Use</button>` : ''}
+        ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use-on="${i.inventory_id}" title="Use on another character">💊 Use on…</button>` : ''}
         ${i.weapon_stats ? `<button class="btn btn-ghost btn-xs" data-inv-poison="${i.inventory_id}" title="Apply poison">💧 Poison</button>` : ''}
+        <button class="btn btn-ghost btn-xs" data-inv-give="${i.inventory_id}" title="Give to another player">🎁 Give</button>
         <button class="btn btn-ghost btn-xs" data-inv-drop="${i.inventory_id}" style="color:var(--accent-red)">Drop</button>
       </div>
     </div>`;
@@ -1206,6 +1222,127 @@ function renderInventoryGrid(items, opts = {}) {
   // Rework Phase 5: Apply poison to weapon
   grid.querySelectorAll('[data-inv-poison]').forEach(btn => {
     btn.addEventListener('click', () => openApplyPoisonModal(btn.dataset.invPoison));
+  });
+
+  // Rework v3: Use consumable on another character
+  grid.querySelectorAll('[data-inv-use-on]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const invId = btn.dataset.invUseOn;
+      const card = btn.closest('.inv-card');
+      const itemName = card?.querySelector('.inv-name')?.textContent || 'item';
+      const target = await openP2PTargetPicker({
+        title: `💊 Use ${itemName} on…`,
+        excludeSelf: true,
+        aliveOnly: true,
+      });
+      if (!target) return;
+      try {
+        const res = await api.post(`/api/inventory/${invId}/use`, { target_id: target.id });
+        (res.results || []).forEach(r => addLog(`🧪 ${itemName} → ${target.name}: ${r}`));
+        showToast(`🧪 Used ${itemName} on ${target.name}`);
+        await loadChar();
+        loadInventory();
+      } catch (e) {
+        const detail = e?.body?.detail || e?.message || 'Failed';
+        showToast(typeof detail === 'object' ? detail.message : String(detail), 'error');
+      }
+    });
+  });
+
+  // Rework v3: Give item to another player
+  grid.querySelectorAll('[data-inv-give]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const invId = btn.dataset.invGive;
+      const card = btn.closest('.inv-card');
+      const itemName = card?.querySelector('.inv-name')?.textContent || 'item';
+      const qtyStr = card?.querySelector('.inv-qty')?.textContent || 'x1';
+      const stackQty = Math.max(1, parseInt(qtyStr.replace(/\D/g, '')) || 1);
+      const target = await openP2PTargetPicker({
+        title: `🎁 Give ${itemName} to…`,
+        excludeSelf: true,
+        playersOnly: true,
+        aliveOnly: true,
+      });
+      if (!target) return;
+      let qty = 1;
+      if (stackQty > 1) {
+        const raw = prompt(`How many ${itemName} to give ${target.name}? (1-${stackQty})`, '1');
+        if (raw === null) return;
+        qty = Math.max(1, Math.min(stackQty, parseInt(raw) || 1));
+      }
+      try {
+        await api.post(`/api/inventory/${invId}/transfer`, {
+          target_character_id: target.id, quantity: qty,
+        });
+        showToast(`🎁 Sent ${itemName} ×${qty} to ${target.name}`);
+        addLog(`🎁 Gave ${itemName} ×${qty} to ${target.name}`);
+        loadInventory();
+      } catch (e) {
+        const detail = e?.body?.detail || e?.message || 'Failed';
+        showToast(typeof detail === 'object' ? detail.message : String(detail), 'error');
+      }
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// Rework v3: shared P2P target picker modal.
+// Returns a Promise<Character | null>. Options:
+//   excludeSelf  — drop the caster from the list (default true)
+//   aliveOnly    — only characters where is_alive=true (default true)
+//   playersOnly  — exclude NPCs (for Give-item flow)
+// ══════════════════════════════════════════════════════════════
+async function openP2PTargetPicker(opts = {}) {
+  const { title = 'Select target', excludeSelf = true,
+          aliveOnly = true, playersOnly = false } = opts;
+  let chars = [];
+  try { chars = await api.get(`/api/sessions/${SESSION_CODE}/characters`); } catch {}
+  const list = chars.filter(c => {
+    if (excludeSelf && c.id == CHAR_ID) return false;
+    if (aliveOnly && c.is_alive === false) return false;
+    if (playersOnly && c.is_npc) return false;
+    return true;
+  });
+  if (!list.length) { showToast('No valid targets available'); return null; }
+
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-content" style="max-width:380px">
+        <h3 style="margin-top:0">${title}</h3>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow-y:auto">
+          ${list.map(c => `
+            <button class="btn btn-ghost btn-sm p2p-target" data-id="${c.id}"
+              style="display:flex;align-items:center;gap:8px;justify-content:flex-start">
+              <span style="width:14px;height:14px;border-radius:50%;background:${c.token_color || '#888'}"></span>
+              <span style="flex:1;text-align:left">
+                <strong>${c.name}</strong>
+                ${c.is_npc ? '<span style="font-size:0.62rem;color:var(--text-muted)">NPC</span>' : ''}
+              </span>
+              <span style="font-size:0.72rem;color:var(--text-muted)">
+                ${c.current_hp ?? '?'}/${c.max_hp ?? '?'} HP
+              </span>
+            </button>
+          `).join('')}
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button class="btn btn-ghost btn-sm" data-cancel>Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('.p2p-target').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = parseInt(b.dataset.id);
+        const chosen = list.find(c => c.id === id) || null;
+        overlay.remove();
+        resolve(chosen);
+      });
+    });
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => {
+      overlay.remove();
+      resolve(null);
+    });
   });
 }
 
@@ -1732,6 +1869,27 @@ ws.on('status.updated', d => {
 });
 ws.on('session.status_change', d => {
   if (d.status === 'ended') addLog('[Session] Ended by GM');
+});
+// Rework v3: Player-to-player item transfer.
+ws.on('inventory.transferred', d => {
+  const me = parseInt(CHAR_ID);
+  if (d.from_character_id === me) {
+    showToast(`🎁 Sent ${d.item_name} ×${d.quantity} to ${d.to_character_name}`);
+    loadInventory();
+  } else if (d.to_character_id === me) {
+    showToast(`🎁 Received ${d.item_name} ×${d.quantity} from ${d.from_character_name}`);
+    addLog(`🎁 Received ${d.item_name} ×${d.quantity} from ${d.from_character_name}`);
+    loadInventory();
+  }
+});
+// Rework v3: GM triggered Full Rest — refresh and notify the player.
+ws.on('session.full_rest', async () => {
+  try {
+    char = await api.get(`/api/characters/${CHAR_ID}`);
+    renderAll();
+  } catch {}
+  showToast('🌙 Full Rest — HP, mana, cooldowns and uses restored');
+  addLog('[Rest] Full Rest applied by GM');
 });
 // Stage 3: Economy WS events
 ws.on('currency.updated', d => {
@@ -2702,13 +2860,13 @@ function renderTableView() {
     ? npcs.map(c => _renderTableCard(c, curTurnId)).join('')
     : '<span class="text-muted" style="font-size:0.78rem">GM hasn\'t placed anyone yet</span>';
 
-  // Wire clicks — only NPCs are selectable
+  // Rework v3: any character is selectable — PvP / ally-heal both allowed.
+  // The caster is excluded so you don't accidentally pick yourself as a target.
   [tmEl, npcEl].forEach(container => {
     container.querySelectorAll('.table-card').forEach(card => {
-      const isNpc = card.dataset.isNpc === '1';
-      if (!isNpc) return;
+      const tid = parseInt(card.dataset.targetId);
+      if (tid === parseInt(CHAR_ID)) return;
       card.addEventListener('click', () => {
-        const tid = parseInt(card.dataset.targetId);
         selectedTargetId = tid === selectedTargetId ? null : tid;
         renderTableView();
         updateTargetInfo();
@@ -3640,13 +3798,31 @@ function renderAbilities() {
     const costParts = [];
     if (a.mana_cost) costParts.push(`🔮 ${a.mana_cost}`);
     if (a.hp_cost) costParts.push(`❤️ ${a.hp_cost}`);
-    return `<div class="ability-card ${onCd ? 'on-cooldown' : ''} ${a.ability_type === 'passive' ? 'passive' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${a.color||'#60a5fa'}">
-      <div class="ab-name">${a.icon||'⚡'} ${a.name} ${typeBadge}</div>
-      ${costParts.length ? `<div class="ab-cost">${costParts.join(' · ')}</div>` : ''}
-      ${onCd ? `<div class="ab-cd">⏳ ${a.cooldown_remaining} turns</div>` : ''}
-      ${a.cooldown_turns && !onCd ? `<div class="ab-cd" style="opacity:0.5">CD: ${a.cooldown_turns}t</div>` : ''}
-      ${a.damage_dice_count ? `<div style="font-size:0.68rem;color:var(--text-muted)">${a.damage_dice_count}d${a.damage_dice_type} ${a.damage_type||''}</div>` : ''}
+    // Rework v2: uses counter + conditional flavor + rarity chip
+    const hasUses = a.current_uses !== null && a.current_uses !== undefined;
+    const maxUses = a.max_uses;
+    const depleted = hasUses && a.current_uses <= 0;
+    const usesTag = hasUses
+      ? `<span class="ab-uses ${depleted ? 'depleted' : ''}" title="Uses remaining">⚡ ${a.current_uses}${maxUses ? ` / ${maxUses}` : ''}</span>`
+      : '';
+    const condTag = a.is_conditional
+      ? `<span class="ab-cond" title="${(a.conditional_text || 'GM discretion').replace(/"/g,'&quot;')}">※ Conditional</span>`
+      : '';
+    const rarity = a.rarity || 'common';
+    const rarityChip = `<span class="rarity-chip rarity-${rarity}">${rarity}</span>`;
+    const clickable = !onCd && a.ability_type !== 'passive' && !depleted;
+    return `<div class="ability-card ${onCd ? 'on-cooldown' : ''} ${depleted ? 'depleted' : ''} ${a.ability_type === 'passive' ? 'passive' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${a.color||'#60a5fa'}">
+      <div class="ab-name">${a.icon||'⚡'} ${a.name} ${typeBadge} ${rarityChip}</div>
+      <div class="ab-meta" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">
+        ${costParts.length ? `<span class="ab-cost">${costParts.join(' · ')}</span>` : ''}
+        ${usesTag}
+        ${condTag}
+        ${onCd ? `<span class="ab-cd">⏳ ${a.cooldown_remaining} turns</span>` : ''}
+        ${a.cooldown_turns && !onCd ? `<span class="ab-cd" style="opacity:0.5">CD: ${a.cooldown_turns}t</span>` : ''}
+      </div>
+      ${a.damage_dice_count ? `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">${a.damage_dice_count}d${a.damage_dice_type} ${a.damage_type||''}</div>` : ''}
       <div class="ab-desc">${a.flavor_text || a.description || ''}</div>
+      ${!clickable && a.ability_type !== 'passive' ? '<div class="ab-locked-note">Not usable</div>' : ''}
     </div>`;
   }
 
@@ -3665,8 +3841,8 @@ function renderAbilities() {
   }
   grid.innerHTML = html;
 
-  // Wire active + reaction click-to-use (not passive)
-  grid.querySelectorAll('.ability-card:not(.on-cooldown):not(.passive)').forEach(card => {
+  // Wire active + reaction click-to-use (not passive, not depleted, not on CD)
+  grid.querySelectorAll('.ability-card:not(.on-cooldown):not(.passive):not(.depleted)').forEach(card => {
     card.addEventListener('click', async () => {
       const caId = card.dataset.caId;
       const ab = abilitiesData.find(a => a.character_ability_id == caId);
@@ -3889,6 +4065,214 @@ function initFreeRollWidget() {
     },
   });
 }
+
+// ══════════════════════════════════════════════════════════════
+// Rework v2 — LEVEL-UP MODAL
+// ══════════════════════════════════════════════════════════════
+const _RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+const _STAT_KEYS = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+
+function openLevelUpModal() {
+  if (document.getElementById('levelup-modal')) return;
+  if (!char) return;
+
+  const level = char.level ?? 0;
+  const xp = char.experience || 0;
+  const thresh = 100 + 100 * Math.max(0, level);
+  if (xp < thresh) {
+    showToast(`Need ${thresh - xp} more XP to level up.`, 'warn');
+    return;
+  }
+
+  // Race HP die copy (if no race, backend defaults to 1d8)
+  const hpCount = char.race?.hp_dice_count || char.hp_dice_count || 1;
+  const hpDie   = char.race?.hp_die       || char.hp_die       || 8;
+  const hpDieStr = `${hpCount}d${hpDie}`;
+
+  // Upgradeable abilities (not legendary)
+  const upgradable = (abilitiesData || []).filter(a => {
+    const r = (a.rarity || 'common').toLowerCase();
+    return _RARITY_ORDER.indexOf(r) < _RARITY_ORDER.length - 1;
+  });
+
+  let mode = 'stats';          // 'stats' | 'upgrade_feature'
+  let statA = null, statB = null;
+  let pickedCabId = null;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'levelup-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:520px">
+      <h2 style="margin:0 0 4px">⬆ Level ${level} → ${level + 1}</h2>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
+        Your racial HP die (<strong>${hpDieStr}</strong>) will be rolled on confirm — result is server-side.
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="lvlup-choice ${mode==='stats'?'selected':''}" data-mode="stats">
+          <div class="lc-title">+1 to two stats</div>
+          <div class="lc-sub">Each stat is the roll bonus itself — STR 3 means +3 to strength rolls.</div>
+        </div>
+        <div class="lvlup-choice ${mode==='upgrade_feature'?'selected':''} ${upgradable.length ? '' : 'disabled'}" data-mode="upgrade_feature"
+             ${upgradable.length ? '' : 'title="You need at least one non-legendary feature"'}>
+          <div class="lc-title">Upgrade a feature</div>
+          <div class="lc-sub">Auto d4-roll into the next-rarity bucket of the GM's starting pool.</div>
+        </div>
+      </div>
+
+      <!-- Stats picker -->
+      <div id="lvlup-stats-pane" style="margin-bottom:12px">
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">Pick two DIFFERENT stats to boost:</div>
+        <div id="lvlup-stat-pills" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+
+      <!-- Feature picker -->
+      <div id="lvlup-feature-pane" style="display:none;margin-bottom:12px">
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">Pick the feature to upgrade:</div>
+        <div id="lvlup-feature-list" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto"></div>
+        <div style="font-size:0.68rem;color:var(--text-muted);font-style:italic;margin-top:6px">
+          The server will roll a d4 against the pool of the next rarity and replace the chosen feature.
+        </div>
+      </div>
+
+      <div id="lvlup-error" class="error-msg" style="color:var(--accent-red);font-size:0.78rem;min-height:14px;margin-bottom:6px"></div>
+
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="lvlup-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="lvlup-confirm" disabled>⚔ Confirm & Roll</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#lvlup-cancel').addEventListener('click', () => overlay.remove());
+
+  const err = overlay.querySelector('#lvlup-error');
+  const confirmBtn = overlay.querySelector('#lvlup-confirm');
+  const statsPane  = overlay.querySelector('#lvlup-stats-pane');
+  const featPane   = overlay.querySelector('#lvlup-feature-pane');
+  const statPills  = overlay.querySelector('#lvlup-stat-pills');
+  const featList   = overlay.querySelector('#lvlup-feature-list');
+
+  function updateConfirmability() {
+    err.textContent = '';
+    if (mode === 'stats') {
+      confirmBtn.disabled = !(statA && statB && statA !== statB);
+    } else {
+      confirmBtn.disabled = !pickedCabId;
+    }
+  }
+
+  function renderStatPills() {
+    statPills.innerHTML = _STAT_KEYS.map(s => {
+      const val = char[s] ?? 0;
+      const picked = (s === statA || s === statB);
+      return `<span class="lvlup-stat-pill ${picked ? 'picked' : ''}" data-stat="${s}">
+        ${s.slice(0,3).toUpperCase()} <span style="opacity:0.7;margin-left:4px">${val} → ${picked ? val + 1 : val}</span>
+      </span>`;
+    }).join('');
+    statPills.querySelectorAll('.lvlup-stat-pill').forEach(p => {
+      p.addEventListener('click', () => {
+        const s = p.dataset.stat;
+        if (s === statA) { statA = null; }
+        else if (s === statB) { statB = null; }
+        else if (!statA) { statA = s; }
+        else if (!statB) { statB = s; }
+        else { statA = statB; statB = s; }  // rotate: FIFO replace
+        renderStatPills();
+        updateConfirmability();
+      });
+    });
+  }
+
+  function renderFeatureList() {
+    if (!abilitiesData || !abilitiesData.length) {
+      featList.innerHTML = '<span class="text-muted" style="font-size:0.78rem">You have no features yet.</span>';
+      return;
+    }
+    featList.innerHTML = abilitiesData.map(a => {
+      const r = (a.rarity || 'common').toLowerCase();
+      const isLegendary = _RARITY_ORDER.indexOf(r) >= _RARITY_ORDER.length - 1;
+      const nextR = !isLegendary ? _RARITY_ORDER[_RARITY_ORDER.indexOf(r) + 1] : null;
+      return `<div class="lvlup-feature-row ${isLegendary ? 'legendary' : ''} ${pickedCabId === a.character_ability_id ? 'picked' : ''}"
+                   data-cab-id="${a.character_ability_id}">
+        <span style="font-size:1rem">${a.icon || '⚡'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:0.85rem">${a.name}</div>
+          <div style="font-size:0.7rem;color:var(--text-muted)">${a.flavor_text || a.description || ''}</div>
+        </div>
+        <span class="rarity-chip rarity-${r}">${r}</span>
+        ${nextR ? `<span style="font-size:0.66rem;color:var(--text-muted)">→</span><span class="rarity-chip rarity-${nextR}">${nextR}</span>`
+                : `<span style="font-size:0.66rem;color:var(--text-muted)">max</span>`}
+      </div>`;
+    }).join('');
+    featList.querySelectorAll('.lvlup-feature-row:not(.legendary)').forEach(row => {
+      row.addEventListener('click', () => {
+        pickedCabId = parseInt(row.dataset.cabId);
+        featList.querySelectorAll('.lvlup-feature-row').forEach(r => r.classList.toggle('picked', r === row));
+        updateConfirmability();
+      });
+    });
+  }
+
+  overlay.querySelectorAll('.lvlup-choice').forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.classList.contains('disabled')) return;
+      mode = card.dataset.mode;
+      overlay.querySelectorAll('.lvlup-choice').forEach(c => c.classList.toggle('selected', c === card));
+      statsPane.style.display = mode === 'stats' ? '' : 'none';
+      featPane .style.display = mode === 'upgrade_feature' ? '' : 'none';
+      updateConfirmability();
+    });
+  });
+
+  renderStatPills();
+  renderFeatureList();
+  updateConfirmability();
+
+  overlay.querySelector('#lvlup-confirm').addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Rolling…';
+    const payload = { choice: mode };
+    if (mode === 'stats') { payload.stat_a = statA; payload.stat_b = statB; }
+    else                  { payload.character_ability_id = pickedCabId; }
+
+    try {
+      const res = await api.post(`/api/characters/${CHAR_ID}/level-up`, payload);
+      const rolls = (res.chosen?.hp_rolls || []).join(' + ');
+      const total = res.chosen?.hp_gained ?? '?';
+      overlay.innerHTML = `
+        <div class="modal-content" style="max-width:480px;text-align:center">
+          <h2 style="margin-top:0">🎉 Level ${res.level} achieved!</h2>
+          <div style="font-size:2rem;font-weight:800;color:var(--accent-green);margin:8px 0">+${total} HP</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
+            ${res.chosen?.hp_dice_count}d${res.chosen?.hp_die}: ${rolls || '?'}
+          </div>
+          ${res.chosen?.choice === 'stats'
+            ? `<div style="font-size:0.86rem">+1 <strong>${res.chosen.stat_a}</strong> · +1 <strong>${res.chosen.stat_b}</strong></div>`
+            : `<div style="font-size:0.86rem">Upgraded to <span class="rarity-chip rarity-${res.chosen.new_rarity}">${res.chosen.new_rarity}</span> — rolled d${res.chosen.d_size} = ${res.chosen.d_rolled}</div>`}
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
+            Next threshold: <strong>${res.xp_to_next}</strong> XP
+          </div>
+          <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
+        </div>`;
+      overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
+      addLog(`⬆ Level ${res.level} · +${total} HP · ${res.chosen?.choice === 'stats' ? `+${res.chosen.stat_a}/${res.chosen.stat_b}` : `upgrade → ${res.chosen.new_rarity}`}`);
+      await loadChar();
+      await loadAbilities();
+    } catch (e) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '⚔ Confirm & Roll';
+      const d = e?.body?.detail;
+      err.textContent = typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || e.message || 'Level-up failed');
+    }
+  });
+}
+
+// Wire the Level-up CTA once at load.
+document.addEventListener('click', e => {
+  if (e.target && e.target.closest('#btn-level-up')) openLevelUpModal();
+});
 
 // ══════════════════════════════════════════════════════════════
 // INIT

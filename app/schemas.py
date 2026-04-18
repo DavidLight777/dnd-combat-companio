@@ -10,8 +10,11 @@ class SessionCreate(BaseModel):
 class SessionJoin(BaseModel):
     session_code: str
     player_name: str
+    # Rework v2: identity (cosmetic) + race. Class/profession is assigned by
+    # the GM AFTER creation via the character_professions M:N table, not here.
     race_id: int | None = None
-    class_id: int | None = None
+    age: int | None = None
+    gender: str | None = None
 
 
 class SessionOut(BaseModel):
@@ -54,9 +57,6 @@ class CharacterUpdate(BaseModel):
     intelligence: Optional[int] = None
     wisdom: Optional[int] = None
     charisma: Optional[int] = None
-    hp_dice_count: Optional[int] = None
-    hp_dice_type: Optional[int] = None
-    hp_recovery_modifier: Optional[int] = None
     initiative_bonus: Optional[int] = None
     token_color: Optional[str] = None
     notes: Optional[str] = None
@@ -73,9 +73,13 @@ class CharacterUpdate(BaseModel):
     level: Optional[int] = None
     experience: Optional[int] = None
     race_id: Optional[int] = None
-    class_id: Optional[int] = None
     is_alive: Optional[bool] = None
     gm_notes: Optional[str] = None
+    # Rework v2: identity (cosmetic) + inventory cap + decline state
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    max_inventory_slots: Optional[int] = None
+    declined_stats: Optional[bool] = None
 
 
 class HpPatch(BaseModel):
