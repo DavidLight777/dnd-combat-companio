@@ -107,20 +107,185 @@ async function loadChar() {
   renderAll();
   renderCharSidebar();  // FIX 2
 
-  // Load race/class badges
+  // Load race + profession badges (Rework Phase 4: multi-profession list)
   const badges = [];
   if (char.race_id) {
     try { const r = await api.get(`/api/races-classes/races/${char.race_id}`); badges.push(r.name); } catch {}
   }
-  if (char.class_id) {
+  // Prefer the new professions array; fall back to legacy class_id
+  const profs = Array.isArray(char.professions) ? char.professions : [];
+  if (profs.length) {
+    badges.push(profs.map(p => `${p.name || 'Profession'} L${p.level}`).join(' / '));
+  } else if (char.class_id) {
     try { const c = await api.get(`/api/races-classes/classes/${char.class_id}`); badges.push(c.name); } catch {}
   }
-  badges.push(`Lvl ${char.level || 1}`);
+  const rankLabel = (char.rank && char.rank !== 'common') ? ` · ${char.rank.charAt(0).toUpperCase()+char.rank.slice(1)}` : '';
+  badges.push(`Lvl ${char.level ?? 0}${rankLabel}`);
   const el = $('#char-rc-badges');
   if (el) el.textContent = badges.join(' · ');
   // Update sidebar identity line with same info
   const rcEl = $('#cs-rc');
   if (rcEl) rcEl.textContent = badges.join(' · ');
+  // Render the dedicated Professions tab/panel
+  renderProfessionsPanel(profs);
+  // Rework Phase 7: check if the starting-item wizard is still open for this character
+  maybeShowStartingItemWizard();
+}
+
+// ══════════════════════════════════════════════════════════════
+// Rework Phase 7 — Starting Item Wizard (step 4-5)
+// ══════════════════════════════════════════════════════════════
+async function maybeShowStartingItemWizard() {
+  if (!CHAR_ID) return;
+  try {
+    const ws = await api.get(`/api/wizard/${CHAR_ID}`);
+    if (ws.is_completed) return;
+    if (document.getElementById('wiz-starting-item')) return;  // already shown
+    openStartingItemWizard(ws);
+  } catch (e) { /* ignore — wizard is optional */ }
+}
+
+function openStartingItemWizard(ws) {
+  const overlay = document.createElement('div');
+  overlay.id = 'wiz-starting-item';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:480px">
+      <h2 style="margin-top:0">🎲 Starting Item</h2>
+      <p style="font-size:0.85rem;color:var(--text-muted)">
+        Every adventurer begins with a single piece of gear. Roll the dice to determine its quality,
+        then describe the item. Your GM will approve it before it goes into your bag.
+      </p>
+      <div id="wiz-body"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  renderWizardBody(overlay, ws);
+}
+
+function renderWizardBody(overlay, ws) {
+  const body = overlay.querySelector('#wiz-body');
+  const data = ws.data || {};
+  // Branch: rolled? approved? rejected?
+  if (ws.is_completed) { overlay.remove(); loadInventory(); return; }
+
+  if (!data.starting_roll) {
+    body.innerHTML = `
+      <div style="text-align:center;padding:18px 0">
+        <button class="btn btn-primary btn-lg" id="wiz-roll">🎲 Roll d20</button>
+      </div>`;
+    body.querySelector('#wiz-roll').addEventListener('click', async () => {
+      try {
+        const res = await api.post(`/api/wizard/${CHAR_ID}/starting-roll`, {});
+        addLog('wizard', `🎲 Rolled ${res.d20} → ${res.rarity.toUpperCase()}`);
+        renderWizardBody(overlay, res.state);
+      } catch (e) { showToast('Roll failed'); }
+    });
+    return;
+  }
+
+  const r = data.starting_roll;
+  const rarity = r.rarity;
+  const description = rarityDescription(r.d20);
+  if (data.gm_approved) { overlay.remove(); loadInventory(); return; }
+
+  if (data.proposed_item && !data.gm_rejected) {
+    // Waiting for GM
+    body.innerHTML = `
+      <div style="padding:10px;background:var(--bg-surface-2);border-radius:var(--r-md);margin-bottom:10px">
+        <div style="font-size:0.8rem;color:var(--text-muted)">Your roll</div>
+        <div style="font-size:1.1rem"><strong>d20 = ${r.d20}</strong> · ${description}</div>
+      </div>
+      <div style="padding:10px;border:1px dashed var(--border);border-radius:var(--r-md);margin-bottom:10px">
+        <div style="font-size:0.75rem;color:var(--text-muted)">Proposed item (<strong class="rarity-${rarity}">${rarity}</strong>)</div>
+        <div style="font-weight:700;font-size:1rem">${escapeHtml(data.proposed_item.name)}</div>
+        <div style="font-size:0.78rem;color:var(--text-muted)">${escapeHtml(data.proposed_item.description || '')}</div>
+      </div>
+      <div style="text-align:center;font-size:0.85rem;color:var(--accent-green)">⏳ Waiting for GM to approve…</div>`;
+    // Poll — simple re-fetch every 3s
+    const t = setInterval(async () => {
+      try {
+        const ws2 = await api.get(`/api/wizard/${CHAR_ID}`);
+        if (ws2.is_completed) { clearInterval(t); overlay.remove(); loadInventory(); return; }
+        if (ws2.data?.gm_rejected) { clearInterval(t); renderWizardBody(overlay, ws2); return; }
+      } catch {}
+    }, 3000);
+    return;
+  }
+
+  // Propose item form (first time or after rejection)
+  const rejectedNote = data.gm_rejected ? data.gm_reject_note || 'The GM asked you to propose a different item.' : '';
+  body.innerHTML = `
+    <div style="padding:10px;background:var(--bg-surface-2);border-radius:var(--r-md);margin-bottom:10px">
+      <div style="font-size:0.8rem;color:var(--text-muted)">Your roll</div>
+      <div style="font-size:1.1rem"><strong>d20 = ${r.d20}</strong> · ${description}</div>
+      <div style="margin-top:4px">Rarity: <strong class="rarity-${rarity}" style="text-transform:capitalize">${rarity}</strong></div>
+    </div>
+    ${rejectedNote ? `<div style="padding:8px;border:1px solid var(--accent-red);border-radius:var(--r-sm);margin-bottom:10px;font-size:0.82rem;color:var(--accent-red)">GM: ${escapeHtml(rejectedNote)}</div>` : ''}
+    <label style="font-size:0.78rem">Item Name</label>
+    <input type="text" id="wiz-item-name" placeholder="e.g. Bronze Dagger" style="width:100%;margin-bottom:8px">
+    <label style="font-size:0.78rem">Description</label>
+    <textarea id="wiz-item-desc" rows="3" placeholder="A short description…" style="width:100%;margin-bottom:8px"></textarea>
+    <label style="font-size:0.78rem">Category</label>
+    <select id="wiz-item-cat" style="width:100%;margin-bottom:12px">
+      <option value="weapon">Weapon</option>
+      <option value="armor">Armor</option>
+      <option value="potion">Potion</option>
+      <option value="misc" selected>Miscellaneous</option>
+    </select>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-primary btn-sm" id="wiz-submit">Send to GM</button>
+    </div>`;
+  body.querySelector('#wiz-submit').addEventListener('click', async () => {
+    const name = body.querySelector('#wiz-item-name').value.trim();
+    if (!name) { showToast('Give your item a name'); return; }
+    const description = body.querySelector('#wiz-item-desc').value.trim();
+    const category = body.querySelector('#wiz-item-cat').value;
+    try {
+      const res = await api.post(`/api/wizard/${CHAR_ID}/propose-item`, { name, description, category });
+      addLog('wizard', `📝 Proposed starting item: ${name}`);
+      renderWizardBody(overlay, res);
+    } catch (e) { showToast('Failed to send proposal'); }
+  });
+}
+
+function rarityDescription(d20) {
+  if (d20 <= 1)  return 'Cursed start — broken or tainted.';
+  if (d20 <= 9)  return 'Common quality.';
+  if (d20 <= 14) return 'Uncommon find.';
+  if (d20 <= 19) return 'Rare treasure!';
+  return '✨ LEGENDARY ROLL — Epic item!';
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Rework Phase 4: render player's professions list.
+function renderProfessionsPanel(professions) {
+  const panel = document.getElementById('professions-list');
+  if (!panel) return;
+  if (!professions || !professions.length) {
+    panel.innerHTML = '<span class="text-muted" style="font-size:0.82rem">No professions yet — ask your GM to assign one.</span>';
+    return;
+  }
+  panel.innerHTML = professions.map(p => {
+    const bonuses = Array.isArray(p.bonuses) ? p.bonuses : [];
+    const bonusChips = bonuses.map(b => {
+      if (b.type === 'stat_bonus') return `<span class="chip-muted">${(b.stat||'').slice(0,3).toUpperCase()}+${b.value}</span>`;
+      return `<span class="chip-muted">${(b.type||'').replace(/_/g,' ')}+${b.value||0}</span>`;
+    }).join('');
+    const abilities = Array.isArray(p.special_abilities) ? p.special_abilities : [];
+    return `<div class="profession-card">
+      <div class="prof-head">
+        <span class="prof-name">${p.name || 'Profession'}</span>
+        <span class="prof-level">L ${p.level}/5</span>
+        ${p.is_active ? '' : '<span class="chip-muted">inactive</span>'}
+      </div>
+      ${p.description ? `<div class="prof-desc">${p.description}</div>` : ''}
+      ${bonusChips ? `<div class="prof-bonuses">${bonusChips}</div>` : ''}
+      ${abilities.length ? `<ul class="prof-abilities">${abilities.map(a => `<li>${a}</li>`).join('')}</ul>` : ''}
+    </div>`;
+  }).join('');
 }
 
 // FIX 2: Populate left character sidebar from `char` state
@@ -839,17 +1004,50 @@ const SLOT_LABELS = {
 
 let inventoryData = null;  // cached inventory response
 let invFilter = 'all';
+let invTab = 'bag';  // Rework Phase 3: 'bag' | 'equipped'
 
 async function loadInventory() {
   if (!CHAR_ID) return;
   try {
-    inventoryData = await api.get(`/api/characters/${CHAR_ID}/inventory`);
-    $('#weight-display').textContent = inventoryData.total_weight;
+    // Ask server for ALL items; client-side splits bag/equipped for snappy tab switching.
+    inventoryData = await api.get(`/api/characters/${CHAR_ID}/inventory?tab=all`);
+    // Rework Phase 3: show bag weight in header (equipped doesn't count)
+    const wEl = $('#weight-display');
+    if (wEl) {
+      const bagW = (inventoryData.total_weight_bag !== undefined) ? inventoryData.total_weight_bag : inventoryData.total_weight;
+      wEl.textContent = bagW;
+    }
+    const bagCount = $('#tab-count-bag');
+    const eqCount = $('#tab-count-equipped');
+    if (bagCount) bagCount.textContent = inventoryData.bag_count ?? '';
+    if (eqCount)  eqCount.textContent  = inventoryData.equipped_count ?? '';
     updateCurrencyDisplay(inventoryData.currency);
     renderEquipmentSlots(inventoryData.items);
-    renderInventoryGrid(inventoryData.items);
+    applyInvTab();  // layout is driven by invTab
     renderActionMenu();
   } catch(e) { console.warn('loadInventory:', e); }
+}
+
+// Rework Phase 3: switch between Bag and Equipped views.
+function applyInvTab() {
+  const items = (inventoryData && inventoryData.items) || [];
+  const equipPanel = $('#equipment-panel');
+  const filterTabs = $('#inv-filter-tabs');
+  // Highlight active top-tab
+  document.querySelectorAll('#inv-tab-bar .inv-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.invTab === invTab);
+  });
+  if (invTab === 'equipped') {
+    if (equipPanel) equipPanel.style.display = '';
+    if (filterTabs) filterTabs.style.display = 'none';
+    const eqOnly = items.filter(i => i.is_equipped);
+    renderInventoryGrid(eqOnly, { bypassFilter: true });
+  } else {
+    if (equipPanel) equipPanel.style.display = 'none';
+    if (filterTabs) filterTabs.style.display = '';
+    const bagOnly = items.filter(i => !i.is_equipped);
+    renderInventoryGrid(bagOnly);
+  }
 }
 
 function updateCurrencyDisplay(c) {
@@ -900,15 +1098,14 @@ function renderEquipmentSlots(items) {
 
 function filterItems(items) {
   if (invFilter === 'all') return items;
-  if (invFilter === 'equipped') return items.filter(i => i.is_equipped);
   // FIX 6: potion filter matches both is_potion flag and legacy "potion" category
   if (invFilter === 'potion') return items.filter(i => i.is_potion || i.category === 'potion');
   return items.filter(i => i.category === invFilter);
 }
 
-function renderInventoryGrid(items) {
+function renderInventoryGrid(items, opts = {}) {
   const grid = $('#inventory-grid');
-  const filtered = filterItems(items);
+  const filtered = opts.bypassFilter ? items : filterItems(items);
   if (!filtered || !filtered.length) {
     grid.innerHTML = '<span class="text-muted" style="font-size:0.8rem">No items.</span>';
     return;
@@ -942,6 +1139,7 @@ function renderInventoryGrid(items) {
       <div class="inv-actions">
         ${i.equippable ? `<button class="btn btn-ghost btn-xs" data-inv-equip="${i.inventory_id}" data-is-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
         ${i.consumable ? `<button class="btn btn-ghost btn-xs" data-inv-use="${i.inventory_id}">${i.mana_cost ? '🔮'+i.mana_cost+' ' : ''}Use</button>` : ''}
+        ${i.weapon_stats ? `<button class="btn btn-ghost btn-xs" data-inv-poison="${i.inventory_id}" title="Apply poison">💧 Poison</button>` : ''}
         <button class="btn btn-ghost btn-xs" data-inv-drop="${i.inventory_id}" style="color:var(--accent-red)">Drop</button>
       </div>
     </div>`;
@@ -1004,6 +1202,84 @@ function renderInventoryGrid(items) {
       }
     });
   });
+
+  // Rework Phase 5: Apply poison to weapon
+  grid.querySelectorAll('[data-inv-poison]').forEach(btn => {
+    btn.addEventListener('click', () => openApplyPoisonModal(btn.dataset.invPoison));
+  });
+}
+
+// Rework Phase 5: player-side poison selection modal.
+async function openApplyPoisonModal(inventoryId) {
+  let poisons = [];
+  try { poisons = await api.get('/api/poison-templates'); } catch {}
+  if (!poisons.length) { showToast('No poisons available. Ask GM to create one.'); return; }
+  // Current coat (if any)
+  let current = null;
+  try { current = await api.get(`/api/inventory/${inventoryId}/applied-poison`); } catch {}
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:420px">
+      <h3 style="margin-top:0">💧 Apply Poison</h3>
+      ${current ? `<div style="margin-bottom:10px;font-size:0.8rem;color:var(--accent-green)">
+        Current: ${current.template?.icon||''} ${current.template?.name||''} —
+        ${current.charges_remaining} charges · ${current.turns_per_hit} turn(s)/hit
+        <button class="btn btn-ghost btn-xs" id="poison-remove" style="margin-left:6px">Remove</button>
+      </div>` : ''}
+      <label style="font-size:0.78rem">Poison</label>
+      <select id="poison-new-tpl" style="width:100%;margin-bottom:8px">
+        ${poisons.map(p => `<option value="${p.id}">${p.icon} ${p.name} — ${p.damage_dice_count}d${p.damage_dice_type} ${p.damage_type}</option>`).join('')}
+      </select>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <label style="font-size:0.75rem">Charges</label>
+          <input type="number" id="poison-new-charges" min="1" max="50" value="${poisons[0].default_charges}" style="width:100%">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:0.75rem">Turns/hit</label>
+          <input type="number" id="poison-new-turns" min="1" max="20" value="${poisons[0].default_turns_per_hit}" style="width:100%">
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="poison-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="poison-apply">Apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Keep defaults synced with selected poison
+  const sel = overlay.querySelector('#poison-new-tpl');
+  sel.addEventListener('change', () => {
+    const p = poisons.find(x => x.id === parseInt(sel.value, 10));
+    if (p) {
+      overlay.querySelector('#poison-new-charges').value = p.default_charges;
+      overlay.querySelector('#poison-new-turns').value = p.default_turns_per_hit;
+    }
+  });
+
+  overlay.querySelector('#poison-cancel').addEventListener('click', () => overlay.remove());
+  const rm = overlay.querySelector('#poison-remove');
+  if (rm) rm.addEventListener('click', async () => {
+    try {
+      await api.del(`/api/inventory/${inventoryId}/apply-poison`);
+      showToast('Poison removed');
+      overlay.remove();
+      loadInventory();
+    } catch (e) { showToast('Failed to remove poison'); }
+  });
+  overlay.querySelector('#poison-apply').addEventListener('click', async () => {
+    const poison_template_id = parseInt(sel.value, 10);
+    const charges = parseInt(overlay.querySelector('#poison-new-charges').value, 10);
+    const turns_per_hit = parseInt(overlay.querySelector('#poison-new-turns').value, 10);
+    try {
+      await api.post(`/api/inventory/${inventoryId}/apply-poison`, { poison_template_id, charges, turns_per_hit });
+      showToast('💧 Weapon coated with poison');
+      overlay.remove();
+      loadInventory();
+    } catch (e) { showToast(e?.message || 'Failed to apply poison'); }
+  });
 }
 
 // ── Slot Selector ───────────────────────────────────────────
@@ -1055,7 +1331,16 @@ $$('.inv-filter').forEach(btn => {
     $$('.inv-filter').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     invFilter = btn.dataset.invFilter;
-    if (inventoryData) renderInventoryGrid(inventoryData.items);
+    // Rework Phase 3: always re-render via applyInvTab so bag/equipped split is respected
+    applyInvTab();
+  });
+});
+
+// Rework Phase 3: Bag / Equipped top-level tabs
+$$('.inv-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    invTab = btn.dataset.invTab || 'bag';
+    applyInvTab();
   });
 });
 
@@ -2135,6 +2420,22 @@ async function loadPlayerAnnouncements() {
   } catch (e) { console.error('loadPlayerAnnouncements', e); }
 }
 
+// Rework Phase 7: starting-item wizard events (server → player)
+ws.on('wizard.completed', d => {
+  if (d && d.character_id == CHAR_ID) {
+    const overlay = document.getElementById('wiz-starting-item');
+    if (overlay) overlay.remove();
+    showToast(`🎁 Starting item approved: ${d.rarity || 'unknown'} rarity`);
+    loadInventory();
+  }
+});
+ws.on('wizard.update', d => {
+  if (d && d.character_id == CHAR_ID && d.rejected) {
+    // Refresh the modal to show the rejection note
+    maybeShowStartingItemWizard();
+  }
+});
+
 ws.on('announcement.posted', () => loadPlayerAnnouncements());
 ws.on('announcement.pinned', () => loadPlayerAnnouncements());
 ws.on('announcement.deleted', () => loadPlayerAnnouncements());
@@ -2841,6 +3142,21 @@ function _mountAbilityConfirm(panel, ab) {
     ab.hp_cost   ? `❤️ ${ab.hp_cost} HP` : null,
     ab.cooldown_turns ? `⏳ CD ${ab.cooldown_turns}t` : null,
   ].filter(Boolean).join(' · ');
+
+  // Rework Phase 6: state across the two-step flow
+  const state = {
+    hit_roll: null,      // { total, hit, critical, breakdown }
+    damage_roll: null,   // { dice_count, dice_type, rolls, total }
+  };
+  const needsHit = !!ab.requires_hit_roll;
+  const hasDamageDice = !!(ab.damage_dice_count && ab.damage_dice_type);
+  const hitStatLabel = (ab.hit_stat || '').slice(0, 3).toUpperCase() || 'STAT';
+  const dmgStatLabel = (ab.damage_stat || '').slice(0, 3).toUpperCase() || '';
+
+  // Compute character stat value for hit bonus (direct per Rework Phase 2)
+  const statVal = (char && ab.hit_stat && typeof char[ab.hit_stat] === 'number') ? char[ab.hit_stat] : 0;
+  const dmgStatVal = (char && ab.damage_stat && typeof char[ab.damage_stat] === 'number') ? char[ab.damage_stat] : 0;
+
   area.innerHTML = `
     <div style="padding:8px;background:var(--bg-surface);border-radius:var(--r-sm);border:1px solid var(--border-active)">
       <div style="font-weight:700;margin-bottom:3px">${ab.icon || '⚡'} ${ab.name}</div>
@@ -2855,15 +3171,103 @@ function _mountAbilityConfirm(panel, ab) {
           </select>
         </label>
       </div>` : ''}
+      ${needsHit ? `
+        <div style="margin-bottom:8px">
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:3px">Step 1 — Hit roll (+${statVal} ${hitStatLabel})</div>
+          <div id="ap-hit-widget"></div>
+          <div id="ap-hit-result" style="margin-top:4px;font-size:0.78rem"></div>
+        </div>` : ''}
+      ${hasDamageDice ? `
+        <div style="margin-bottom:8px">
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:3px">${needsHit ? 'Step 2' : 'Step'} — Effect roll${dmgStatLabel ? ` (+${dmgStatVal} ${dmgStatLabel})` : ''}</div>
+          <div id="ap-dmg-widget"></div>
+          <div id="ap-dmg-result" style="margin-top:4px;font-size:0.78rem"></div>
+        </div>` : ''}
       <div style="display:flex;gap:6px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" id="ap-back">← Back</button>
-        <button class="btn btn-primary btn-sm" id="ap-use">Use</button>
+        <button class="btn btn-primary btn-sm" id="ap-use"${needsHit || hasDamageDice ? ' disabled' : ''}>Use</button>
       </div>
       <div id="ap-result" style="margin-top:6px;font-size:0.78rem"></div>
     </div>`;
 
+  // Wire widgets
+  const useBtn = area.querySelector('#ap-use');
+  const refreshUseButton = () => {
+    const hitReady = !needsHit || !!state.hit_roll;
+    const dmgReady = !hasDamageDice || !!state.damage_roll || (state.hit_roll && state.hit_roll.hit === false);
+    useBtn.disabled = !(hitReady && dmgReady);
+  };
+
+  if (needsHit && typeof createDiceRollWidget === 'function') {
+    createDiceRollWidget(area.querySelector('#ap-hit-widget'), {
+      label: `Attack d20${statVal ? ` + ${statVal} ${hitStatLabel}` : ''}`,
+      defaultDiceCount: 1, defaultDiceType: 20,
+      showDiceSelector: false, showAdvantage: true,
+      onRoll: async ({ advantageMode }) => {
+        const d1 = 1 + Math.floor(Math.random() * 20);
+        let chosen = d1, all = [d1];
+        if (advantageMode === 'advantage' || advantageMode === 'disadvantage') {
+          const d2 = 1 + Math.floor(Math.random() * 20);
+          all = [d1, d2];
+          chosen = advantageMode === 'advantage' ? Math.max(d1, d2) : Math.min(d1, d2);
+        }
+        const total = chosen + statVal;
+        const fumble = chosen === 1;
+        const crit = chosen === 20;
+        // Determine target AC for hit verdict
+        const tgtId = needsTarget ? parseInt(area.querySelector('#ap-target')?.value || '') : null;
+        const tgt = tgtId ? (tableParticipants||[]).find(t => t.id === tgtId) : null;
+        const ac = tgt?.armor_class ?? 10;
+        const hit = fumble ? false : (crit || total >= ac);
+        const advTag = advantageMode !== 'normal' ? `${advantageMode === 'advantage' ? 'ADV' : 'DIS'}[${all.join(',')}] took ${chosen} · ` : '';
+        const bd = `${advTag}D20(${chosen}) + ${hitStatLabel}(${statVal >= 0 ? '+' : ''}${statVal}) = ${total} vs AC ${ac} → ${fumble ? 'FUMBLE' : crit ? 'CRIT' : hit ? 'HIT' : 'MISS'}`;
+        state.hit_roll = { total, hit, critical: crit, fumble, breakdown: bd };
+        const resEl = area.querySelector('#ap-hit-result');
+        if (resEl) resEl.innerHTML = `<span style="color:${hit ? 'var(--accent-green)' : 'var(--accent-red)'}">${bd}</span>`;
+        refreshUseButton();
+        return { total, breakdown: bd };
+      },
+      resultFormatter: r => r.breakdown || '',
+    });
+  }
+
+  if (hasDamageDice && typeof createDiceRollWidget === 'function') {
+    createDiceRollWidget(area.querySelector('#ap-dmg-widget'), {
+      label: `Effect ${ab.damage_dice_count}d${ab.damage_dice_type}${dmgStatVal ? ` + ${dmgStatVal} ${dmgStatLabel}` : ''}`,
+      defaultDiceCount: ab.damage_dice_count || 1,
+      defaultDiceType: ab.damage_dice_type || 6,
+      showDiceSelector: true, showAdvantage: true,
+      onRoll: async ({ diceCount, diceType, advantageMode }) => {
+        const rollOnce = () => {
+          const rolls = [];
+          let actual = diceCount;
+          if (state.hit_roll && state.hit_roll.critical) actual = diceCount * 2;
+          for (let i = 0; i < actual; i++) rolls.push(1 + Math.floor(Math.random() * diceType));
+          return { rolls, sum: rolls.reduce((a, b) => a + b, 0) };
+        };
+        const r1 = rollOnce();
+        let chosen = r1, all = [r1];
+        if (advantageMode === 'advantage' || advantageMode === 'disadvantage') {
+          const r2 = rollOnce();
+          all = [r1, r2];
+          chosen = advantageMode === 'advantage' ? (r1.sum >= r2.sum ? r1 : r2) : (r1.sum <= r2.sum ? r1 : r2);
+        }
+        const total = chosen.sum + dmgStatVal;
+        const advTag = advantageMode !== 'normal' ? `${advantageMode === 'advantage' ? 'ADV' : 'DIS'} took ${chosen.sum} · ` : '';
+        const crTag = (state.hit_roll && state.hit_roll.critical) ? 'CRIT×2 ' : '';
+        const bd = `${advTag}${crTag}${chosen.rolls.length}d${diceType}[${chosen.rolls.join(',')}]=${chosen.sum}${dmgStatVal ? ` + ${dmgStatVal} ${dmgStatLabel}` : ''} = ${total}`;
+        state.damage_roll = { dice_count: diceCount, dice_type: diceType, rolls: chosen.rolls, total };
+        const resEl = area.querySelector('#ap-dmg-result');
+        if (resEl) resEl.innerHTML = `<span style="color:var(--accent)">${bd}</span>`;
+        refreshUseButton();
+        return { total, breakdown: bd };
+      },
+      resultFormatter: r => r.breakdown || '',
+    });
+  }
+
   area.querySelector('#ap-back').addEventListener('click', () => openAbilityPicker(abilitiesData));
-  area.querySelector('#ap-use').addEventListener('click', async () => {
+  useBtn.addEventListener('click', async () => {
     const resultEl = area.querySelector('#ap-result');
     const tgt = needsTarget ? parseInt(area.querySelector('#ap-target')?.value || '') : null;
     if (needsTarget && !tgt) { resultEl.innerHTML = '<span style="color:var(--accent-red)">Pick a target</span>'; return; }
@@ -2871,6 +3275,11 @@ function _mountAbilityConfirm(panel, ab) {
     try {
       const body = {};
       if (tgt) body.target_id = tgt;
+      if (state.hit_roll)    body.hit_roll = state.hit_roll;
+      if (state.damage_roll) {
+        body.override_dice_count = state.damage_roll.dice_count;
+        body.override_dice_type  = state.damage_roll.dice_type;
+      }
       const res = await api.post(`/api/character-abilities/${ab.character_ability_id}/use`, body);
       let out = '';
       if (res.results && res.results.length) {

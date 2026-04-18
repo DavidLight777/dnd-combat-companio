@@ -372,6 +372,49 @@
   background: var(--accent); color: #0a0908; border-color: var(--accent);
 }
 
+/* Rework Phase 4: Profession cards */
+.profession-card {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px;
+}
+.profession-card .prof-head {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 4px;
+}
+.profession-card .prof-name {
+  font-weight: 700; font-size: 0.95rem;
+}
+.profession-card .prof-level {
+  font-size: 0.72rem; color: var(--accent); font-weight: 600;
+  padding: 1px 6px; border: 1px solid var(--accent); border-radius: 10px;
+}
+.profession-card .prof-desc {
+  font-size: 0.8rem; color: var(--text-muted); margin: 3px 0;
+}
+.profession-card .prof-bonuses {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;
+}
+.profession-card .prof-abilities {
+  margin: 6px 0 0; padding-left: 18px; font-size: 0.76rem; color: var(--text);
+}
+.chip-muted {
+  display: inline-block; padding: 1px 6px; font-size: 0.7rem;
+  background: var(--bg-surface-3); border-radius: 10px; color: var(--text-muted);
+}
+
+/* Rework Phase 3: Bag / Equipped top tabs */
+.inv-tab-bar .inv-tab {
+  flex: 1; padding: 6px 10px; font-size: 0.88rem; font-weight: 600;
+  border-bottom: 2px solid transparent;
+}
+.inv-tab-bar .inv-tab.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+.inv-tab .tab-count {
+  display: inline-block; min-width: 18px; padding: 0 5px;
+  margin-left: 4px; font-size: 0.72rem;
+  background: rgba(0,0,0,0.25); border-radius: 10px;
+}
+
 /* ── Equipped badge on inv-card ───────────────────────────────── */
 .inv-card .equip-badge {
   position: absolute; top: 4px; left: 4px; font-size: 0.65rem;

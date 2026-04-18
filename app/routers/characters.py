@@ -61,9 +61,22 @@ def _serialize_char(c: Character) -> dict:
             for e in c.effects
         ],
         "race_id": c.race_id,
-        "class_id": c.class_id,
+        "class_id": c.class_id,  # deprecated — use professions[]
         "level": c.level,
         "experience": c.experience,
+        # Rework Phase 1: rank chain + Phase 4: multi-profession list
+        "rank": getattr(c, "rank", "common") or "common",
+        "professions": [
+            {
+                "id": cp.id,
+                "class_id": cp.class_id,
+                "level": cp.level,
+                "is_active": cp.is_active,
+                "name": getattr(cp.character_class, "name", None) if cp.character_class else None,
+                "hit_die": getattr(cp.character_class, "hit_die", None) if cp.character_class else None,
+            }
+            for cp in (c.professions or [])
+        ],
         "stat_modifiers": [
             {"id": m.id, "stat_name": m.stat_name, "name": m.name,
              "value": m.value, "is_active": m.is_active, "source": m.source,
@@ -163,6 +176,137 @@ async def spend_mana_endpoint(char_id: int, body: dict, db: AsyncSession = Depen
     await db.commit()
     await db.refresh(c)
     return {"mana_current": c.mana_current, "mana_max": c.mana_max, "effective_mana_max": eff_max}
+
+
+# ══════════════════════════════════════════════════════════════
+# Rework Phase 8 — XP / LEVEL / RANK progression
+# ══════════════════════════════════════════════════════════════
+RANK_CHAIN = [
+    "common", "uncommon", "rare", "epic", "legendary", "mythic", "divine",
+]
+
+
+def xp_to_next(level: int) -> int:
+    """Rework spec: threshold = 100 + 100 * level (Lvl 0 → 1 = 100, Lvl 10 → 11 = 1100)."""
+    return 100 + 100 * max(0, int(level or 0))
+
+
+def _next_rank(rank: str) -> str | None:
+    r = (rank or "common").lower()
+    try:
+        idx = RANK_CHAIN.index(r)
+    except ValueError:
+        return None
+    return RANK_CHAIN[idx + 1] if idx + 1 < len(RANK_CHAIN) else None
+
+
+async def _broadcast_char(session_id: int, character_id: int):
+    try:
+        from app.websocket_manager import manager as _ws
+        await _ws.broadcast(session_id, {"event": "character.update", "character_id": character_id})
+    except Exception:
+        pass
+
+
+@router.post("/characters/{char_id}/grant-xp")
+async def grant_xp(char_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    """GM grants XP. Level does NOT auto-increment — GM decides when to level up."""
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    amount = int(body.get("amount", 0) or 0)
+    c.experience = max(0, (c.experience or 0) + amount)
+    await db.commit()
+    await db.refresh(c)
+    await _broadcast_char(c.session_id, c.id)
+    return {
+        "experience": c.experience,
+        "level": c.level,
+        "rank": getattr(c, "rank", "common"),
+        "xp_to_next": xp_to_next(c.level or 0),
+    }
+
+
+@router.post("/characters/{char_id}/level-up")
+async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
+    """Manually advance to the next level if the character has enough XP.
+    Body may include {"force": true} to bypass the XP threshold check (GM override).
+    """
+    body = body or {}
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    cur_level = int(c.level or 0)
+    threshold = xp_to_next(cur_level)
+    if not body.get("force") and (c.experience or 0) < threshold:
+        raise HTTPException(400, {
+            "message": "Not enough XP",
+            "have": c.experience or 0,
+            "need": threshold,
+        })
+    # Consume threshold worth of XP
+    c.experience = max(0, (c.experience or 0) - threshold)
+    c.level = cur_level + 1
+    await db.commit()
+    await db.refresh(c)
+    await _broadcast_char(c.session_id, c.id)
+    return {
+        "experience": c.experience,
+        "level": c.level,
+        "rank": getattr(c, "rank", "common"),
+        "xp_to_next": xp_to_next(c.level),
+    }
+
+
+@router.post("/characters/{char_id}/rank-up")
+async def rank_up(char_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
+    """Promote character to the next rank.
+    Rules (from update and fix.md):
+      * Level == 20 → new level = 1 of next rank.
+      * Level < 20 → keep the same level number in the new rank.
+      * If level > 15 when promoting → clamp to 15.
+      * HP / stats / bonuses are preserved (no auto-scaling here).
+    """
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    cur_rank = getattr(c, "rank", "common") or "common"
+    nxt = _next_rank(cur_rank)
+    if not nxt:
+        raise HTTPException(400, "Already at the highest rank (divine)")
+    cur_level = int(c.level or 0)
+    if cur_level >= 20:
+        new_level = 1
+    elif cur_level > 15:
+        new_level = 15
+    else:
+        new_level = cur_level
+    c.rank = nxt
+    c.level = new_level
+    await db.commit()
+    await db.refresh(c)
+    await _broadcast_char(c.session_id, c.id)
+    return {
+        "rank": c.rank,
+        "level": c.level,
+        "experience": c.experience,
+        "xp_to_next": xp_to_next(c.level),
+    }
+
+
+@router.get("/characters/{char_id}/progression")
+async def get_progression(char_id: int, db: AsyncSession = Depends(get_session)):
+    """Convenience endpoint: return the full progression snapshot."""
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    return {
+        "level": c.level or 0,
+        "experience": c.experience or 0,
+        "rank": getattr(c, "rank", "common") or "common",
+        "xp_to_next": xp_to_next(c.level or 0),
+        "next_rank": _next_rank(getattr(c, "rank", "common") or "common"),
+    }
 
 
 # ── Create NPC (GM) ─────────────────────────────────────────
@@ -452,7 +596,11 @@ STAT_MAP = {
 
 
 def _stat_modifier(val: int) -> int:
-    return (val - 10) // 2
+    """Rework: stat value IS the bonus (no D&D (val-10)//2 formula)."""
+    try:
+        return int(val or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 @router.post("/characters/{char_id}/roll-characteristic")

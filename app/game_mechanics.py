@@ -603,8 +603,42 @@ def roll_dice(dice_str: str) -> tuple[list[int], int]:
 
 
 def stat_modifier(stat_value: int) -> int:
-    """D&D-style ability score modifier: (stat - 10) // 2."""
-    return (stat_value - 10) // 2
+    """Rework: stat value IS the bonus (str 2 → +2). No D&D formula."""
+    try:
+        return int(stat_value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+_STAT_KEYS = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
+
+
+def _resolve_stat_from_weapon(attacker_stats: dict, weapon: dict | None, kind: str) -> tuple[int, str]:
+    """Pick the stat configured on the weapon (hit_stat / damage_stat) and return (value, stat_name).
+
+    kind: 'hit' or 'damage'.
+    If damage_stat is explicitly None → returns (0, '') meaning no stat contribution.
+    Falls back to legacy STR/DEX/finesse inference when the weapon has no binding.
+    """
+    # Explicit binding on weapon takes priority
+    if weapon:
+        field = "hit_stat" if kind == "hit" else "damage_stat"
+        stat_name = weapon.get(field, None) if field in weapon else None
+        if stat_name is None and kind == "damage" and "damage_stat" in weapon and weapon["damage_stat"] is None:
+            # explicit null → no stat bonus to damage
+            return 0, ""
+        if stat_name in _STAT_KEYS:
+            return stat_modifier(attacker_stats.get(stat_name, 0)), stat_name
+    # Legacy fallback — infer from properties
+    if weapon:
+        props, wrange, _ = _resolve_weapon_props(weapon)
+        if wrange == "ranged" or "finesse" in props:
+            if "finesse" in props:
+                dex_v = stat_modifier(attacker_stats.get("dexterity", 0))
+                str_v = stat_modifier(attacker_stats.get("strength", 0))
+                return (dex_v, "dexterity") if dex_v >= str_v else (str_v, "strength")
+            return stat_modifier(attacker_stats.get("dexterity", 0)), "dexterity"
+    return stat_modifier(attacker_stats.get("strength", 0)), "strength"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -645,16 +679,9 @@ def _resolve_weapon_props(weapon):
 
 
 def _calc_attack_stat_mod(attacker_stats, weapon):
-    """Determine the stat modifier for an attack roll."""
-    if weapon:
-        props, wrange, _ = _resolve_weapon_props(weapon)
-        if wrange == "ranged" or "finesse" in props:
-            if "finesse" in props:
-                return max(stat_modifier(attacker_stats.get("dexterity", 10)),
-                           stat_modifier(attacker_stats.get("strength", 10)))
-            return stat_modifier(attacker_stats.get("dexterity", 10))
-        return stat_modifier(attacker_stats.get("strength", 10))
-    return stat_modifier(attacker_stats.get("strength", 10))
+    """Rework: prefer weapon.hit_stat, fallback to legacy STR/DEX inference."""
+    val, _ = _resolve_stat_from_weapon(attacker_stats, weapon, "hit")
+    return val
 
 
 def calculate_combat_attack(
@@ -726,16 +753,9 @@ class CombatDamageResult:
 
 
 def _calc_damage_stat_mod(attacker_stats, weapon):
-    """Determine the stat modifier for a damage roll."""
-    if weapon:
-        props, wrange, _ = _resolve_weapon_props(weapon)
-        if wrange == "ranged" or "finesse" in props:
-            if "finesse" in props:
-                return max(stat_modifier(attacker_stats.get("dexterity", 10)),
-                           stat_modifier(attacker_stats.get("strength", 10)))
-            return stat_modifier(attacker_stats.get("dexterity", 10))
-        return stat_modifier(attacker_stats.get("strength", 10))
-    return stat_modifier(attacker_stats.get("strength", 10))
+    """Rework: prefer weapon.damage_stat (None → 0), fallback to legacy."""
+    val, _ = _resolve_stat_from_weapon(attacker_stats, weapon, "damage")
+    return val
 
 
 def _single_damage_roll(dc, dt, critical):

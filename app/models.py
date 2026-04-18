@@ -84,9 +84,12 @@ class Character(Base):
     gm_notes: Mapped[str] = mapped_column(Text, default="")
 
     race_id: Mapped[int | None] = mapped_column(ForeignKey("races.id", ondelete="SET NULL"), nullable=True)
+    # class_id — DEPRECATED: kept for back-compat. Use character_professions table instead.
     class_id: Mapped[int | None] = mapped_column(ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
-    level: Mapped[int] = mapped_column(Integer, default=1)
+    level: Mapped[int] = mapped_column(Integer, default=0)
     experience: Mapped[int] = mapped_column(Integer, default=0)
+    # Rework: rank chain common → uncommon → rare → epic → legendary → mythic → divine
+    rank: Mapped[str] = mapped_column(String(20), default="common")
 
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -110,6 +113,9 @@ class Character(Base):
         back_populates="character", cascade="all, delete-orphan", lazy="selectin"
     )
     inventory_items: Mapped[list["InventoryItem"]] = relationship(
+        back_populates="character", cascade="all, delete-orphan", lazy="selectin"
+    )
+    professions: Mapped[list["CharacterProfession"]] = relationship(
         back_populates="character", cascade="all, delete-orphan", lazy="selectin"
     )
 
@@ -337,6 +343,9 @@ class ItemWeaponStats(Base):
     range: Mapped[str | None] = mapped_column(Text, nullable=True)
     weapon_range: Mapped[str] = mapped_column(String(10), default="melee")  # melee / ranged
     weapon_properties: Mapped[str] = mapped_column(Text, default="[]")  # JSON: ["finesse","two-handed","light",...]
+    # Rework: which character stat contributes the +bonus to hit / damage (strength, dexterity, ...)
+    hit_stat: Mapped[str] = mapped_column(String(20), default="strength")
+    damage_stat: Mapped[str | None] = mapped_column(String(20), nullable=True, default="strength")
 
     item: Mapped["Item"] = relationship(back_populates="weapon_stats")
 
@@ -770,3 +779,81 @@ class CharacterMemory(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     related_npc_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# REWORK — MULTI-PROFESSION (M:N Character ↔ CharacterClass)
+# ══════════════════════════════════════════════════════════════
+class CharacterProfession(Base):
+    __tablename__ = "character_professions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    class_id: Mapped[int] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, default=1)  # 1..5 per profession
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    character: Mapped["Character"] = relationship(back_populates="professions")
+    character_class: Mapped["CharacterClass"] = relationship(lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("character_id", "class_id", name="uq_character_profession"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# REWORK — POISONS & DoT
+# ══════════════════════════════════════════════════════════════
+class PoisonTemplate(Base):
+    __tablename__ = "poison_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str] = mapped_column(String(10), default="☠️")
+    color: Mapped[str] = mapped_column(String(10), default="#7fbf54")
+    # DoT mechanics
+    damage_dice_count: Mapped[int] = mapped_column(Integer, default=1)
+    damage_dice_type: Mapped[int] = mapped_column(Integer, default=4)
+    damage_type: Mapped[str] = mapped_column(String(20), default="poison")  # poison / fire / bleed / acid / ...
+    # Default per-weapon values
+    default_charges: Mapped[int] = mapped_column(Integer, default=3)  # how many hits the coat lasts
+    default_turns_per_hit: Mapped[int] = mapped_column(Integer, default=3)  # DoT duration applied per hit
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class InventoryItemPoison(Base):
+    __tablename__ = "inventory_item_poisons"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inventory_item_id: Mapped[int] = mapped_column(ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False)
+    poison_template_id: Mapped[int] = mapped_column(ForeignKey("poison_templates.id", ondelete="CASCADE"), nullable=False)
+    charges_remaining: Mapped[int] = mapped_column(Integer, default=3)  # decremented on successful hit while equipped
+    turns_per_hit: Mapped[int] = mapped_column(Integer, default=3)  # overridden to 1 for arrows
+    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    poison_template: Mapped["PoisonTemplate"] = relationship(lazy="selectin")
+
+    __table_args__ = (
+        # one active coat per inventory item at a time
+        UniqueConstraint("inventory_item_id", name="uq_inventory_item_poison"),
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# REWORK — CHARACTER CREATION WIZARD
+# ══════════════════════════════════════════════════════════════
+class CharacterWizardState(Base):
+    __tablename__ = "character_wizard_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, unique=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    current_step: Mapped[int] = mapped_column(Integer, default=1)  # 1..4
+    is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    data: Mapped[str] = mapped_column(Text, default="{}")  # JSON: step-by-step inputs
+    gm_approved: Mapped[bool] = mapped_column(Boolean, default=False)  # final step approval
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

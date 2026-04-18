@@ -596,10 +596,16 @@ async function renderCharDetail() {
         <div class="detail-body">
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:0.78rem">
             <span id="gm-char-race" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Race: <strong>${c.race_id ? '...' : 'None'}</strong></span>
-            <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Class: <strong>${c.class_id ? '...' : 'None'}</strong></span>
-            <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Lvl <strong>${c.level || 1}</strong></span>
-            <span style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">XP <strong><span id="gm-char-xp">${c.experience || 0}</span></strong>
-              <button class="btn btn-ghost btn-xs" id="btn-edit-xp" style="padding:0 3px;margin-left:2px;font-size:0.65rem">✏️</button>
+            <span id="gm-char-class" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)" title="Legacy class_id; see Professions panel">Profession: <strong>${c.class_id ? '...' : (Array.isArray(c.professions)&&c.professions.length ? c.professions.map(p=>p.name+' L'+p.level).join(' / ') : 'None')}</strong></span>
+            <!-- Rework Phase 8: Level / Rank / XP progression badge -->
+            <span id="gm-char-progression" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">
+              <span title="Rank" style="text-transform:capitalize">${(c.rank||'common')}</span>
+              · Lvl <strong>${c.level ?? 0}</strong>
+              · XP <strong><span id="gm-char-xp">${c.experience || 0}</span></strong>/<span id="gm-char-xp-next">${100 + 100 * (c.level || 0)}</span>
+              <button class="btn btn-ghost btn-xs" id="btn-grant-xp" style="padding:0 3px;margin-left:4px;font-size:0.65rem" title="Grant XP">+XP</button>
+              <button class="btn btn-ghost btn-xs" id="btn-level-up" style="padding:0 3px;font-size:0.65rem" title="Level up">⬆</button>
+              <button class="btn btn-ghost btn-xs" id="btn-rank-up" style="padding:0 3px;font-size:0.65rem" title="Rank up">★</button>
+              <button class="btn btn-ghost btn-xs" id="btn-edit-xp" style="padding:0 3px;font-size:0.65rem" title="Set XP">✏️</button>
             </span>
           </div>
           ${hpHtml}
@@ -635,10 +641,24 @@ async function renderCharDetail() {
           <hr class="section-divider">
           ${inventoryHtml}
           <hr class="section-divider">
+          <!-- Rework Phase 4: Professions panel -->
+          <div class="gm-prof-section">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <h3 style="font-size:0.82rem;flex:1">🛡️ Professions <span class="text-muted" style="font-size:0.7rem">(multi)</span></h3>
+              <button class="btn btn-primary btn-xs" id="btn-gm-prof-add">+ Add</button>
+            </div>
+            <div id="gm-char-professions" style="display:flex;flex-direction:column;gap:6px;min-height:20px"></div>
+          </div>
+          <hr class="section-divider">
           <div id="char-notes-section"></div>
         </div>
       </div>`;
   }
+
+  // Rework Phase 4: load + wire professions panel for this character
+  loadGmCharProfessions(c.id);
+  const addProfBtn = area.querySelector('#btn-gm-prof-add');
+  if (addProfBtn) addProfBtn.addEventListener('click', () => openGmAddProfessionModal(c.id));
 
   // ── Wire events ──
   // HP delta buttons
@@ -1292,11 +1312,65 @@ async function renderCharDetail() {
       xpBtn.addEventListener('click', async () => {
         const newXp = prompt('Set experience:', c.experience || 0);
         if (newXp === null) return;
-        const newLvl = prompt('Set level:', c.level || 1);
+        const newLvl = prompt('Set level:', c.level ?? 0);
         if (newLvl === null) return;
-        await api.patch(`/api/characters/${c.id}`, { experience: parseInt(newXp)||0, level: parseInt(newLvl)||1 });
+        await api.patch(`/api/characters/${c.id}`, { experience: parseInt(newXp)||0, level: parseInt(newLvl)||0 });
         await refreshChars();
         renderCharDetail();
+      });
+    }
+
+    // Rework Phase 8: Grant XP
+    const grantBtn = area.querySelector('#btn-grant-xp');
+    if (grantBtn) {
+      grantBtn.addEventListener('click', async () => {
+        const amt = prompt('Grant how much XP?', '50');
+        if (amt === null) return;
+        try {
+          const res = await api.post(`/api/characters/${c.id}/grant-xp`, { amount: parseInt(amt, 10) || 0 });
+          addLog('gm.xp', `${c.name}: +${amt} XP → ${res.experience}/${res.xp_to_next}`);
+          await refreshChars();
+          renderCharDetail();
+        } catch (e) { showToast('Failed to grant XP'); }
+      });
+    }
+    // Rework Phase 8: Level up
+    const lvlUpBtn = area.querySelector('#btn-level-up');
+    if (lvlUpBtn) {
+      lvlUpBtn.addEventListener('click', async () => {
+        try {
+          const res = await api.post(`/api/characters/${c.id}/level-up`, {});
+          addLog('gm.lvl', `${c.name} → Lvl ${res.level}`);
+          await refreshChars();
+          renderCharDetail();
+        } catch (e) {
+          let msg = 'Level up failed';
+          try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
+          if (!confirm(`${msg}. Force level-up anyway?`)) return;
+          try {
+            const res = await api.post(`/api/characters/${c.id}/level-up`, { force: true });
+            addLog('gm.lvl', `${c.name} → Lvl ${res.level} (forced)`);
+            await refreshChars();
+            renderCharDetail();
+          } catch { showToast('Level up failed'); }
+        }
+      });
+    }
+    // Rework Phase 8: Rank up
+    const rankBtn = area.querySelector('#btn-rank-up');
+    if (rankBtn) {
+      rankBtn.addEventListener('click', async () => {
+        if (!confirm(`Promote ${c.name} to the next rank?`)) return;
+        try {
+          const res = await api.post(`/api/characters/${c.id}/rank-up`, {});
+          addLog('gm.rank', `${c.name} → Rank ${res.rank} (Lvl ${res.level})`);
+          await refreshChars();
+          renderCharDetail();
+        } catch (e) {
+          let msg = 'Rank up failed';
+          try { const err = JSON.parse(e.message); msg = err.detail || msg; } catch {}
+          showToast(msg);
+        }
       });
     }
   }
@@ -1423,7 +1497,8 @@ async function loadGmCharInventory(charId) {
       container.innerHTML = '<span class="text-muted">No items in inventory.</span>';
       return;
     }
-    container.innerHTML = data.items.map(i => {
+    // Rework Phase 3: split items into Bag (non-equipped) and Equipped sections.
+    const renderRow = (i) => {
       const eq = i.is_equipped ? '✅' : '';
       const slotLbl = i.equipped_slot ? ` [${i.equipped_slot}]` : '';
       const bonusesStr = (i.bonuses||[]).map(b => b.bonus_type === 'stat_bonus' ? `${b.stat_name}+${b.value}` : `${b.bonus_type.replace(/_/g,' ')}+${b.value}`).join(', ');
@@ -1432,6 +1507,7 @@ async function loadGmCharInventory(charId) {
       const showEquip = i.equippable && !isPotion;
       const showUse = isConsumable || isPotion;
       const icon = isPotion ? (i.potion_icon || '🧪') : '';
+      const isWeapon = !!i.weapon_stats;
       return `<div class="mod-row" style="gap:6px">
         <span style="min-width:18px">${eq}${icon}</span>
         <span class="rarity-${i.rarity}" style="flex:1;font-weight:600">${i.name}</span>
@@ -1439,10 +1515,24 @@ async function loadGmCharInventory(charId) {
         ${bonusesStr ? `<span style="font-size:0.65rem;color:var(--accent-green)">${bonusesStr}</span>` : ''}
         ${showEquip ? `<button class="btn btn-ghost btn-xs" data-gm-equip="${i.inventory_id}" data-gm-equipped="${i.is_equipped}">${i.is_equipped ? 'Unequip' : 'Equip'}</button>` : ''}
         ${showUse ? `<button class="btn btn-primary btn-xs" data-gm-use="${i.inventory_id}" data-gm-use-name="${i.name}" title="Use on this character">${isPotion ? '🧪 Use' : 'Use'}</button>` : ''}
+        ${isWeapon ? `<button class="btn btn-ghost btn-xs" data-gm-poison="${i.inventory_id}" title="Apply poison">💧</button>` : ''}
         <button class="btn btn-ghost btn-xs" data-gm-buyback="${i.inventory_id}" data-gm-buyback-price="${i.base_price_bronze||i.base_price_copper||0}" data-gm-buyback-name="${i.name}" title="Buy from player">💰</button>
         <button class="btn-icon danger" data-gm-remove-inv="${i.inventory_id}" title="Remove">🗑</button>
       </div>`;
-    }).join('');
+    };
+    const equipped = data.items.filter(i => i.is_equipped);
+    const bag = data.items.filter(i => !i.is_equipped);
+    const section = (title, count, rows, weight) => `
+      <div class="inv-section" style="margin-bottom:8px">
+        <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;display:flex;gap:8px;align-items:center">
+          <span>${title} <span class="chip-muted">${count}</span></span>
+          ${weight != null ? `<span style="margin-left:auto;font-weight:400">wt ${weight}</span>` : ''}
+        </div>
+        ${rows.length ? rows.join('') : '<span class="text-muted" style="font-size:0.75rem">— empty —</span>'}
+      </div>`;
+    container.innerHTML =
+      section('⚔️ Equipped', equipped.length, equipped.map(renderRow), null) +
+      section('🎒 Bag',      bag.length,      bag.map(renderRow),      data.total_weight_bag ?? data.total_weight);
 
     // Equip/unequip
     container.querySelectorAll('[data-gm-equip]').forEach(btn => {
@@ -1495,7 +1585,184 @@ async function loadGmCharInventory(charId) {
         openGmBuybackModal(invId, itemName, basePrice, charId);
       });
     });
+    // Rework Phase 5: Apply poison (GM)
+    container.querySelectorAll('[data-gm-poison]').forEach(btn => {
+      btn.addEventListener('click', () => openGmApplyPoisonModal(btn.dataset.gmPoison, charId));
+    });
   } catch(e) { container.innerHTML = '<span class="text-muted">Error loading inventory.</span>'; }
+}
+
+// Rework Phase 5: GM-side poison application (mirrors player flow).
+async function openGmApplyPoisonModal(inventoryId, charId) {
+  let poisons = [];
+  try { poisons = await api.get('/api/poison-templates'); } catch {}
+  if (!poisons.length) {
+    if (!confirm('No poisons yet. Create a sample poison now?')) return;
+    try {
+      await api.post('/api/poison-templates', {
+        name: 'Basic Poison', damage_dice_count: 1, damage_dice_type: 4,
+        damage_type: 'poison', default_charges: 3, default_turns_per_hit: 3,
+      });
+      poisons = await api.get('/api/poison-templates');
+    } catch { showToast('Failed to create default poison'); return; }
+  }
+  let current = null;
+  try { current = await api.get(`/api/inventory/${inventoryId}/applied-poison`); } catch {}
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:420px">
+      <h3 style="margin-top:0">💧 Apply Poison</h3>
+      ${current ? `<div style="margin-bottom:10px;font-size:0.8rem;color:var(--accent-green)">
+        Current: ${current.template?.icon||''} ${current.template?.name||''} —
+        ${current.charges_remaining} charges · ${current.turns_per_hit} turn(s)/hit
+        <button class="btn btn-ghost btn-xs" id="gm-poison-remove" style="margin-left:6px">Remove</button>
+      </div>` : ''}
+      <label style="font-size:0.78rem">Poison</label>
+      <select id="gm-poison-tpl" style="width:100%;margin-bottom:8px">
+        ${poisons.map(p => `<option value="${p.id}">${p.icon} ${p.name} — ${p.damage_dice_count}d${p.damage_dice_type} ${p.damage_type}</option>`).join('')}
+      </select>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <label style="font-size:0.75rem">Charges</label>
+          <input type="number" id="gm-poison-charges" min="1" max="50" value="${poisons[0].default_charges}" style="width:100%">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:0.75rem">Turns/hit</label>
+          <input type="number" id="gm-poison-turns" min="1" max="20" value="${poisons[0].default_turns_per_hit}" style="width:100%">
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="gm-poison-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="gm-poison-apply">Apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const sel = overlay.querySelector('#gm-poison-tpl');
+  sel.addEventListener('change', () => {
+    const p = poisons.find(x => x.id === parseInt(sel.value, 10));
+    if (p) {
+      overlay.querySelector('#gm-poison-charges').value = p.default_charges;
+      overlay.querySelector('#gm-poison-turns').value = p.default_turns_per_hit;
+    }
+  });
+  overlay.querySelector('#gm-poison-cancel').addEventListener('click', () => overlay.remove());
+  const rm = overlay.querySelector('#gm-poison-remove');
+  if (rm) rm.addEventListener('click', async () => {
+    try { await api.del(`/api/inventory/${inventoryId}/apply-poison`); overlay.remove(); loadGmCharInventory(charId); addLog('gm.poison','Poison removed'); }
+    catch { showToast('Failed to remove poison'); }
+  });
+  overlay.querySelector('#gm-poison-apply').addEventListener('click', async () => {
+    const poison_template_id = parseInt(sel.value, 10);
+    const charges = parseInt(overlay.querySelector('#gm-poison-charges').value, 10);
+    const turns_per_hit = parseInt(overlay.querySelector('#gm-poison-turns').value, 10);
+    try {
+      await api.post(`/api/inventory/${inventoryId}/apply-poison`, { poison_template_id, charges, turns_per_hit });
+      addLog('gm.poison', `Coated weapon with poison (${charges}x charges, ${turns_per_hit} turns/hit)`);
+      overlay.remove();
+      loadGmCharInventory(charId);
+    } catch (e) { showToast(e?.message || 'Failed to apply poison'); }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// Rework Phase 4: GM Professions management
+// ══════════════════════════════════════════════════════════════
+async function loadGmCharProfessions(charId) {
+  const container = document.querySelector('#gm-char-professions');
+  if (!container) return;
+  try {
+    const list = await api.get(`/api/characters/${charId}/professions`);
+    if (!list || !list.length) {
+      container.innerHTML = '<span class="text-muted" style="font-size:0.78rem">No professions assigned.</span>';
+      return;
+    }
+    container.innerHTML = list.map(p => {
+      const bonuses = (p.bonuses||[]).map(b => {
+        if (b.type === 'stat_bonus') return `${(b.stat||'').slice(0,3).toUpperCase()}+${b.value}`;
+        return `${(b.type||'').replace(/_/g,' ')}+${b.value||0}`;
+      }).join(' · ');
+      return `<div class="mod-row" style="gap:6px;align-items:center">
+        <span style="flex:1;font-weight:600">${p.name || 'Profession'}</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">L ${p.level}/5</span>
+        ${bonuses ? `<span style="font-size:0.65rem;color:var(--accent-green)">${bonuses}</span>` : ''}
+        <input type="number" min="1" max="5" value="${p.level}" data-prof-level="${p.id}" style="width:48px;font-size:0.75rem">
+        <button class="btn btn-ghost btn-xs" data-prof-save="${p.id}">Save</button>
+        <button class="btn-icon danger" data-prof-delete="${p.id}" title="Remove">🗑</button>
+      </div>`;
+    }).join('');
+
+    container.querySelectorAll('[data-prof-save]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cpId = btn.dataset.profSave;
+        const lvlInput = container.querySelector(`[data-prof-level="${cpId}"]`);
+        const level = Math.max(1, Math.min(5, parseInt(lvlInput?.value || '1', 10) || 1));
+        try {
+          await api.patch(`/api/characters/${charId}/professions/${cpId}`, { level });
+          addLog('gm.prof', `Set profession level → ${level}`);
+          loadGmCharProfessions(charId);
+        } catch (e) { showToast('Failed to update profession'); }
+      });
+    });
+    container.querySelectorAll('[data-prof-delete]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cpId = btn.dataset.profDelete;
+        if (!confirm('Remove this profession?')) return;
+        try {
+          await api.del(`/api/characters/${charId}/professions/${cpId}`);
+          addLog('gm.prof', `Removed profession`);
+          loadGmCharProfessions(charId);
+        } catch (e) { showToast('Failed to remove profession'); }
+      });
+    });
+  } catch (e) {
+    container.innerHTML = '<span class="text-muted" style="font-size:0.78rem">Error loading professions.</span>';
+  }
+}
+
+async function openGmAddProfessionModal(charId) {
+  let classes = [];
+  try { classes = await api.get('/api/races-classes/classes'); } catch { classes = []; }
+  if (!classes.length) { showToast('No classes defined. Seed them first.'); return; }
+
+  // Filter out classes the char already has
+  let assigned = [];
+  try { assigned = await api.get(`/api/characters/${charId}/professions`); } catch {}
+  const taken = new Set((assigned||[]).map(p => p.class_id));
+  const available = classes.filter(c => !taken.has(c.id));
+  if (!available.length) { showToast('All available professions already assigned.'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:360px">
+      <h3 style="margin-top:0">🛡️ Add Profession</h3>
+      <label style="font-size:0.78rem">Class</label>
+      <select id="gm-prof-new-class" style="width:100%;margin-bottom:8px">
+        ${available.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+      </select>
+      <label style="font-size:0.78rem">Starting Level</label>
+      <input type="number" id="gm-prof-new-level" value="1" min="1" max="5" style="width:100%;margin-bottom:12px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="gm-prof-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="gm-prof-confirm">Add</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#gm-prof-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#gm-prof-confirm').addEventListener('click', async () => {
+    const class_id = parseInt(overlay.querySelector('#gm-prof-new-class').value, 10);
+    const level = Math.max(1, Math.min(5, parseInt(overlay.querySelector('#gm-prof-new-level').value, 10) || 1));
+    try {
+      await api.post(`/api/characters/${charId}/professions`, { class_id, level });
+      addLog('gm.prof', `Added profession (class #${class_id}) L${level}`);
+      overlay.remove();
+      loadGmCharProfessions(charId);
+    } catch (e) {
+      showToast(e?.message || 'Failed to add profession');
+    }
+  });
 }
 
 // ── GM Buyback Modal ─────────────────────────────────────────
@@ -2625,6 +2892,75 @@ ws.on('*', (event, data) => {
     addLog(event, JSON.stringify(data).substring(0, 120));
   }
 });
+
+// Rework Phase 7: GM-side starting-item approval
+ws.on('wizard.update', data => {
+  if (data && data.needs_gm_approve && data.character_id) {
+    openGmWizardApprovalModal(data.character_id);
+  }
+});
+ws.on('wizard.completed', data => {
+  if (data && data.character_id) {
+    addLog('wizard', `✅ Starting item approved for character #${data.character_id} (${data.rarity})`);
+  }
+});
+
+async function openGmWizardApprovalModal(charId) {
+  // Avoid duplicates
+  if (document.getElementById(`gm-wiz-approve-${charId}`)) return;
+  let ws_state;
+  try { ws_state = await api.get(`/api/wizard/${charId}`); } catch { return; }
+  const data = ws_state.data || {};
+  if (!data.proposed_item || ws_state.is_completed) return;
+
+  const char = characters.find(c => c.id === charId) || { name: `#${charId}` };
+  const rarity = data.starting_roll?.rarity || 'common';
+  const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+  const overlay = document.createElement('div');
+  overlay.id = `gm-wiz-approve-${charId}`;
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:480px">
+      <h2 style="margin-top:0">🎁 Starting-Item Approval</h2>
+      <div style="font-size:0.88rem;margin-bottom:8px"><strong>${char.name}</strong> rolled
+        <strong>d20 = ${data.starting_roll?.d20 ?? '?'}</strong> → proposed:</div>
+      <div style="padding:10px;background:var(--bg-surface-2);border-radius:var(--r-md);margin-bottom:10px">
+        <div style="font-weight:700;font-size:1rem">${data.proposed_item.name}</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">${data.proposed_item.description || '(no description)'}</div>
+        <div style="font-size:0.72rem;margin-top:4px">Category: <strong>${data.proposed_item.category || 'misc'}</strong></div>
+      </div>
+      <label style="font-size:0.78rem">Rarity (override if needed)</label>
+      <select id="gmw-rarity" style="width:100%;margin-bottom:8px">
+        ${rarities.map(r => `<option value="${r}" ${r===rarity?'selected':''}>${r}</option>`).join('')}
+      </select>
+      <label style="font-size:0.78rem">GM note (optional)</label>
+      <input type="text" id="gmw-note" placeholder="e.g. Nice concept" style="width:100%;margin-bottom:12px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="gmw-cancel">Close</button>
+        <button class="btn btn-danger btn-sm" id="gmw-reject">Reject</button>
+        <button class="btn btn-primary btn-sm" id="gmw-approve">Approve</button>
+      </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#gmw-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#gmw-reject').addEventListener('click', async () => {
+    const note = overlay.querySelector('#gmw-note').value.trim();
+    try {
+      await api.post(`/api/wizard/${charId}/gm-reject`, { note });
+      addLog('gm.wizard', `Rejected starting-item for ${char.name}`);
+      overlay.remove();
+    } catch { showToast('Failed to reject'); }
+  });
+  overlay.querySelector('#gmw-approve').addEventListener('click', async () => {
+    const rarity_override = overlay.querySelector('#gmw-rarity').value;
+    const note = overlay.querySelector('#gmw-note').value.trim();
+    try {
+      const res = await api.post(`/api/wizard/${charId}/gm-approve`, { rarity_override, note });
+      addLog('gm.wizard', `Approved starting-item for ${char.name} (${res.rarity})`);
+      overlay.remove();
+    } catch { showToast('Failed to approve'); }
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 // ITEM DATABASE

@@ -32,6 +32,9 @@ from app.routers.session_timer import router as session_timer_router
 from app.routers.combat_actions import router as combat_actions_router
 from app.routers.abilities import router as abilities_router
 from app.routers.memory import router as memory_router
+from app.routers.professions import router as professions_router
+from app.routers.poisons import router as poisons_router
+from app.routers.wizard import router as wizard_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -80,6 +83,9 @@ app.include_router(session_timer_router)
 app.include_router(combat_actions_router)
 app.include_router(abilities_router)
 app.include_router(memory_router)
+app.include_router(professions_router)
+app.include_router(poisons_router)
+app.include_router(wizard_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

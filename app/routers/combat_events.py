@@ -77,6 +77,31 @@ class DamageRollBody(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────
+_STAT_SHORT = {
+    "strength": "STR", "dexterity": "DEX", "constitution": "CON",
+    "intelligence": "INT", "wisdom": "WIS", "charisma": "CHA",
+}
+
+
+def _stat_short(name: str | None) -> str:
+    if not name:
+        return ""
+    return _STAT_SHORT.get(name, name[:3].upper())
+
+
+def _resolve_display_stat(weapon: dict | None, attacker, kind: str) -> tuple[int, str]:
+    """Rework: derive stat modifier + short label using weapon.hit_stat / damage_stat
+    with legacy finesse fallback. kind is 'hit' or 'damage'."""
+    from app.game_mechanics import _resolve_stat_from_weapon
+    stats = {
+        "strength": attacker.strength, "dexterity": attacker.dexterity,
+        "constitution": attacker.constitution, "intelligence": attacker.intelligence,
+        "wisdom": attacker.wisdom, "charisma": attacker.charisma,
+    }
+    val, name = _resolve_stat_from_weapon(stats, weapon, kind)
+    return val, _stat_short(name)
+
+
 async def _serialize_combat(ce: CombatEvent, db: AsyncSession) -> dict:
     result = await db.execute(
         select(CombatParticipant).where(
@@ -715,6 +740,9 @@ async def _get_equipped_weapon(character_id: int, db: AsyncSession) -> dict | No
         "attack_bonus": 0,
         "weapon_range": ws.weapon_range or "melee",
         "weapon_properties": props,
+        # Rework Phase 2: stat binding lives on the weapon itself
+        "hit_stat": getattr(ws, "hit_stat", None) or "strength",
+        "damage_stat": getattr(ws, "damage_stat", "strength"),
     }
 
 
@@ -826,16 +854,8 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
     # 7. Build hit breakdown string
     parts = [f"D20({d20})"]
     if sm != 0:
-        stat_name = "STR"
-        if weapon:
-            props = weapon.get("weapon_properties", [])
-            wrange = weapon.get("weapon_range", "melee")
-            if wrange == "ranged":
-                stat_name = "DEX"
-            elif "finesse" in props:
-                dex_mod = stat_modifier(attacker.dexterity)
-                str_mod = stat_modifier(attacker.strength)
-                stat_name = "DEX" if dex_mod > str_mod else "STR"
+        _, stat_name = _resolve_display_stat(weapon, attacker, "hit")
+        stat_name = stat_name or "STR"
         parts.append(f"{stat_name}({'+' if sm >= 0 else ''}{sm})")
     if wb != 0:
         parts.append(f"{weapon['name'] if weapon else 'Weapon'}({'+' if wb >= 0 else ''}{wb})")
@@ -914,14 +934,8 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
     dice_str = "+".join(str(r) for r in dice_rolls)
     dmg_parts = [f"{actual_dc}d{dt}({dice_str}={base_damage})"]
     if dmg_sm != 0:
-        stat_label = "STR"
-        if weapon:
-            props = weapon.get("weapon_properties", [])
-            wrange = weapon.get("weapon_range", "melee")
-            if wrange == "ranged":
-                stat_label = "DEX"
-            elif "finesse" in props:
-                stat_label = "DEX" if stat_modifier(attacker.dexterity) > stat_modifier(attacker.strength) else "STR"
+        _, stat_label = _resolve_display_stat(weapon, attacker, "damage")
+        stat_label = stat_label or "STR"
         dmg_parts.append(f"{stat_label} mod({'+' if dmg_sm >= 0 else ''}{dmg_sm})")
     if item_dmg_bonus != 0:
         for bd in atk_item_bonuses.get("breakdown", []):
@@ -1033,16 +1047,8 @@ async def hit_roll(body: HitRollBody, db: AsyncSession = Depends(get_session)):
     # Build breakdown string (same logic as execute_attack)
     parts = [f"D20({d20})"]
     if sm != 0:
-        stat_name = "STR"
-        if weapon:
-            props = weapon.get("weapon_properties", [])
-            wrange = weapon.get("weapon_range", "melee")
-            if wrange == "ranged":
-                stat_name = "DEX"
-            elif "finesse" in props:
-                dex_mod = stat_modifier(attacker.dexterity)
-                str_mod = stat_modifier(attacker.strength)
-                stat_name = "DEX" if dex_mod > str_mod else "STR"
+        _, stat_name = _resolve_display_stat(weapon, attacker, "hit")
+        stat_name = stat_name or "STR"
         parts.append(f"{stat_name}({'+' if sm >= 0 else ''}{sm})")
     if wb != 0:
         parts.append(f"{weapon['name'] if weapon else 'Weapon'}({'+' if wb >= 0 else ''}{wb})")
@@ -1155,14 +1161,8 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
     dice_str = "+".join(str(r) for r in dice_rolls)
     dmg_parts = [f"{actual_dc}d{dt}({dice_str}={base_damage})"]
     if dmg_sm != 0:
-        stat_label = "STR"
-        if weapon:
-            props = weapon.get("weapon_properties", [])
-            wrange = weapon.get("weapon_range", "melee")
-            if wrange == "ranged":
-                stat_label = "DEX"
-            elif "finesse" in props:
-                stat_label = "DEX" if stat_modifier(attacker.dexterity) > stat_modifier(attacker.strength) else "STR"
+        _, stat_label = _resolve_display_stat(weapon, attacker, "damage")
+        stat_label = stat_label or "STR"
         dmg_parts.append(f"{stat_label} mod({'+' if dmg_sm >= 0 else ''}{dmg_sm})")
     if item_dmg_bonus != 0:
         for bd in atk_item_bonuses.get("breakdown", []):
@@ -1210,6 +1210,11 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
     if target_downed:
         target.is_alive = False
 
+    # Rework Phase 5: apply weapon-poison DoT to target (only if damage actually landed)
+    poison_applied = None
+    if final_damage > 0 and not target_downed:
+        poison_applied = await _apply_weapon_poison_on_hit(attacker, target, db)
+
     await db.commit()
     await db.refresh(target)
 
@@ -1225,4 +1230,80 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
         "target_downed": target_downed,
         "attacker_name": attacker.name,
         "target_name": target.name,
+        "poison": poison_applied,
+    }
+
+
+async def _apply_weapon_poison_on_hit(attacker: Character, target: Character, db: AsyncSession):
+    """Rework Phase 5: on a successful hit, check if attacker's equipped weapon has a
+    poison coat, roll DoT damage, attach a DoT status effect to target, and consume a charge.
+    Returns a small dict describing what happened, or None if no coat.
+    """
+    from app.models import InventoryItemPoison
+    # Find the equipped main_hand weapon inventory entry
+    eq = await db.execute(
+        select(InventoryItem).where(
+            InventoryItem.character_id == attacker.id,
+            InventoryItem.is_equipped == True,
+            InventoryItem.equipped_slot == "main_hand",
+        )
+    )
+    inv = eq.scalars().first()
+    if not inv:
+        return None
+    coat_q = await db.execute(
+        select(InventoryItemPoison).where(InventoryItemPoison.inventory_item_id == inv.id)
+    )
+    coat = coat_q.scalars().first()
+    if not coat or coat.charges_remaining <= 0:
+        return None
+    tpl = coat.poison_template
+    if not tpl:
+        return None
+    # Roll DoT damage once, lock it in per tick for simplicity
+    dice_rolls = [random.randint(1, max(2, tpl.damage_dice_type)) for _ in range(max(1, tpl.damage_dice_count))]
+    dot_damage = sum(dice_rolls)
+    # Attach status effect
+    effect_json = json.dumps([{
+        "type": "hp_change_per_turn",
+        "value": -int(dot_damage),
+        "source": "poison",
+        "damage_type": tpl.damage_type,
+        "dice_expr": f"{tpl.damage_dice_count}d{tpl.damage_dice_type}",
+    }])
+    se = CharacterStatusEffect(
+        character_id=target.id,
+        template_id=None,
+        name=f"{tpl.icon} {tpl.name}",
+        icon=tpl.icon,
+        color=tpl.color,
+        effects=effect_json,
+        remaining_turns=coat.turns_per_hit,
+        applied_by_id=attacker.id,
+    )
+    db.add(se)
+    # Consume charge
+    coat.charges_remaining -= 1
+    if coat.charges_remaining <= 0:
+        await db.delete(coat)
+    # Notify listeners
+    try:
+        await manager.broadcast(target.session_id, {
+            "event": "status.update",
+            "character_id": target.id,
+        })
+        await manager.broadcast(attacker.session_id, {
+            "event": "inventory.update",
+            "character_id": attacker.id,
+        })
+    except Exception:
+        pass
+    return {
+        "template_id": tpl.id,
+        "name": tpl.name,
+        "icon": tpl.icon,
+        "dice_expr": f"{tpl.damage_dice_count}d{tpl.damage_dice_type}",
+        "per_tick_damage": dot_damage,
+        "turns": coat.turns_per_hit,
+        "charges_remaining": max(0, coat.charges_remaining),
     }

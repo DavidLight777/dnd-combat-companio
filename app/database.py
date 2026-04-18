@@ -25,11 +25,16 @@ async def init_db():
     # (create_all does not ALTER existing tables)
     _migrations = [
         # (table, column, column_def_sql) — idempotent, try/except absorbs "duplicate column"
-        ("items",      "is_potion",   "is_potion BOOLEAN DEFAULT 0"),
-        ("items",      "potion_icon", "potion_icon VARCHAR(8) DEFAULT '🧪'"),
+        ("items",             "is_potion",          "is_potion BOOLEAN DEFAULT 0"),
+        ("items",             "potion_icon",        "potion_icon VARCHAR(8) DEFAULT '🧪'"),
         # Fix 1: ensure existing DBs have the table-visibility columns
-        ("characters", "show_hp_to_players",  "show_hp_to_players BOOLEAN DEFAULT 0"),
-        ("characters", "place_at_table",      "place_at_table BOOLEAN DEFAULT 0"),
+        ("characters",        "show_hp_to_players", "show_hp_to_players BOOLEAN DEFAULT 0"),
+        ("characters",        "place_at_table",     "place_at_table BOOLEAN DEFAULT 0"),
+        # Rework Phase 1: Character ranks
+        ("characters",        "rank",               "rank VARCHAR(20) DEFAULT 'common'"),
+        # Rework Phase 1: weapon hit/damage stat
+        ("item_weapon_stats", "hit_stat",           "hit_stat VARCHAR(20) DEFAULT 'strength'"),
+        ("item_weapon_stats", "damage_stat",        "damage_stat VARCHAR(20) DEFAULT 'strength'"),
     ]
     async with engine.begin() as conn:
         for table, col, coldef in _migrations:

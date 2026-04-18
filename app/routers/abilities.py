@@ -267,7 +267,17 @@ async def _remove_passive_bonuses(char_id: int, ability: Ability, db: AsyncSessi
 # ── Use ability ──────────────────────────────────────────────
 @router.post("/character-abilities/{ca_id}/use")
 async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
-    """Use a character ability — deduct mana, apply effects, start cooldown."""
+    """Use a character ability — deduct mana, apply effects, start cooldown.
+
+    Rework Phase 6 optional body fields:
+      * hit_roll: {"hit": bool, "critical": bool, "total": int, "breakdown": str}
+          — if provided and ability.requires_hit_roll, a `hit=false` skips damage/apply_status.
+          — `critical=true` doubles dice on damage/heal.
+      * override_dice_count, override_dice_type: int
+          — player/GM picked dice in the widget; overrides ability.damage_dice_* for
+            damage/heal effects (applies to the first matching effect or to all).
+      * target_id: int  — target character for damage/apply_status effects.
+    """
     from app.game_mechanics import spend_mana, get_effective_mana_max, restore_mana as _restore_mana
 
     body = body or {}
@@ -284,7 +294,31 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     if not char:
         raise HTTPException(404, "Character not found")
 
+    # Rework Phase 6: incoming hit roll (optional, only meaningful if requires_hit_roll)
+    hit_info = body.get("hit_roll") or None
+    hit_ok = True
+    is_crit = False
+    if ability.requires_hit_roll and hit_info is not None:
+        hit_ok = bool(hit_info.get("hit", True))
+        is_crit = bool(hit_info.get("critical", False))
+
+    # Dice overrides from the widget
+    def _override_dc(default_dc): 
+        v = body.get("override_dice_count")
+        return int(v) if (v is not None and int(v) > 0) else int(default_dc)
+    def _override_dt(default_dt):
+        v = body.get("override_dice_type")
+        return int(v) if (v is not None and int(v) > 0) else int(default_dt)
+
     results = []
+    if ability.requires_hit_roll and hit_info is not None:
+        bd = hit_info.get("breakdown") or f"Total {hit_info.get('total','?')}"
+        if not hit_ok:
+            results.append(f"✗ {ability.name} missed ({bd})")
+        elif is_crit:
+            results.append(f"✨ CRIT — {ability.name} ({bd})")
+        else:
+            results.append(f"✓ {ability.name} hits ({bd})")
 
     # Mana cost
     if ability.mana_cost > 0:
@@ -315,14 +349,17 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
         etype = eff.get("type", "")
 
         if etype == "heal_hp":
-            dc = eff.get("dice_count", 1)
-            dt = eff.get("dice_type", 4)
+            # Rework Phase 6: respect dice overrides from widget; double on crit
+            dc = _override_dc(eff.get("dice_count", 1))
+            dt = _override_dt(eff.get("dice_type", 4))
             fb = eff.get("flat_bonus", 0)
-            rolls = [random.randint(1, dt) for _ in range(dc)]
+            actual_dc = dc * 2 if is_crit else dc
+            rolls = [random.randint(1, dt) for _ in range(max(1, actual_dc))]
             total = sum(rolls) + fb
             old_hp = char.current_hp
             char.current_hp = min(char.max_hp, char.current_hp + total)
-            results.append(f"Heal: {dc}d{dt}+{fb}={total} → +{char.current_hp - old_hp} HP")
+            crit_tag = " CRIT×2" if is_crit else ""
+            results.append(f"Heal{crit_tag}: {actual_dc}d{dt}+{fb}={total} → +{char.current_hp - old_hp} HP")
 
         elif etype == "restore_mana":
             amount = eff.get("amount", 0)
@@ -374,20 +411,26 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
                 results.append(f"Removed: {status_name}")
 
         elif etype == "damage":
-            dc = eff.get("dice_count", 1)
-            dt = eff.get("dice_type", 6)
+            # Rework Phase 6: if a hit roll was required and it missed → skip damage entirely
+            if ability.requires_hit_roll and hit_info is not None and not hit_ok:
+                results.append(f"Damage skipped — attack missed")
+                continue
+            dc = _override_dc(eff.get("dice_count", 1))
+            dt = _override_dt(eff.get("dice_type", 6))
             fb = eff.get("flat_bonus", 0)
+            actual_dc = dc * 2 if is_crit else dc
             target_id = body.get("target_id")
             target = await db.get(Character, target_id) if target_id else char
             if not target:
                 target = char
-            rolls = [random.randint(1, dt) for _ in range(dc)]
+            rolls = [random.randint(1, dt) for _ in range(max(1, actual_dc))]
             total = sum(rolls) + fb
             old_hp = target.current_hp
             target.current_hp = max(0, target.current_hp - total)
             if target.current_hp <= 0:
                 target.is_alive = False
-            results.append(f"Damage: {dc}d{dt}+{fb}={total} → -{old_hp - target.current_hp} HP to {target.name}")
+            crit_tag = " CRIT×2" if is_crit else ""
+            results.append(f"Damage{crit_tag}: {actual_dc}d{dt}+{fb}={total} → -{old_hp - target.current_hp} HP to {target.name}")
 
         elif etype == "custom":
             results.append(f"Effect: {eff.get('description', '')}")

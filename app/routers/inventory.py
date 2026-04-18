@@ -457,7 +457,11 @@ def _inventory_item_dict(inv: InventoryItem) -> dict:
 # CHARACTER INVENTORY — Full CRUD
 # ══════════════════════════════════════════════════════════════
 @router.get("/characters/{character_id}/inventory")
-async def get_character_inventory(character_id: int, db: AsyncSession = Depends(get_session)):
+async def get_character_inventory(
+    character_id: int,
+    tab: str = "all",  # "all" | "bag" | "equipped"
+    db: AsyncSession = Depends(get_session),
+):
     char = await db.get(Character, character_id)
     if not char:
         raise HTTPException(404, "Character not found")
@@ -467,19 +471,42 @@ async def get_character_inventory(character_id: int, db: AsyncSession = Depends(
     )
     entries = result.scalars().all()
     items = []
-    total_weight = 0.0
+    total_weight = 0.0       # legacy: all items
+    total_weight_bag = 0.0   # Rework: only non-equipped (what the bag carries)
+    bag_count = 0
+    equipped_count = 0
     for e in entries:
         d = _inventory_item_dict(e)
-        total_weight += (d.get("weight", 0) or 0) * e.quantity
+        w = (d.get("weight", 0) or 0) * e.quantity
+        total_weight += w
+        if d.get("is_equipped"):
+            equipped_count += 1
+        else:
+            bag_count += 1
+            total_weight_bag += w
         items.append(d)
+
+    # Rework Phase 3: optional server-side filter for tab
+    tab_norm = (tab or "all").lower()
+    if tab_norm == "bag":
+        items_out = [it for it in items if not it.get("is_equipped")]
+    elif tab_norm == "equipped":
+        items_out = [it for it in items if it.get("is_equipped")]
+    else:
+        items_out = items
 
     # Currency display
     wb = char.wealth_bronze or 0
     currency = _bronze_to_display(wb)
 
     return {
-        "items": items,
+        "items": items_out,
+        "tab": tab_norm,
         "total_weight": round(total_weight, 1),
+        # Rework Phase 3: bag-only weight (equipped doesn't count)
+        "total_weight_bag": round(total_weight_bag, 1),
+        "bag_count": bag_count,
+        "equipped_count": equipped_count,
         "gold_copper": wb,
         "wealth_bronze": wb,
         "currency": currency,

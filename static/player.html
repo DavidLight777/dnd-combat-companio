@@ -385,14 +385,18 @@
             <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>
           </div>
           <div class="panel-body">
-            <div class="equipment-panel" id="equipment-panel">
-              <h3 style="font-size:0.82rem;margin-bottom:8px">⚔️ Equipment</h3>
-              <div class="equip-slots-grid" id="equip-slots-grid"></div>
+            <!-- Rework Phase 3: Bag / Equipped top tabs -->
+            <div class="inv-tab-bar" id="inv-tab-bar" style="display:flex;gap:6px;margin-bottom:10px">
+              <button class="btn btn-ghost btn-sm inv-tab active" data-inv-tab="bag">🎒 Bag <span class="tab-count" id="tab-count-bag">0</span></button>
+              <button class="btn btn-ghost btn-sm inv-tab" data-inv-tab="equipped">⚔️ Equipped <span class="tab-count" id="tab-count-equipped">0</span></button>
             </div>
-            <hr class="section-divider">
+            <div class="equipment-panel" id="equipment-panel" style="display:none">
+              <h3 style="font-size:0.82rem;margin-bottom:8px">⚔️ Equipment Slots</h3>
+              <div class="equip-slots-grid" id="equip-slots-grid"></div>
+              <hr class="section-divider">
+            </div>
             <div class="inv-filter-tabs" id="inv-filter-tabs">
               <button class="btn btn-ghost btn-xs inv-filter active" data-inv-filter="all">All</button>
-              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="equipped">Equipped</button>
               <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="weapon">Weapons</button>
               <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="armor">Armor</button>
               <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="potion">Potions</button>
@@ -439,6 +443,20 @@
       </div>
     </div>
 
+    <!-- ══ PROFESSIONS TAB (Rework Phase 4) ══════════════════ -->
+    <div class="player-tab" id="tab-professions" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header"><h2>🛡️ Professions</h2></div>
+          <div class="panel-body">
+            <div id="professions-list" style="display:flex;flex-direction:column;gap:10px;min-height:40px">
+              <span class="text-muted" style="font-size:0.82rem">Loading…</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <!-- ══ MEMORY TAB ════════════════════════════════════════ -->
     <div class="player-tab" id="tab-memory" style="display:none;padding:12px">
       <div class="panels-row">
@@ -463,7 +481,8 @@
   <nav class="player-tab-bar">
     <button class="player-tab-btn active" data-tab="tab-main">⚔️<span>Main</span></button>
     <button class="player-tab-btn" data-tab="tab-inventory">🎒<span>Inventory</span></button>
-    <button class="player-tab-btn" data-tab="tab-abilities">✨<span>Abilities</span></button>
+    <button class="player-tab-btn" data-tab="tab-abilities">✨<span>Skills</span></button>
+    <button class="player-tab-btn" data-tab="tab-professions">🛡️<span>Professions</span></button>
     <button class="player-tab-btn" data-tab="tab-memory">📖<span>Memory</span></button>
     <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
   </nav>

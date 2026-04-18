@@ -350,6 +350,10 @@
         sessionStorage.setItem('player_token', data.player_token);
         sessionStorage.setItem('character_id', data.character_id);
         sessionStorage.setItem('session_code', data.session_code);
+        // Rework Phase 7: open the starting-item wizard for this fresh character
+        try {
+          await fetch(`/api/wizard/${data.character_id}/start`, { method: 'POST' });
+        } catch { /* non-fatal */ }
         window.location.href = `/player?code=${data.session_code}`;
       } catch (e) {
         $('#join-error').textContent = e.message;
