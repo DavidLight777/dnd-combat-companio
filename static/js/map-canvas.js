@@ -9,9 +9,31 @@ class MapCanvas {
     this.ctx = canvasEl.getContext('2d');
     this.role = options.role || 'player'; // 'gm' or 'player'
     this.sessionCode = options.sessionCode || '';
+    // Rework v3 Phase 2: players may only drag their OWN token. This id
+    // is consulted in `_isTokenDraggable` below. Leave null for GM.
+    this.ownCharacterId = options.ownCharacterId != null ? options.ownCharacterId : null;
+    // Rework v3 Phase 2: when true, drop positions are snapped to the
+    // nearest grid-cell centre before firing onTokenMove. Safe default:
+    // enabled whenever the grid itself is enabled.
+    this.snapToGrid = options.snapToGrid !== false;
+    // Rework v3 Phase 3: combat-mode gating. When false, a player may
+    // NOT drag their own token (e.g. combat is active and it's somebody
+    // else's turn). GM is unaffected — they always retain full control.
+    // Driven by player-app.js via setCanPlayerMove().
+    this.canPlayerMove = options.canPlayerMove !== false;
+    // Rework v3 Phase 4: reachable-cell overlay. When combat is active
+    // AND it's the player's turn, `movementLeftCells` holds the number
+    // of cells they can still traverse — rendered as a translucent
+    // gold ring / cell highlight centred on their own token. `null`
+    // disables the overlay. Outside combat this stays null too.
+    this.movementLeftCells = null;
+    this.movementTotalCells = null;
     this.onTokenMove = options.onTokenMove || null; // callback(charId, x, y)
     this.onFogReveal = options.onFogReveal || null; // callback(col, row)
     this.onDrawingSaved = options.onDrawingSaved || null; // callback(drawingData)
+    // Phase 5: fired when the GM finishes dragging out a wall/zone
+    // rectangle. Receives `{x1, y1, x2, y2, kind}` (normalised 0..1).
+    this.onObjectSaved = options.onObjectSaved || null;
     this.onMarkerCreate = options.onMarkerCreate || null; // callback(x, y) normalized
     this.onMarkerClick = options.onMarkerClick || null;
     this.onTokenClick = options.onTokenClick || null;
@@ -32,6 +54,11 @@ class MapCanvas {
     // Overlays (Stage 9)
     this.drawings = [];
     this.markers = [];
+    // Rework v3 Phase 5: map objects (walls / zones). Rendered under
+    // tokens but above the base map image. `setObjects()` drops in a
+    // fresh list; the WS `map.objects_updated` event triggers a full
+    // refresh from the /overlays endpoint.
+    this.mapObjects = [];
 
     // Transform
     this.offsetX = 0;
@@ -85,6 +112,91 @@ class MapCanvas {
     this.render();
   }
 
+  // Phase 5: drop-in replacement of the wall/object list.
+  setObjects(objects) {
+    this.mapObjects = Array.isArray(objects) ? objects : [];
+    this.render();
+  }
+
+  // Phase 6: lazy cache of HTMLImageElement objects keyed by URL.
+  // `setTokens` doesn't prefetch — the image is loaded the first time
+  // we try to render that token, then re-render is triggered when the
+  // load completes.
+  _getTokenImage(url) {
+    if (!url) return null;
+    if (!this._tokenImgCache) this._tokenImgCache = new Map();
+    const cached = this._tokenImgCache.get(url);
+    if (cached) return cached;
+    const img = new Image();
+    img.onload = () => { this.render(); };
+    img.onerror = () => {
+      // Mark broken so we don't keep retrying on every frame.
+      img._broken = true;
+      this.render();
+    };
+    img.src = url;
+    this._tokenImgCache.set(url, img);
+    return img;
+  }
+
+  // ── Phase 2 helpers ────────────────────────────────────────
+  // Can the current user drag this token? GM can drag anything; a
+  // player may only drag the token whose character_id matches their
+  // own. Future phases layer additional rules on top (e.g. combat-turn
+  // gating in Phase 3, speed budget in Phase 4) — keep them here.
+  _isTokenDraggable(token) {
+    if (!token) return false;
+    if (this.role === 'gm') return true;
+    if (this.role === 'player' && this.ownCharacterId != null) {
+      // Phase 3: combat-mode gating blocks drag when it isn't our turn.
+      if (!this.canPlayerMove) return false;
+      return token.character_id === this.ownCharacterId;
+    }
+    return false;
+  }
+
+  // Phase 3: toggled from player-app.js whenever combat state changes.
+  // Setter rather than a raw assignment so we can also refresh the
+  // cursor / visual hint without the caller having to remember to
+  // re-render.
+  setCanPlayerMove(can) {
+    const next = !!can;
+    if (this.canPlayerMove === next) return;
+    this.canPlayerMove = next;
+    this.render();
+  }
+
+  // Phase 4: feed the reachable-cell overlay with the authoritative
+  // numbers from the server. Pass `(null, null)` to hide the overlay
+  // (e.g. combat ended or not our turn).
+  setMovementBudget(left, total) {
+    const a = left == null ? null : Math.max(0, Number(left));
+    const b = total == null ? null : Math.max(0, Number(total));
+    if (this.movementLeftCells === a && this.movementTotalCells === b) return;
+    this.movementLeftCells = a;
+    this.movementTotalCells = b;
+    this.render();
+  }
+
+  // Snap a normalised (0..1) coordinate pair to the nearest grid-cell
+  // centre. Returns the same pair unchanged if snapping is disabled or
+  // impossible (grid off / no map / zero size). Tokens render at cell
+  // centres, so we round down to the containing cell and add half a
+  // cell back — matching the visual position of a placed token.
+  _snapNorm(nx, ny) {
+    if (!this.snapToGrid || !this.gridEnabled) return { x: nx, y: ny };
+    if (!this.mapWidth || !this.mapHeight || !this.gridSize) return { x: nx, y: ny };
+    const px = nx * this.mapWidth;
+    const py = ny * this.mapHeight;
+    const sx = (Math.floor(px / this.gridSize) + 0.5) * this.gridSize;
+    const sy = (Math.floor(py / this.gridSize) + 0.5) * this.gridSize;
+    // Clamp inside the map so snap near the edge doesn't overshoot.
+    return {
+      x: Math.max(0, Math.min(1, sx / this.mapWidth)),
+      y: Math.max(0, Math.min(1, sy / this.mapHeight)),
+    };
+  }
+
   setGrid(size, enabled) {
     this.gridSize = size;
     this.gridEnabled = enabled;
@@ -115,7 +227,7 @@ class MapCanvas {
     this._shapePreview = null;
     this._measureStart = null;
     this._measureEnd = null;
-    const cursors = { freehand: 'crosshair', rectangle: 'crosshair', circle: 'crosshair', line: 'crosshair', arrow: 'crosshair', marker: 'cell', erase: 'pointer', measure: 'crosshair' };
+    const cursors = { freehand: 'crosshair', rectangle: 'crosshair', circle: 'crosshair', line: 'crosshair', arrow: 'crosshair', marker: 'cell', erase: 'pointer', measure: 'crosshair', 'obj-wall': 'crosshair' };
     this.canvas.style.cursor = cursors[mode] || 'default';
   }
 
@@ -151,6 +263,13 @@ class MapCanvas {
     for (const d of this.drawings) {
       if (!d.visible_to_players && this.role !== 'gm') continue;
       this._renderDrawing(ctx, d);
+    }
+
+    // Phase 5: map objects (walls / zones). Rendered below tokens and
+    // markers so walkable highlights / selection rings sit on top.
+    for (const o of this.mapObjects) {
+      if (!o.visible_to_players && this.role !== 'gm') continue;
+      this._renderMapObject(ctx, o);
     }
 
     // Markers (Stage 9)
@@ -218,6 +337,44 @@ class MapCanvas {
       }
     }
 
+    // Phase 4: reachable-cell overlay for the player's own token.
+    // Drawn BEFORE the tokens so it sits underneath them. Only active
+    // when role=player, the player owns a specific token that's
+    // visible on the canvas, and a non-null movement budget was
+    // provided — which is equivalent to "it's our turn in combat".
+    if (this.role === 'player'
+        && this.ownCharacterId != null
+        && this.movementLeftCells != null
+        && this.movementLeftCells > 0
+        && this.gridEnabled
+        && this.gridSize > 0
+        && this.mapWidth > 0) {
+      const own = this.tokens.find(t => t.character_id === this.ownCharacterId);
+      if (own && own.x != null && own.y != null) {
+        const cx = Math.floor(own.x * this.mapWidth / this.gridSize);
+        const cy = Math.floor(own.y * this.mapHeight / this.gridSize);
+        const reach = Math.floor(this.movementLeftCells);
+        const gs = this.gridSize;
+        ctx.save();
+        // Gold tint per cell within Chebyshev reach.
+        ctx.fillStyle = 'rgba(255,215,96,0.12)';
+        ctx.strokeStyle = 'rgba(255,215,96,0.45)';
+        ctx.lineWidth = 1 / this.scale;
+        for (let dx = -reach; dx <= reach; dx++) {
+          for (let dy = -reach; dy <= reach; dy++) {
+            if (dx === 0 && dy === 0) continue; // don't tint own cell
+            const col = cx + dx, row = cy + dy;
+            const px0 = col * gs, py0 = row * gs;
+            // Skip out-of-map cells.
+            if (px0 < 0 || py0 < 0 || px0 >= this.mapWidth || py0 >= this.mapHeight) continue;
+            ctx.fillRect(px0, py0, gs, gs);
+            ctx.strokeRect(px0 + 0.5 / this.scale, py0 + 0.5 / this.scale, gs - 1 / this.scale, gs - 1 / this.scale);
+          }
+        }
+        ctx.restore();
+      }
+    }
+
     // Tokens
     for (const t of this.tokens) {
       if (!t.visible && this.role !== 'gm') continue;
@@ -226,12 +383,29 @@ class MapCanvas {
       const py = t.y * this.mapHeight;
       const radius = (this.gridSize / 2) * 0.8;
 
-      // Circle
+      // Phase 6: if a portrait image is available AND loaded, render
+      // it clipped to the token circle. Otherwise fall back to the
+      // old coloured disc + initials path below.
+      const portrait = this._getTokenImage(t.token_image_url);
+      const hasPortrait = portrait && portrait.complete && portrait.naturalWidth > 0 && !portrait._broken;
+
       ctx.beginPath();
       ctx.arc(px, py, radius, 0, Math.PI * 2);
-      ctx.fillStyle = t.color || '#c08a2a';
       ctx.globalAlpha = t.is_alive ? 1 : 0.4;
-      ctx.fill();
+      if (hasPortrait) {
+        ctx.save();
+        ctx.clip();
+        // Cover-fit: aspect-preserving, centred, fills the circle.
+        const iw = portrait.naturalWidth, ih = portrait.naturalHeight;
+        const side = radius * 2;
+        const scale = Math.max(side / iw, side / ih);
+        const dw = iw * scale, dh = ih * scale;
+        ctx.drawImage(portrait, px - dw / 2, py - dh / 2, dw, dh);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = t.color || '#c08a2a';
+        ctx.fill();
+      }
 
       // Border
       ctx.strokeStyle = t.is_npc ? 'rgba(138,74,191,0.8)' : 'rgba(255,255,255,0.6)';
@@ -240,13 +414,37 @@ class MapCanvas {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Initials
-      const initials = t.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.max(10, radius * 0.8)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(initials, px, py);
+      // Phase 3: visual "my turn / locked" indicator on the player's
+      // own token. Gold ring when they CAN move, muted grey-dashed
+      // ring when they can't. GM and other players don't see either.
+      if (this.role === 'player' && this.ownCharacterId != null
+          && t.character_id === this.ownCharacterId) {
+        ctx.beginPath();
+        ctx.arc(px, py, radius + 4 / this.scale, 0, Math.PI * 2);
+        if (this.canPlayerMove) {
+          ctx.strokeStyle = 'rgba(255,215,96,0.9)';  // gold
+          ctx.lineWidth = 2.5 / this.scale;
+          ctx.setLineDash([]);
+        } else {
+          ctx.strokeStyle = 'rgba(180,180,180,0.7)'; // muted
+          ctx.lineWidth = 1.5 / this.scale;
+          ctx.setLineDash([4 / this.scale, 4 / this.scale]);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Initials — only shown when there's no portrait to occupy the
+      // disc. Skipping them when a face is rendered prevents an ugly
+      // "AB" overlay on top of a real image.
+      if (!hasPortrait) {
+        const initials = t.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.max(10, radius * 0.8)}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(initials, px, py);
+      }
 
       // HP bar under token
       if (t.max_hp > 0) {
@@ -334,7 +532,7 @@ class MapCanvas {
           this._drawingPath = [[n.x, n.y]];
           this._isDrawing = true;
           return;
-        } else if (['rectangle', 'circle', 'line', 'arrow'].includes(this.drawMode)) {
+        } else if (['rectangle', 'circle', 'line', 'arrow', 'obj-wall'].includes(this.drawMode)) {
           this._shapeStart = [n.x, n.y];
           return;
         } else if (this.drawMode === 'marker') {
@@ -363,13 +561,19 @@ class MapCanvas {
         return;
       }
 
-      // Token drag (GM only)
-      if (this.role === 'gm' && !this.drawMode) {
+      // Token drag — Rework v3 Phase 2: GM can drag anybody; player can
+      // drag only their own token. `_isTokenDraggable` centralises the
+      // rule so future phases (combat-turn gating, speed limits) extend
+      // it in one place.
+      if (!this.drawMode) {
         const token = this._hitToken(m.x, m.y);
-        if (token) {
+        if (token && this._isTokenDraggable(token)) {
           this.dragToken = token;
           this.isDragging = false;
           this.dragStart = { x: sx, y: sy };
+          // Phase 2: remember where the drag started so mouseup can
+          // suppress the PATCH if the user didn't actually move.
+          this._dragStartPos = { x: token.x, y: token.y };
           return;
         }
       }
@@ -392,13 +596,17 @@ class MapCanvas {
         this.render();
         return;
       }
-      if (['rectangle', 'circle', 'line', 'arrow'].includes(this.drawMode) && this._shapeStart) {
+      if (['rectangle', 'circle', 'line', 'arrow', 'obj-wall'].includes(this.drawMode) && this._shapeStart) {
+        // Phase 5: walls share the preview buffer with the normal
+        // rectangle drawing; the hatched look comes from actually
+        // committing an object in onObjectSaved, but the live preview
+        // is a plain outlined rect so the GM sees the footprint.
         this._shapePreview = {
-          drawing_type: this.drawMode,
+          drawing_type: this.drawMode === 'obj-wall' ? 'rectangle' : this.drawMode,
           points: [this._shapeStart, [n.x, n.y]],
-          color: this.drawColor,
+          color: this.drawMode === 'obj-wall' ? '#8a4abf' : this.drawColor,
           line_width: this.drawLineWidth,
-          fill_opacity: this.drawFillOpacity,
+          fill_opacity: this.drawMode === 'obj-wall' ? 0.45 : this.drawFillOpacity,
         };
         this.render();
         return;
@@ -438,12 +646,23 @@ class MapCanvas {
         return;
       }
       // Finish shape
-      if (['rectangle', 'circle', 'line', 'arrow'].includes(this.drawMode) && this._shapeStart) {
+      if (['rectangle', 'circle', 'line', 'arrow', 'obj-wall'].includes(this.drawMode) && this._shapeStart) {
         const rect2 = c.getBoundingClientRect();
         const sx2 = e.clientX - rect2.left, sy2 = e.clientY - rect2.top;
         const m2 = this._screenToMap(sx2, sy2);
         const n2 = this._mapToNormalized(m2.x, m2.y);
-        if (this.onDrawingSaved) {
+        if (this.drawMode === 'obj-wall') {
+          // Phase 5: emit a normalised AABB (callers normalise-and-swap
+          // inverted rects on the server anyway, but doing it here too
+          // keeps the signature tidy).
+          const x1 = Math.min(this._shapeStart[0], n2.x);
+          const y1 = Math.min(this._shapeStart[1], n2.y);
+          const x2 = Math.max(this._shapeStart[0], n2.x);
+          const y2 = Math.max(this._shapeStart[1], n2.y);
+          if (this.onObjectSaved && (x2 - x1) > 1e-4 && (y2 - y1) > 1e-4) {
+            this.onObjectSaved({ x1, y1, x2, y2, kind: 'wall' });
+          }
+        } else if (this.onDrawingSaved) {
           this.onDrawingSaved({
             drawing_type: this.drawMode, points: [this._shapeStart, [n2.x, n2.y]],
             color: this.drawColor, line_width: this.drawLineWidth,
@@ -463,18 +682,42 @@ class MapCanvas {
       }
 
       if (this.dragToken) {
-        if (this.onTokenMove) {
-          this.onTokenMove(this.dragToken.character_id, this.dragToken.x, this.dragToken.y);
+        // Rework v3 Phase 2: snap the live drag position to the nearest
+        // grid-cell centre before committing. We also compare against
+        // `_dragStartPos` (captured on mousedown) and suppress the
+        // callback for a pure click-with-no-movement — otherwise every
+        // tap on the own token would PATCH the server with unchanged
+        // coordinates and round-trip a WS echo for nothing.
+        const snapped = this._snapNorm(this.dragToken.x, this.dragToken.y);
+        this.dragToken.x = snapped.x;
+        this.dragToken.y = snapped.y;
+        const moved = !this._dragStartPos
+          || Math.abs(this._dragStartPos.x - snapped.x) > 1e-4
+          || Math.abs(this._dragStartPos.y - snapped.y) > 1e-4;
+        if (moved && this.onTokenMove) {
+          this.onTokenMove(this.dragToken.character_id, snapped.x, snapped.y);
         }
+        this.render();
         this.dragToken = null;
+        this._dragStartPos = null;
       }
       this.isDragging = false;
     });
 
     c.addEventListener('mouseleave', () => {
       if (this.dragToken) {
-        if (this.onTokenMove) this.onTokenMove(this.dragToken.character_id, this.dragToken.x, this.dragToken.y);
+        const snapped = this._snapNorm(this.dragToken.x, this.dragToken.y);
+        this.dragToken.x = snapped.x;
+        this.dragToken.y = snapped.y;
+        const moved = !this._dragStartPos
+          || Math.abs(this._dragStartPos.x - snapped.x) > 1e-4
+          || Math.abs(this._dragStartPos.y - snapped.y) > 1e-4;
+        if (moved && this.onTokenMove) {
+          this.onTokenMove(this.dragToken.character_id, snapped.x, snapped.y);
+        }
+        this.render();
         this.dragToken = null;
+        this._dragStartPos = null;
       }
       this.isDragging = false;
       this._isDrawing = false;
@@ -630,6 +873,54 @@ class MapCanvas {
       ctx.font = `${11 / this.scale}px Inter, sans-serif`;
       ctx.textAlign = 'left';
       ctx.fillText(d.label, lx, ly);
+    }
+    ctx.restore();
+  }
+
+  // ── Render a map object (Phase 5) ─────────────────────────────
+  // Axis-aligned rectangle in normalised coords. Walls render as a
+  // translucent solid fill plus a hatching stroke so they read as
+  // "dense" even at small sizes; non-wall "zone" objects are just a
+  // soft tint.
+  _renderMapObject(ctx, o) {
+    const mw = this._mw, mh = this._mh;
+    const x = o.x1 * mw;
+    const y = o.y1 * mh;
+    const w = (o.x2 - o.x1) * mw;
+    const h = (o.y2 - o.y1) * mh;
+    if (w <= 0 || h <= 0) return;
+    ctx.save();
+    const color = o.color || '#8a4abf';
+    // Fill.
+    ctx.globalAlpha = o.kind === 'wall' ? 0.6 : 0.28;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    // Border.
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 / this.scale;
+    ctx.strokeRect(x, y, w, h);
+    // Hatch pattern for walls.
+    if (o.kind === 'wall') {
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1 / this.scale;
+      const step = Math.max(8, this.gridSize / 3);
+      ctx.beginPath();
+      for (let d = -h; d < w; d += step) {
+        ctx.moveTo(x + d,       y);
+        ctx.lineTo(x + d + h,   y + h);
+      }
+      ctx.stroke();
+    }
+    // Optional label for the GM — small corner tag.
+    if (this.role === 'gm' && o.name && o.name !== 'Wall') {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${10 / this.scale}px Inter, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(o.name, x + 3 / this.scale, y + 3 / this.scale);
     }
     ctx.restore();
   }

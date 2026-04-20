@@ -450,6 +450,16 @@ async def create_npc(code: str, body: CharacterCreate, db: AsyncSession = Depend
     db.add(npc)
     await db.commit()
     await db.refresh(npc)
+    # Rework v3 Phase 1: ping every map-aware client so the new token
+    # appears on the embedded grid without a manual refresh. The
+    # self-heal in `GET /api/map/{code}` will assign default
+    # coordinates. `map.updated` is the coarse-grained event that both
+    # GM and player clients already listen to.
+    try:
+        from app.websocket_manager import manager
+        await manager.broadcast_to_session(code, "map.updated", {"reason": "npc_created"})
+    except Exception:
+        pass
     return _serialize_char(npc)
 
 
@@ -459,8 +469,23 @@ async def delete_character(char_id: int, db: AsyncSession = Depends(get_session)
     c = await db.get(Character, char_id)
     if not c:
         raise HTTPException(404, "Character not found")
+    # Capture session code before we delete the row, so we can still
+    # broadcast afterwards (the relationship becomes unusable post-delete).
+    sess_code = None
+    try:
+        sess = await db.get(Session, c.session_id)
+        if sess:
+            sess_code = sess.code
+    except Exception:
+        pass
     await db.delete(c)
     await db.commit()
+    if sess_code:
+        try:
+            from app.websocket_manager import manager
+            await manager.broadcast_to_session(sess_code, "map.updated", {"reason": "character_deleted"})
+        except Exception:
+            pass
     return {"ok": True}
 
 

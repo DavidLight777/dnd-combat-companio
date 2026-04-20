@@ -72,8 +72,21 @@ class Character(Base):
     map_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     map_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     token_color: Mapped[str] = mapped_column(Text, default="#c08a2a")
+    # Rework v3 Phase 6: optional portrait image used by MapCanvas to
+    # draw the token face inside the circle. URL points at
+    # /api/map/token-image/{filename}. `None` → fall back to the
+    # coloured circle + initials.
+    token_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_visible_on_map: Mapped[bool] = mapped_column(Boolean, default=True)
     vision_radius: Mapped[int] = mapped_column(Integer, default=5)
+    # Rework v3 Phase 4: grid-movement budget. `base_speed_cells` is the
+    # number of cells this character may traverse on their combat turn;
+    # default 6 matches the D&D 5e humanoid baseline (30 ft / 5 ft cell).
+    # `movement_used_this_turn` is reset to 0 when their turn begins and
+    # incremented by PATCH /api/map/token/{id}. Outside combat the field
+    # is ignored — free roaming.
+    base_speed_cells: Mapped[int] = mapped_column(Integer, default=6)
+    movement_used_this_turn: Mapped[float] = mapped_column(Float, default=0.0)
 
     status_effects: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -285,6 +298,31 @@ class MapDrawing(Base):
     fill_opacity: Mapped[float] = mapped_column(Float, default=0.2)
     visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
     label: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# Rework v3 Phase 5: rectangular obstacles placed by the GM. They
+# block player movement on the battle grid and are rendered as
+# translucent coloured zones for everybody. Coordinates are stored
+# normalised (0..1) so the same object stays correct across different
+# map images / screen sizes — matches the convention used by tokens,
+# drawings and markers elsewhere in the project.
+class MapObject(Base):
+    __tablename__ = "map_objects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, default="Wall")
+    kind: Mapped[str] = mapped_column(String(20), default="wall")  # wall, water, difficult, zone
+    # Axis-aligned rectangle (normalised). (x1,y1) is top-left,
+    # (x2,y2) is bottom-right, both in [0, 1].
+    x1: Mapped[float] = mapped_column(Float, default=0.0)
+    y1: Mapped[float] = mapped_column(Float, default=0.0)
+    x2: Mapped[float] = mapped_column(Float, default=0.0)
+    y2: Mapped[float] = mapped_column(Float, default=0.0)
+    color: Mapped[str] = mapped_column(Text, default="#8a4abf")
+    blocks_movement: Mapped[bool] = mapped_column(Boolean, default=True)
+    blocks_vision: Mapped[bool] = mapped_column(Boolean, default=False)
+    visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 # ══════════════════════════════════════════════════════════════

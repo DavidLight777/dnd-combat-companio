@@ -467,6 +467,16 @@ async def start_combat(combat_id: int, db: AsyncSession = Depends(get_session)):
     ce.started_at = datetime.now(timezone.utc)
     ce.current_participant_id = first_active.id if first_active else None
 
+    # Rework v3 Phase 4: clear everyone's movement budget at combat
+    # start so whatever was left over from the last fight doesn't carry
+    # into this one.
+    try:
+        from app.routers.map import reset_movement_for
+        for p in participants:
+            await reset_movement_for(p.character_id, db)
+    except Exception:
+        pass
+
     await db.commit()
     await db.refresh(ce)
     return await _serialize_combat(ce, db)
@@ -526,6 +536,15 @@ async def next_turn(combat_id: int, db: AsyncSession = Depends(get_session)):
         ce.round_number += 1
 
     ce.current_participant_id = participants[next_idx].id
+
+    # Rework v3 Phase 4: refresh the movement budget of the incoming
+    # actor so their turn starts with a full allowance.
+    try:
+        from app.routers.map import reset_movement_for
+        await reset_movement_for(participants[next_idx].character_id, db)
+    except Exception:
+        pass
+
     await db.commit()
     await db.refresh(ce)
 
@@ -544,6 +563,15 @@ async def end_combat(combat_id: int, db: AsyncSession = Depends(get_session)):
     ce = await _get_combat(combat_id, db)
     ce.status = "ended"
     ce.ended_at = datetime.now(timezone.utc)
+    # Rework v3 Phase 4: clear movement budget for everyone when the
+    # fight wraps — prevents stale "used 6/6" stickiness if a new
+    # combat starts immediately.
+    try:
+        from app.routers.map import reset_movement_for
+        for p in (ce.participants or []):
+            await reset_movement_for(p.character_id, db)
+    except Exception:
+        pass
 
     # FIX 5: Collect player participants + defeated NPCs BEFORE commit
     player_ids: list[int] = []

@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv2">
-  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv2">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p7">
+  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p7">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -376,6 +376,12 @@
           <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="erase" title="Erase">🗑️</button>
           <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="measure" title="Measure Distance">📏</button>
           <span style="width:1px;height:18px;background:var(--border)"></span>
+          <!-- Rework v3 Phase 5: map-objects / walls toolbar. `obj-wall`
+               enters a drag-to-place rectangle mode handled in
+               gm-app.js (see the Phase 5 `initMapObjectsTool` IIFE). -->
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="obj-wall" title="Draw Wall (blocks movement)">🧱</button>
+          <button class="btn btn-ghost btn-xs" id="btn-clear-objects" title="Clear All Walls/Objects">🧨 Clear Walls</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
           <input type="color" id="draw-color" value="#ff0000" style="width:28px;height:22px;border:none;background:none;cursor:pointer" title="Draw Color">
           <input type="range" id="draw-width" min="1" max="8" value="2" style="width:60px" title="Line Width">
           <label style="font-size:0.68rem;color:var(--text-muted);display:flex;align-items:center;gap:3px">
@@ -581,9 +587,9 @@
     </div>
   </div>
 
-  <script src="/static/js/websocket-client.js?v=reworkv2"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv2"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv2"></script>
-  <script src="/static/js/gm-app.js?v=reworkv2"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv3p7"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p7"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p7"></script>
+  <script src="/static/js/gm-app.js?v=reworkv3p7"></script>
 </body>
 </html>

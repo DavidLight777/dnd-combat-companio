@@ -162,29 +162,47 @@
           <!-- STATUS EFFECTS -->
           <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
 
-          <!-- TABLE VIEW (FIX 1: two rows per spec — teammates top, GM-placed bottom) -->
+          <!-- ══ BATTLE FIELD (Rework v3 Phase 1) ═════════════════════
+               Always-visible tactical grid. Replaces the chip-style
+               "At the Table" view as the primary spatial surface for
+               players. Click a token to select it as your target —
+               the selection wires into the same Actions / Attack /
+               Ability / Potion pipelines as before (selectedTargetId).
+               Legacy chip containers below are kept hidden so existing
+               JS (renderTableView, etc.) keeps updating them without
+               errors; they'll be removed in a later phase.
+          ═════════════════════════════════════════════════════════ -->
           <div class="panels-row">
-            <section class="panel panel-full">
-              <div class="panel-header"><h2>👥 At the Table</h2></div>
-              <div class="panel-body">
-                <!-- Teammates row -->
-                <div class="table-row-label" style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">— Teammates —</div>
-                <div id="table-view-teammates" class="table-row" style="display:flex;flex-wrap:wrap;gap:10px;min-height:36px;margin-bottom:12px">
-                  <span class="text-muted" style="font-size:0.78rem">No teammates</span>
+            <section class="panel panel-full" id="player-grid-panel">
+              <div class="panel-header" style="display:flex;align-items:center;gap:6px">
+                <h2 style="flex:1;margin:0">🗺️ Battle Field</h2>
+                <span id="player-grid-status" style="font-size:0.72rem;color:var(--text-muted)"></span>
+                <!-- Phase 6: players upload their own token portrait. -->
+                <button class="btn btn-ghost btn-xs" id="btn-player-portrait" title="Upload your token portrait">🖼️</button>
+                <button class="btn btn-ghost btn-xs" id="btn-grid-fit" title="Fit map to view">⛶</button>
+                <button class="btn btn-ghost btn-xs" id="btn-grid-expand" title="Expand / collapse grid height">⇕</button>
+              </div>
+              <div class="panel-body" style="padding:0">
+                <div id="player-grid-wrap" style="position:relative;width:100%;height:420px;background:#1a1814;border-top:1px solid var(--border);overflow:hidden">
+                  <canvas id="player-grid-canvas" style="display:block;width:100%;height:100%"></canvas>
+                  <div id="player-grid-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.82rem;pointer-events:none;text-align:center;padding:16px">
+                    Waiting for the GM to set up the battlefield…
+                  </div>
                 </div>
-                <!-- GM-placed row -->
-                <div class="table-row-label" style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">— GM Placed —</div>
-                <div id="table-view-npcs" class="table-row" style="display:flex;flex-wrap:wrap;gap:10px;min-height:36px">
-                  <span class="text-muted" style="font-size:0.78rem">GM hasn't placed anyone yet</span>
-                </div>
-                <div id="selected-target-info" style="display:none;margin-top:10px;padding:6px 10px;border-radius:var(--r-md);background:var(--bg-surface-2);border:1px solid var(--accent);font-size:0.82rem">
+                <div id="selected-target-info" style="display:none;margin:8px;padding:6px 10px;border-radius:var(--r-md);background:var(--bg-surface-2);border:1px solid var(--accent);font-size:0.82rem">
                   🎯 Target: <strong id="selected-target-name">—</strong>
                   <button class="btn btn-ghost btn-xs" id="btn-clear-target" style="margin-left:8px">✕ Clear</button>
                 </div>
-                <!-- Hidden legacy grid kept for any residual JS refs; drains nothing -->
-                <div id="table-view-grid" style="display:none"></div>
               </div>
             </section>
+          </div>
+
+          <!-- Legacy chip lists, hidden. renderTableView() still writes to
+               these nodes; removing the nodes would throw on every update. -->
+          <div style="display:none" aria-hidden="true">
+            <div id="table-view-teammates"></div>
+            <div id="table-view-npcs"></div>
+            <div id="table-view-grid"></div>
           </div>
 
           <!-- ACTION MENU -->
@@ -485,9 +503,9 @@
     <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
   </nav>
 
-  <script src="/static/js/websocket-client.js?v=reworkv2"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv2"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv2"></script>
-  <script src="/static/js/player-app.js?v=reworkv2"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv3p7"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p7"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p7"></script>
+  <script src="/static/js/player-app.js?v=reworkv3p7"></script>
 </body>
 </html>

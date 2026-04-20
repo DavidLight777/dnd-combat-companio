@@ -1571,36 +1571,252 @@ function showShopModal(items) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// MAP MODAL
+// MAP / BATTLE GRID  (Rework v3 Phase 1)
 // ══════════════════════════════════════════════════════════════
-let playerMapCanvas = null;
+// The player now has two canvases of the same map:
+//   • `playerMainGrid` — always-on, embedded in the Main tab (primary view).
+//   • `playerMapCanvas` — legacy modal, opened on demand for a fullscreen
+//     look. Both are fed from a single `loadPlayerMapState()` so they
+//     never drift; every WS map event fans out to both.
+// Token click on the main grid selects it as the combat target (same
+// `selectedTargetId` path as the old chip cards used), so the Actions
+// panel keeps working without any changes downstream.
+let playerMapCanvas = null;  // modal fullscreen
+let playerMainGrid  = null;  // always-on, in Main tab
+let _lastMapState   = null;  // cached for re-renders after tab switch
 
+// Iterate both canvases in one place.
+function _eachMapCanvas(fn) {
+  if (playerMainGrid)  fn(playerMainGrid);
+  if (playerMapCanvas) fn(playerMapCanvas);
+}
+
+// Apply a freshly fetched /api/map state to a canvas (or all of them).
+async function _applyMapStateTo(canvas, state) {
+  if (!canvas || !state) return;
+  if (state.has_map && state.image_url) {
+    try { await canvas.loadImage(state.image_url); } catch {}
+    canvas.setGrid(state.grid_size, state.grid_enabled);
+    canvas.setFog(state.fog_enabled, state.revealed_cells);
+  } else {
+    // No map yet — still render an empty grid so the player sees the
+    // spatial surface. Fallback 800x600 virtual canvas + 50px cells.
+    canvas.mapImage = null;
+    canvas.mapWidth = 800;
+    canvas.mapHeight = 600;
+    canvas.setGrid(50, true);
+    canvas.setFog(false, []);
+    canvas._fitToView();
+  }
+  canvas.setTokens(state.tokens || []);
+  canvas.setDrawings(state._drawings || canvas.drawings || []);
+  canvas.setMarkers(state._markers  || canvas.markers  || []);
+  // Phase 5: walls / zones. Filter server-side-hidden objects out
+  // on the client too as a belt-and-suspenders measure (the GM may
+  // flip visible_to_players).
+  const objs = (state._objects || canvas.mapObjects || [])
+    .filter(o => o.visible_to_players !== false);
+  canvas.setObjects(objs);
+  canvas.render();
+}
+
+// Load map state once and push to every mounted canvas.
+async function loadPlayerMapState() {
+  let state;
+  try {
+    state = await api.get(`/api/map/${SESSION_CODE}`);
+  } catch {
+    return;
+  }
+  // Fetch overlays in parallel; failure is fine (feature may be off).
+  try {
+    const ov = await api.get(`/api/map/${SESSION_CODE}/overlays`);
+    state._drawings = ov.drawings || [];
+    state._markers  = ov.markers  || [];
+    state._objects  = ov.objects  || [];
+  } catch {
+    state._drawings = [];
+    state._markers  = [];
+    state._objects  = [];
+  }
+  _lastMapState = state;
+  // Update the empty-state overlay on the main grid.
+  const emptyEl = document.getElementById('player-grid-empty');
+  if (emptyEl) emptyEl.style.display = state.has_map ? 'none' : 'flex';
+  const statusEl = document.getElementById('player-grid-status');
+  if (statusEl) {
+    const n = (state.tokens || []).filter(t => t.visible).length;
+    statusEl.textContent = state.has_map
+      ? `${n} token${n === 1 ? '' : 's'}`
+      : 'no map';
+  }
+  // Apply to each live canvas.
+  if (playerMainGrid)  await _applyMapStateTo(playerMainGrid,  state);
+  if (playerMapCanvas) await _applyMapStateTo(playerMapCanvas, state);
+  // Phase 4: once the fresh tokens are on-canvas, push the updated
+  // speed/movement numbers into the overlay + HUD.
+  if (typeof _refreshMovementBudget === 'function') _refreshMovementBudget();
+}
+
+// ── Phase 2: player moves own token ─────────────────────────────
+// Wiring helper shared by every player MapCanvas (main + modal). Fires
+// on mouseup after a real drag. MapCanvas has already snapped x/y to
+// the nearest cell centre, so we just PATCH with the caller token for
+// the ownership check on the server.
+async function _sendOwnTokenMove(charId, x, y) {
+  try {
+    const res = await fetch(`/api/map/token/${charId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x, y, player_token: PLAYER_TOKEN }),
+    });
+    // Phase 3: if the server rejected the move (combat-turn gating or
+    // ownership mismatch), surface a toast and refetch the authoritative
+    // position so the token snaps back visually. This closes the "move
+    // locally, silently fail on server" gap.
+    if (!res.ok) {
+      let msg = 'Move rejected';
+      try { const j = await res.json(); if (j && j.detail) msg = j.detail; } catch {}
+      showToast(`⛔ ${msg}`);
+      loadPlayerMapState();
+      return;
+    }
+  } catch (e) {
+    console.warn('token move failed:', e);
+  }
+}
+
+// ── Phase 3: keep MapCanvas in sync with combat state ──────────
+// `canPlayerMove` is recomputed after every event that could change
+// whose turn it is: combat started/ended, turn advanced, character
+// downed, banner refreshed from HTTP, etc.
+function _computeCanPlayerMove() {
+  // No combat → freely move.
+  if (!playerCombat || playerCombat.status !== 'active') return true;
+  // Combat active → only when WE are the current actor.
+  const curCharId = _currentTurnCharacterId();
+  return curCharId === CHAR_ID;
+}
+
+function _refreshMovementGating() {
+  const can = _computeCanPlayerMove();
+  _eachMapCanvas(c => c.setCanPlayerMove(can));
+  _refreshMovementBudget();
+}
+
+// Phase 4: extract own-token's speed/movement from the cached map
+// state and feed it to every canvas + the HUD label in the grid
+// panel. Overlay is ONLY shown during combat on our own turn; outside
+// those conditions we pass (null, null) to hide it.
+function _refreshMovementBudget() {
+  let total = null, left = null;
+  if (_lastMapState && _computeCanPlayerMove()
+      && playerCombat && playerCombat.status === 'active') {
+    const own = (_lastMapState.tokens || []).find(t => t.character_id === CHAR_ID);
+    if (own) {
+      total = Number(own.speed_total ?? 0);
+      left  = Number(own.movement_left ?? total);
+    }
+  }
+  _eachMapCanvas(c => c.setMovementBudget(left, total));
+  // HUD text in the grid panel header.
+  const hud = document.getElementById('player-grid-status');
+  if (hud) {
+    if (total != null && left != null) {
+      hud.textContent = `${Math.floor(left)}/${total} cells left`;
+    } else if (_lastMapState && _lastMapState.has_map) {
+      const n = (_lastMapState.tokens || []).filter(t => t.visible).length;
+      hud.textContent = `${n} token${n === 1 ? '' : 's'}`;
+    }
+  }
+}
+
+// Common constructor options shared by both player canvases.
+function _playerCanvasOptions() {
+  return {
+    role: 'player',
+    sessionCode: SESSION_CODE,
+    // Phase 2: own-token drag.
+    ownCharacterId: CHAR_ID,
+    onTokenMove: _sendOwnTokenMove,
+    // Phase 1: clicking a token acts as a target selector. Tapping the
+    // same token again (or the Clear button) unselects.
+    onTokenClick: (token) => {
+      const tid = token.character_id;
+      if (!tid || tid === parseInt(CHAR_ID)) return;  // can't target self via grid
+      selectedTargetId = (selectedTargetId === tid) ? null : tid;
+      if (typeof renderTableView  === 'function') renderTableView();
+      if (typeof updateTargetInfo === 'function') updateTargetInfo();
+      if (typeof renderActionMenu === 'function') renderActionMenu();
+    },
+  };
+}
+
+// ── Main-tab battle grid: init eagerly on page load ─────────────
+function initPlayerMainGrid() {
+  const canvasEl = document.getElementById('player-grid-canvas');
+  if (!canvasEl || playerMainGrid) return;
+  playerMainGrid = new MapCanvas(canvasEl, _playerCanvasOptions());
+  // First paint with whatever's cached; real data arrives from loadPlayerMapState.
+  playerMainGrid._resize();
+  loadPlayerMapState();
+}
+
+// Fit / expand controls on the main grid panel.
+(() => {
+  const fitBtn = document.getElementById('btn-grid-fit');
+  if (fitBtn) fitBtn.addEventListener('click', () => {
+    if (playerMainGrid) { playerMainGrid.centerView(); }
+  });
+  const expandBtn = document.getElementById('btn-grid-expand');
+  if (expandBtn) expandBtn.addEventListener('click', () => {
+    const wrap = document.getElementById('player-grid-wrap');
+    if (!wrap) return;
+    const tall = wrap.dataset.tall === '1';
+    wrap.style.height = tall ? '420px' : '720px';
+    wrap.dataset.tall = tall ? '0' : '1';
+    if (playerMainGrid) { playerMainGrid._resize(); playerMainGrid.centerView(); }
+  });
+  // Phase 6: player uploads their OWN token portrait. Reuses the same
+  // HTTP endpoint the GM uses — the server is trust-based today, so
+  // either role can hit it; a future phase will add a player_token
+  // check. Spawns a hidden file input and relies on the WS
+  // `map.updated` broadcast to refresh everyone's canvases.
+  const portraitBtn = document.getElementById('btn-player-portrait');
+  if (portraitBtn) portraitBtn.addEventListener('click', () => {
+    if (CHAR_ID == null) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      input.remove();
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch(`/api/map/token-image/${CHAR_ID}`, { method: 'POST', body: fd });
+        if (!res.ok) { showToast('Portrait upload failed'); return; }
+        showToast('Portrait updated');
+      } catch { showToast('Portrait upload failed'); }
+    });
+    input.click();
+  });
+})();
+
+// ── Fullscreen modal (kept as a convenience) ────────────────────
 $('#btn-open-map').addEventListener('click', async () => {
   const modal = $('#map-modal');
   modal.style.display = 'flex';
   if (!playerMapCanvas) {
-    playerMapCanvas = new MapCanvas($('#player-map-canvas'), {
-      role: 'player',
-      sessionCode: SESSION_CODE,
-    });
+    // Reuse the exact same options (role, ownCharacterId, callbacks)
+    // as the embedded Main-tab canvas so both support Phase 2 drag.
+    playerMapCanvas = new MapCanvas($('#player-map-canvas'), _playerCanvasOptions());
   }
   playerMapCanvas._resize();
-  // Load map state
-  try {
-    const state = await api.get(`/api/map/${SESSION_CODE}`);
-    if (state.has_map) {
-      await playerMapCanvas.loadImage(state.image_url);
-      playerMapCanvas.setGrid(state.grid_size, state.grid_enabled);
-      playerMapCanvas.setFog(state.fog_enabled, state.revealed_cells);
-      playerMapCanvas.setTokens(state.tokens);
-      // Load overlays (Stage 9)
-      try {
-        const overlays = await api.get(`/api/map/${SESSION_CODE}/overlays`);
-        playerMapCanvas.setDrawings(overlays.drawings);
-        playerMapCanvas.setMarkers(overlays.markers);
-      } catch {}
-    }
-  } catch { /* no map */ }
+  await loadPlayerMapState();
 });
 
 $('#btn-close-map').addEventListener('click', () => {
@@ -1968,16 +2184,26 @@ async function loadCombatBanner() {
       banner.style.display = 'none';
       playerCombat = null;
       if (typeof hideReactionsPanel === 'function') hideReactionsPanel();  // FIX 4
+      // Phase 3: combat just ended — re-enable movement.
+      if (typeof _refreshMovementGating === 'function') _refreshMovementGating();
       return;
     }
     playerCombat = res.combat;
     renderCombatBanner();
     if (typeof renderReactionsPanel === 'function') renderReactionsPanel();  // FIX 4
+    // Phase 3: combat state refreshed — recompute whether our token
+    // is currently draggable.
+    if (typeof _refreshMovementGating === 'function') _refreshMovementGating();
   } catch {
     banner.style.display = 'none';
   }
 }
 
+// Rework v3 Phase 3+: the Combat Banner is now a PURE turn-order
+// indicator. Attack / Defend / advantage toggle / target picker /
+// battle log have been removed per product decision — those actions
+// live in the Actions panel on the Main tab. The banner just tells
+// the player whose turn it is and shows the initiative queue.
 function renderCombatBanner() {
   const banner = $('#combat-banner');
   if (!banner || !playerCombat) { if (banner) banner.style.display = 'none'; return; }
@@ -1988,7 +2214,7 @@ function renderCombatBanner() {
   const myP = c.participants.find(p => p.character_id == CHAR_ID);
   const isMyTurn = currentP && currentP.character_id == CHAR_ID;
 
-  // Build mini turn order
+  // Build mini turn order — highlight current actor and "me".
   const turnList = c.participants
     .filter(p => p.is_active)
     .sort((a, b) => (a.turn_order ?? 99) - (b.turn_order ?? 99))
@@ -2014,123 +2240,9 @@ function renderCombatBanner() {
         ${isMyTurn ? '🗡️ YOUR TURN!' : `${currentP ? currentP.name + "'s Turn" : '—'}`}
       </div>
       <div id="player-combat-timer" style="text-align:center;font-size:1.8rem;font-weight:700;color:var(--accent-orange);display:none;margin-top:4px"></div>
-      ${isMyTurn ? `
-      <div style="display:flex;gap:6px;margin-top:8px;justify-content:center;flex-wrap:wrap;align-items:center">
-        ${makeAdvToggle('player_combat')}
-        <button class="btn btn-danger btn-sm" id="btn-player-attack">⚔️ Attack</button>
-        <button class="btn btn-accent btn-sm" id="btn-player-defend">🛡️ Defend</button>
-      </div>
-      <div id="player-target-panel" style="display:none;margin-top:8px"></div>
-      <div id="player-action-result" style="margin-top:8px;font-size:0.85rem"></div>
-      ` : ''}
-      <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;justify-content:center">${turnList}</div>
-      <div id="player-battle-log" style="max-height:150px;overflow-y:auto;margin-top:8px;font-size:0.75rem"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;justify-content:center">${turnList}</div>
     </div>
   `;
-
-  // Wire player attack/defend if it's my turn
-  if (isMyTurn) {
-    bindAdvToggle(banner, 'player_combat');
-    const atkBtn = banner.querySelector('#btn-player-attack');
-    const defBtn = banner.querySelector('#btn-player-defend');
-
-    if (atkBtn) {
-      atkBtn.addEventListener('click', async () => {
-        const tp = banner.querySelector('#player-target-panel');
-        if (!tp) return;
-        try {
-          const targets = await api.get(`/api/combat/${c.id}/targets/${CHAR_ID}`);
-          if (!targets.length) { showToast('No valid targets'); return; }
-          tp.style.display = 'block';
-          tp.innerHTML = `
-            <div style="font-size:0.75rem;font-weight:600;margin-bottom:4px">Select Target:</div>
-            ${targets.map(t => `
-              <div class="player-target-card" data-id="${t.character_id}" style="cursor:pointer;padding:6px;margin-bottom:3px;border-radius:var(--r-sm);border:1px solid var(--border);display:flex;align-items:center;gap:6px">
-                <div style="width:16px;height:16px;border-radius:50%;background:${t.token_color}"></div>
-                <div style="flex:1;font-size:0.8rem;font-weight:600">${t.name}</div>
-                <div style="font-size:0.7rem;color:var(--text-muted)">${t.show_hp_to_players ? t.current_hp + '/' + t.max_hp + ' HP' : '???'} | ${t.show_ac_to_players ? 'AC ' + t.armor_class : 'AC ???'}</div>
-              </div>
-            `).join('')}
-          `;
-          tp.querySelectorAll('.player-target-card').forEach(card => {
-            card.addEventListener('click', async () => {
-              const targetId = parseInt(card.dataset.id);
-              try {
-                const result = await api.post(`/api/combat/${c.id}/attack`, {
-                  attacker_id: CHAR_ID, target_id: targetId,
-                  advantage_mode: getAdvMode('player_combat'),
-                  hit_dice_count: getAdvDiceCount('player_combat'),
-                });
-                tp.style.display = 'none';
-                const resEl = banner.querySelector('#player-action-result');
-                if (resEl) {
-                  const atk = result.attack_roll;
-                  const dmg = result.damage_roll;
-                  let html = '<div style="padding:6px;border-radius:var(--r-sm);border:1px solid ';
-                  if (atk.critical) html += 'gold;background:#ffd70020"><b style="color:gold">🎯 CRITICAL!</b>';
-                  else if (atk.fumble) html += 'var(--accent-red);background:var(--accent-red)10"><b style="color:var(--accent-red)">💨 FUMBLE!</b>';
-                  else if (atk.hit) html += 'var(--accent-green);background:var(--accent-green)10"><b style="color:var(--accent-green)">⚔️ HIT!</b>';
-                  else html += 'var(--text-muted);background:var(--bg-dark)"><b style="color:var(--text-muted)">🛡️ MISS</b>';
-                  html += `<div style="font-size:0.7rem;margin-top:3px">d20: ${atk.d20} + ${atk.stat_mod} + ${atk.weapon_bonus} = ${atk.total} vs AC ${atk.target_ac}</div>`;
-                  if (dmg) {
-                    html += `<div style="font-size:0.7rem">${dmg.final_damage} damage → ${result.target_name} ${result.target_current_hp}/${result.target_max_hp} HP</div>`;
-                    if (result.target_killed) html += '<div style="color:var(--accent-red);font-weight:700">💀 Target slain!</div>';
-                  }
-                  html += '</div>';
-                  resEl.innerHTML = html;
-                }
-                if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
-                  ws.ws.send(JSON.stringify({ type: 'combat.attack_result', data: result }));
-                  if (result.target_killed) {
-                    ws.ws.send(JSON.stringify({ type: 'combat.character_killed', data: {
-                      character_id: targetId, character_name: result.target_name
-                    }}));
-                  }
-                }
-              } catch (e) { showToast('Attack error: ' + e.message); }
-            });
-          });
-        } catch (e) { showToast('Error: ' + e.message); }
-      });
-    }
-
-    if (defBtn) {
-      defBtn.addEventListener('click', async () => {
-        try {
-          const result = await api.post(`/api/combat/${c.id}/defend`, { character_id: CHAR_ID });
-          const resEl = banner.querySelector('#player-action-result');
-          if (resEl) {
-            resEl.innerHTML = `<div style="padding:6px;border-radius:var(--r-sm);border:1px solid var(--accent);background:var(--accent)10">
-              <b style="color:var(--accent)">🛡️ DEFENDING</b>
-              <div style="font-size:0.7rem;margin-top:3px">${result.description}</div>
-            </div>`;
-          }
-          if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
-            ws.ws.send(JSON.stringify({ type: 'combat.defend', data: result }));
-          }
-        } catch (e) { showToast('Defend error: ' + e.message); }
-      });
-    }
-  }
-
-  // Load mini battle log
-  loadPlayerBattleLog(c.id, banner);
-}
-
-async function loadPlayerBattleLog(combatId, container) {
-  const logEl = container ? container.querySelector('#player-battle-log') : null;
-  if (!logEl) return;
-  try {
-    const actions = await api.get(`/api/combat/${combatId}/actions`);
-    logEl.innerHTML = actions.slice(0, 10).map(a => {
-      let color = 'var(--text-muted)';
-      if (a.attack_roll?.critical) color = 'gold';
-      else if (a.attack_roll?.hit) color = 'var(--accent-green)';
-      else if (a.attack_roll?.fumble) color = 'var(--accent-red)';
-      else if (a.action_type === 'defend') color = 'var(--accent)';
-      return `<div style="padding:2px 0;color:${color}">${a.description}</div>`;
-    }).join('') || '<div style="color:var(--text-muted)">No actions yet</div>';
-  } catch(e) {}
 }
 
 // FIX 3: Initiative modal uses universal dice widget (D20, advantage toggle, no dice selector)
@@ -2376,6 +2488,8 @@ ws.on('combat.ended', d => {
   const banner = $('#combat-banner');
   if (banner) banner.style.display = 'none';
   if (playerTimerInterval) { clearInterval(playerTimerInterval); playerTimerInterval = null; }
+  // Phase 3: combat ended — unlock movement.
+  _refreshMovementGating();
   loadTableView();  // FIX 1: clear gold border + Enemy badges
   if (typeof hideReactionsPanel === 'function') hideReactionsPanel();  // FIX 4
   showToast('Combat ended');
@@ -2557,41 +2671,90 @@ ws.on('quest.failed', d => {
   loadPlayerQuests();
 });
 
-// Stage 9: Map overlay WS events
+// ── Map overlay WS events (fan out to every mounted canvas) ────
+// Before Rework v3 Phase 1 these only targeted the fullscreen modal
+// canvas; now we also keep the always-on Main-tab grid in sync.
 ws.on('map.drawing_added', d => {
-  if (playerMapCanvas && d.drawing) {
-    if (d.drawing.visible_to_players) {
-      playerMapCanvas.drawings.push(d.drawing);
-      playerMapCanvas.render();
-    }
-  }
+  if (!d.drawing || !d.drawing.visible_to_players) return;
+  _eachMapCanvas(c => { c.drawings.push(d.drawing); c.render(); });
 });
 ws.on('map.drawing_deleted', d => {
-  if (playerMapCanvas) {
-    if (d.all) { playerMapCanvas.drawings = []; }
-    else { playerMapCanvas.drawings = playerMapCanvas.drawings.filter(dr => dr.id !== d.drawing_id); }
-    playerMapCanvas.render();
-  }
+  _eachMapCanvas(c => {
+    if (d.all) c.drawings = [];
+    else c.drawings = c.drawings.filter(dr => dr.id !== d.drawing_id);
+    c.render();
+  });
 });
 ws.on('map.marker_added', d => {
-  if (playerMapCanvas && d.marker && d.marker.visible_to_players) {
-    playerMapCanvas.markers.push(d.marker);
-    playerMapCanvas.render();
-  }
+  if (!d.marker || !d.marker.visible_to_players) return;
+  _eachMapCanvas(c => { c.markers.push(d.marker); c.render(); });
 });
 ws.on('map.marker_updated', d => {
-  if (playerMapCanvas && d.marker) {
-    playerMapCanvas.markers = playerMapCanvas.markers.filter(m => m.id !== d.marker.id);
-    if (d.marker.visible_to_players) playerMapCanvas.markers.push(d.marker);
-    playerMapCanvas.render();
-  }
+  if (!d.marker) return;
+  _eachMapCanvas(c => {
+    c.markers = c.markers.filter(m => m.id !== d.marker.id);
+    if (d.marker.visible_to_players) c.markers.push(d.marker);
+    c.render();
+  });
 });
 ws.on('map.marker_deleted', d => {
-  if (playerMapCanvas) {
-    playerMapCanvas.markers = playerMapCanvas.markers.filter(m => m.id !== d.marker_id);
-    playerMapCanvas.render();
+  _eachMapCanvas(c => {
+    c.markers = c.markers.filter(m => m.id !== d.marker_id);
+    c.render();
+  });
+});
+
+// Map uploaded / replaced by the GM. The server broadcasts this after
+// `POST /api/map/{code}/upload`; we need a full refresh because the
+// image URL, dimensions, grid and token seeds may have all changed.
+ws.on('map.updated', () => { loadPlayerMapState(); });
+
+// Live token movement (Rework v3 Phase 1). The server broadcasts this
+// after every successful PATCH /api/map/token/{id}, so we can mutate
+// the in-memory token lists instead of refetching the whole map state.
+ws.on('map.token_moved', d => {
+  if (d == null || d.character_id == null) return;
+  _eachMapCanvas(c => {
+    const t = (c.tokens || []).find(x => x.character_id === d.character_id);
+    if (!t) return;  // unknown token; next full refresh will add it
+    if (d.x != null) t.x = d.x;
+    if (d.y != null) t.y = d.y;
+    if (d.visible != null) t.visible = d.visible;
+    // Phase 4: carry over the authoritative movement info so the
+    // overlay + HUD stay in sync without a refetch.
+    if (d.speed_total   != null) t.speed_total   = d.speed_total;
+    if (d.movement_used != null) t.movement_used = d.movement_used;
+    if (d.movement_left != null) t.movement_left = d.movement_left;
+    c.render();
+  });
+  // Mirror the same fields into the cached state so HUD helpers that
+  // read `_lastMapState` see the latest numbers too.
+  if (_lastMapState && d.character_id === CHAR_ID) {
+    const cached = (_lastMapState.tokens || []).find(t => t.character_id === d.character_id);
+    if (cached) {
+      if (d.x != null) cached.x = d.x;
+      if (d.y != null) cached.y = d.y;
+      if (d.speed_total   != null) cached.speed_total   = d.speed_total;
+      if (d.movement_used != null) cached.movement_used = d.movement_used;
+      if (d.movement_left != null) cached.movement_left = d.movement_left;
+    }
+    _refreshMovementBudget();
   }
 });
+
+// Phase 4: turn changed → refresh the whole map state so the new
+// actor's reset movement budget propagates. Cheap enough (2 GETs) for
+// an event that fires once per turn.
+ws.on('combat.turn_changed', () => {
+  // loadCombatBanner already handles playerCombat + gating; piggy-back
+  // here to also refresh the map data (speed_total / movement_left).
+  loadPlayerMapState();
+});
+ws.on('combat.started', () => { loadPlayerMapState(); });
+ws.on('combat.ended',   () => { loadPlayerMapState(); });
+
+// Phase 5: a wall / zone was added, edited, or removed.
+ws.on('map.objects_updated', () => { loadPlayerMapState(); });
 
 // ══════════════════════════════════════════════════════════════
 // STAGE 10 — PLAYER ANNOUNCEMENTS
@@ -2775,6 +2938,16 @@ $$('.player-tab-btn').forEach(btn => {
     // Lazy-load tabs
     if (btn.dataset.tab === 'tab-abilities') loadAbilities();
     if (btn.dataset.tab === 'tab-memory') loadMemory();
+    // Rework v3 Phase 1: the Main-tab canvas measured 0×0 while hidden,
+    // so re-fit it whenever the player returns to Main. Cheap no-op
+    // elsewhere.
+    if (btn.dataset.tab === 'tab-main' && typeof playerMainGrid !== 'undefined' && playerMainGrid) {
+      // `_resize` already calls render().
+      requestAnimationFrame(() => {
+        playerMainGrid._resize();
+        playerMainGrid.centerView();
+      });
+    }
   });
 });
 
@@ -4093,20 +4266,30 @@ ws.on('combat.attack_result', d => {
     loadChar();
     loadTableView();
   }
+  // HP of attacker/target may have changed — grid bars need to catch up,
+  // regardless of whether CHAR_ID was involved.
+  loadPlayerMapState();
 });
 ws.on('combat.character_downed', d => {
   loadTableView();
+  loadPlayerMapState();
 });
 ws.on('table.updated', () => {
   loadTableView();
+  loadPlayerMapState();
 });
-// FIX 1: Re-render table on HP, status, or turn change
-ws.on('character.hp_changed', () => { loadTableView(); });
-ws.on('character.hp_update',  () => { loadTableView(); });
-ws.on('character.status_changed', () => { loadTableView(); });
-ws.on('status_effect.applied',  () => { loadTableView(); });
-ws.on('status_effect.removed',  () => { loadTableView(); });
-ws.on('status_effect.expired',  () => { loadTableView(); });
+// FIX 1: Re-render table on HP, status, or turn change.
+// Rework v3 Phase 1: the embedded battle grid renders token HP bars from
+// the same data, so we refresh the map state in lock-step. `loadPlayerMapState`
+// is cheap (two GETs) and coalescing would be premature given real-world
+// tick rates.
+const _refreshBoth = () => { loadTableView(); loadPlayerMapState(); };
+ws.on('character.hp_changed', _refreshBoth);
+ws.on('character.hp_update',  _refreshBoth);
+ws.on('character.status_changed', _refreshBoth);
+ws.on('status_effect.applied',  _refreshBoth);
+ws.on('status_effect.removed',  _refreshBoth);
+ws.on('status_effect.expired',  _refreshBoth);
 // FIX 5: Auto-populate Memory tab — refresh + toast on new entry
 ws.on('memory.entry_added', d => {
   if (d.character_id != CHAR_ID) return;
@@ -4409,6 +4592,8 @@ loadChar();
 loadInventory();
 loadCurrency();
 loadStatusEffects();
+// Rework v3 Phase 1: always-on battle grid in the Main tab.
+initPlayerMainGrid();
 loadCombatBanner();
 loadPlayerQuests();
 loadPlayerAnnouncements();

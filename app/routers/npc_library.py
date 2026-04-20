@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models import (
     NpcFolder, NpcTemplate, EventTemplate, Character,
-    InventoryItem, NpcShopInventory,
+    InventoryItem, NpcShopInventory, Session,
 )
 
 router = APIRouter(prefix="/api/npc-library", tags=["npc-library"])
@@ -316,6 +316,22 @@ async def spawn_from_template(template_id: int, body: SpawnBody, db: AsyncSessio
         spawned.append({"id": char.id, "name": char.name})
 
     await db.commit()
+
+    # Rework v3 Phase 1: nudge everyone's map so the freshly spawned
+    # tokens show up immediately (self-heal in `GET /api/map/{code}`
+    # handles the initial coordinate assignment).
+    if spawned:
+        try:
+            sess = await db.get(Session, body.session_id)
+            if sess:
+                from app.websocket_manager import manager
+                await manager.broadcast_to_session(sess.code, "map.updated", {
+                    "reason": "npc_spawned",
+                    "count": len(spawned),
+                })
+        except Exception:
+            pass
+
     return {"spawned": spawned}
 
 
@@ -424,6 +440,20 @@ async def trigger_event(event_id: int, db: AsyncSession = Depends(get_session)):
             all_spawned.append({"id": char.id, "name": char.name})
 
     await db.commit()
+
+    # Rework v3 Phase 1: broadcast so the map picks up event-spawned NPCs.
+    if all_spawned:
+        try:
+            sess = await db.get(Session, e.session_id)
+            if sess:
+                from app.websocket_manager import manager
+                await manager.broadcast_to_session(sess.code, "map.updated", {
+                    "reason": "event_triggered",
+                    "count": len(all_spawned),
+                })
+        except Exception:
+            pass
+
     return {"event_name": e.name, "spawned": all_spawned}
 
 

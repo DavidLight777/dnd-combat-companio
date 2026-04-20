@@ -35,6 +35,11 @@ async def init_db():
         # Rework Phase 1: weapon hit/damage stat
         ("item_weapon_stats", "hit_stat",           "hit_stat VARCHAR(20) DEFAULT 'strength'"),
         ("item_weapon_stats", "damage_stat",        "damage_stat VARCHAR(20) DEFAULT 'strength'"),
+        # Rework v3 Phase 4: battle-grid movement budget.
+        ("characters",        "base_speed_cells",       "base_speed_cells INTEGER DEFAULT 6"),
+        ("characters",        "movement_used_this_turn","movement_used_this_turn FLOAT DEFAULT 0"),
+        # Rework v3 Phase 6: portrait image url for token rendering.
+        ("characters",        "token_image_url",        "token_image_url TEXT"),
     ]
     async with engine.begin() as conn:
         for table, col, coldef in _migrations:

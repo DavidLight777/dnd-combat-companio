@@ -2471,6 +2471,24 @@ function initMapCanvas() {
       }
     },
     onTokenRightClick: (token, cx, cy) => openTokenContextMenu(token, cx, cy),
+    // Phase 5: wall/object placement. Finishes a drag-to-place
+    // rectangle; the server normalises and broadcasts map.objects_updated,
+    // which we listen for below to refresh the list.
+    onObjectSaved: async (data) => {
+      try {
+        const res = await api.post(`/api/map/${SESSION_CODE}/objects`, {
+          name: data.kind === 'wall' ? 'Wall' : 'Zone',
+          kind: data.kind || 'wall',
+          x1: data.x1, y1: data.y1, x2: data.x2, y2: data.y2,
+          blocks_movement: true,
+          blocks_vision: false,
+          visible_to_players: true,
+        });
+        mapCanvas.mapObjects.push(res);
+        mapCanvas.render();
+        addLog('map', `Wall placed (${data.kind})`);
+      } catch { showToast('Failed to place wall'); }
+    },
   });
   loadMapState();
 }
@@ -2488,6 +2506,8 @@ async function loadMapState() {
         const overlays = await api.get(`/api/map/${SESSION_CODE}/overlays`);
         mapCanvas.setDrawings(overlays.drawings);
         mapCanvas.setMarkers(overlays.markers);
+        // Phase 5: map objects (walls/zones).
+        if (overlays.objects) mapCanvas.setObjects(overlays.objects);
       } catch {}
       mapGridEnabled = state.grid_enabled;
       mapFogEnabled = state.fog_enabled;
@@ -2509,9 +2529,20 @@ document.addEventListener('change', async e => {
   const res = await fetch(`/api/map/${SESSION_CODE}/upload`, { method: 'POST', body: fd });
   if (!res.ok) { showToast('Upload failed'); return; }
   const data = await res.json();
-  await mapCanvas.loadImage(data.image_url);
+  // Rework v3 Phase 1: the upload endpoint auto-seeds token positions
+  // for any character that had no placement yet, but we still need a
+  // full `loadMapState()` so `setTokens` runs — `loadImage` alone
+  // doesn't touch the tokens list, which is why the map appeared
+  // completely empty right after the first upload.
+  await loadMapState();
   addLog('map', `Map uploaded: ${file.name}`);
 });
+// NOTE: the `ws.on('map.updated', ...)` listener used to live here,
+// but `ws` isn't declared until the WEBSOCKET section far below —
+// touching it at this point crashed the whole script with a ReferenceError
+// (TDZ), which silently disabled every later handler (buttons, tabs,
+// table rendering, etc.). The listener is now registered alongside
+// all the other `ws.on(...)` calls.
 
 // Grid toggle
 $('#btn-toggle-grid').addEventListener('click', async () => {
@@ -2606,6 +2637,14 @@ $('#btn-clear-drawings')?.addEventListener('click', async () => {
   }
 });
 
+// Phase 5: wipe every wall/object in the current session.
+$('#btn-clear-objects')?.addEventListener('click', async () => {
+  if (!confirm('Clear all walls/objects from the map?')) return;
+  await api.del(`/api/map/${SESSION_CODE}/objects/all`);
+  if (mapCanvas) { mapCanvas.mapObjects = []; mapCanvas.render(); }
+  addLog('map', 'All walls cleared');
+});
+
 // ── Marker Create/Edit Modal ──────────────────────────────────
 function openMarkerModal(nx, ny, existing = null) {
   const modal = document.createElement('div');
@@ -2691,8 +2730,14 @@ function openTokenContextMenu(token, cx, cy) {
   const menu = document.createElement('div');
   menu.className = 'token-ctx-menu';
   menu.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:8px;padding:4px 0;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);min-width:160px`;
+  // Phase 6: portrait upload / clear. Labels flip depending on whether
+  // the token already has an image attached.
+  const hasPortrait = !!token.token_image_url;
   menu.innerHTML = `
     <div class="ctx-item" data-action="edit" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">🎨 Edit Token</div>
+    <div class="ctx-item" data-action="portrait" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">🖼️ ${hasPortrait ? 'Replace' : 'Upload'} Portrait</div>
+    ${hasPortrait ? `<div class="ctx-item" data-action="portrait-clear" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">🗑️ Remove Portrait</div>` : ''}
+    <div style="height:1px;background:var(--border);margin:2px 0"></div>
     <div class="ctx-item" data-action="hide" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">${token.visible ? '👁️‍🗨️ Hide' : '👁️ Show'} on Map</div>
     <div class="ctx-item" data-action="remove" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">❌ Remove from Map</div>
     <div style="height:1px;background:var(--border);margin:2px 0"></div>
@@ -2714,6 +2759,17 @@ function openTokenContextMenu(token, cx, cy) {
       const action = item.dataset.action;
       if (action === 'edit') {
         openTokenEditModal(token);
+      } else if (action === 'portrait') {
+        // Phase 6: trigger a hidden file input and POST to the portrait
+        // upload endpoint. The server broadcasts `map.updated` which
+        // refreshes the canvas so the new face appears automatically.
+        uploadTokenPortrait(token.character_id);
+      } else if (action === 'portrait-clear') {
+        if (!confirm('Remove portrait from this token?')) { close(); return; }
+        try {
+          await api.del(`/api/map/token-image/${token.character_id}`);
+          addLog('map', `Portrait cleared for ${token.name}`);
+        } catch { showToast('Failed to clear portrait'); }
       } else if (action === 'hide') {
         await api.patch(`/api/characters/${token.character_id}`, { is_visible_on_map: !token.visible });
         token.visible = !token.visible;
@@ -2728,6 +2784,30 @@ function openTokenContextMenu(token, cx, cy) {
       close();
     });
   });
+}
+
+// Phase 6: upload flow — spawns a temporary <input type=file>, sends
+// the selected file to the portrait endpoint, and relies on the WS
+// `map.updated` broadcast to refresh everyone's canvases.
+function uploadTokenPortrait(characterId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    input.remove();
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch(`/api/map/token-image/${characterId}`, { method: 'POST', body: fd });
+      if (!res.ok) { showToast('Portrait upload failed'); return; }
+      addLog('map', `Portrait uploaded for token ${characterId}`);
+    } catch { showToast('Portrait upload failed'); }
+  });
+  input.click();
 }
 
 function openTokenEditModal(token) {
@@ -2875,6 +2955,33 @@ ws.on('_disconnected', () => {
   addLog('system', 'WebSocket disconnected');
 });
 ws.on('_reconnecting', d => { $('#ws-label').textContent = `reconnecting (${d.attempt})...`; });
+
+// Rework v3 Phase 1: live refresh when somebody uploads/replaces the
+// map or when a character is created/deleted (auto-seed in the map
+// router gives every new token a default grid position). Safe guard
+// around `loadMapState` — it may not be defined yet if this handler
+// fires during an early reconnect.
+ws.on('map.updated', () => {
+  if (typeof loadMapState === 'function') loadMapState();
+});
+// Phase 5: map objects (walls) changed somewhere — refresh the
+// overlays portion. We reuse `loadMapState` for simplicity; the extra
+// tokens + fog reload are cheap.
+ws.on('map.objects_updated', () => {
+  if (typeof loadMapState === 'function') loadMapState();
+});
+// Rework v3 Phase 2: players now move their own tokens; apply the
+// incremental position update instead of a full refetch so GM's view
+// stays snappy during heavy combat.
+ws.on('map.token_moved', d => {
+  if (!d || d.character_id == null || !mapCanvas) return;
+  const t = (mapCanvas.tokens || []).find(x => x.character_id === d.character_id);
+  if (!t) return;
+  if (d.x != null) t.x = d.x;
+  if (d.y != null) t.y = d.y;
+  if (d.visible != null) t.visible = d.visible;
+  mapCanvas.render();
+});
 
 ws.on('session.state', data => {
   const s = data.session;
