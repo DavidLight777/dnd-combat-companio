@@ -342,3 +342,31 @@ input[type="checkbox"], input[type="radio"] {
 .adv-badge { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
 .adv-badge.advantage { background: rgba(80,200,120,0.15); color: #50c878; }
 .adv-badge.disadvantage { background: rgba(220,80,80,0.15); color: #dc5050; }
+
+/* --------------------------------------------------------------
+   Combat FX — screen-shake keyframes used by MapCanvas.playFx()
+   when a critical hit or impact lands. Applied by playFx() to the
+   closest positioned ancestor of the canvas (usually .battle-panel)
+   so the rest of the UI stays calm.
+   -------------------------------------------------------------- */
+@keyframes fxShakeSoft {
+  0%   { transform: translate3d(0, 0, 0); }
+  20%  { transform: translate3d(-3px, 2px, 0); }
+  40%  { transform: translate3d(4px, -2px, 0); }
+  60%  { transform: translate3d(-2px, 3px, 0); }
+  80%  { transform: translate3d(2px, -1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes fxShakeHard {
+  0%   { transform: translate3d(0, 0, 0); }
+  10%  { transform: translate3d(-6px, 4px, 0); }
+  25%  { transform: translate3d(7px, -5px, 0); }
+  40%  { transform: translate3d(-5px, 6px, 0); }
+  55%  { transform: translate3d(6px, -3px, 0); }
+  70%  { transform: translate3d(-4px, 4px, 0); }
+  85%  { transform: translate3d(3px, -2px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+.fx-shake-soft { animation: fxShakeSoft 0.32s cubic-bezier(.36,.07,.19,.97) both; }
+.fx-shake-hard { animation: fxShakeHard 0.52s cubic-bezier(.36,.07,.19,.97) both; }
+

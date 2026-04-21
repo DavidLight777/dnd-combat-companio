@@ -4875,12 +4875,50 @@ ws.on('combat.initiative_submitted', d => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════
+// Combat FX — mirror of the player-side helper. Plays hit / miss /
+// crit / fumble / heal animations on the GM's map canvas whenever
+// any combat resolution is broadcast. Two event shapes feed through:
+// the legacy `combat.attack_result` where data might be either at
+// top-level OR nested under `d.data` (see gm-app.js line 4438), and
+// the newer flat shape used by the ability flow.
+// ══════════════════════════════════════════════════════════════
+function _playCombatFxFromPayloadGM(raw) {
+  if (!raw) return;
+  const d = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+  const targetId = d.target_id ?? d.defender_id;
+  if (targetId == null || !mapCanvas) return;
+  const dmg = d.final_damage ?? d.damage ?? null;
+  const ar  = d.attack_roll || {};
+  const hit = d.hit ?? ar.hit;
+  const crit = d.critical ?? ar.critical;
+  const fumble = d.fumble ?? ar.fumble;
+  let type, text;
+  if (fumble)       { type = 'fumble'; text = 'FUMBLE'; }
+  else if (!hit)    { type = 'miss';   text = 'MISS'; }
+  else if (crit)    { type = 'crit';   text = dmg != null ? `-${dmg}` : 'CRIT!'; }
+  else              { type = 'hit';    text = dmg != null ? `-${dmg}` : 'HIT'; }
+  mapCanvas.playFxOnCharacter(targetId, type, { text, screenShake: crit });
+}
+
 // Stage 11: Combat action WS events for GM
 ws.on('combat.attack_result', d => {
+  _playCombatFxFromPayloadGM(d);
   if (activeCombat) {
     showToast(`⚔️ ${d.attacker_name} → ${d.target_name}: ${d.attack_roll?.hit ? 'HIT' : 'MISS'}`);
     appendCombatLogEntry(d);
     loadCombatPanel();
+  }
+});
+ws.on('combat.hit_result', d => {
+  // Only fire FX for miss/fumble — a hit will also trigger an
+  // attack_result with the damage, and we don't want to double-ring.
+  if (d && !d.hit) _playCombatFxFromPayloadGM(d);
+});
+ws.on('combat.ability_result', d => {
+  _playCombatFxFromPayloadGM(d);
+  if (d && d.attacker_name && d.target_name) {
+    showToast(`✨ ${d.attacker_name} → ${d.target_name}: ${d.critical ? 'CRIT!' : (d.hit ? 'HIT' : (d.fumble ? 'FUMBLE' : 'MISS'))}`);
   }
 });
 ws.on('combat.defend', d => {

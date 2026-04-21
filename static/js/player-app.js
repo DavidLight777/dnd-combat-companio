@@ -2630,11 +2630,51 @@ ws.on('gm.timer_stop', d => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════
+// COMBAT FX — play a map-canvas animation when an attack resolves.
+// Driven entirely by WS payloads so every client sees the same
+// effect, regardless of who rolled. The helper accepts flexible
+// field names because two slightly different payload shapes share
+// this event (the two-step hit→damage flow from openAttackConfirm
+// and the single-step ability flow), and we want to avoid tying
+// the FX trigger to either one.
+// ══════════════════════════════════════════════════════════════
+function _playCombatFxFromPayload(d) {
+  if (!d) return;
+  const targetId = d.target_id ?? d.defender_id;
+  if (!targetId) return;
+  const dmg = d.final_damage ?? d.damage ?? null;
+  const hit = d.hit ?? (d.attack_roll && d.attack_roll.hit);
+  const crit = d.critical ?? (d.attack_roll && d.attack_roll.critical);
+  const fumble = d.fumble ?? (d.attack_roll && d.attack_roll.fumble);
+  // Choose effect type + floating text in a single place.
+  let type, text;
+  if (fumble)       { type = 'fumble'; text = 'FUMBLE'; }
+  else if (!hit)    { type = 'miss';   text = 'MISS'; }
+  else if (crit)    { type = 'crit';   text = dmg != null ? `-${dmg}` : 'CRIT!'; }
+  else              { type = 'hit';    text = dmg != null ? `-${dmg}` : 'HIT'; }
+  // Play on EVERY live player-side canvas (Main tab inline grid +
+  // modal fullscreen if it happens to be open). `playFxOnCharacter`
+  // is a no-op when the token isn't on that canvas, so it's safe to
+  // broadcast to both unconditionally.
+  _eachMapCanvas(c => c.playFxOnCharacter(targetId, type, {
+    text, screenShake: crit,
+  }));
+}
+
 // Stage 11: Combat action WS events
 ws.on('combat.attack_result', d => {
-  showToast(`⚔️ ${d.attacker_name} → ${d.target_name}: ${d.attack_roll?.hit ? (d.attack_roll?.critical ? 'CRITICAL!' : 'HIT!') : 'MISS'}`);
+  _playCombatFxFromPayload(d);
+  showToast(`⚔️ ${d.attacker_name} → ${d.target_name}: ${d.critical ? 'CRITICAL!' : (d.hit ? 'HIT!' : (d.fumble ? 'FUMBLE' : 'MISS'))}`);
   if (d.target_killed && d.target_name) showToast(`💀 ${d.target_name} has been slain!`);
   loadCombatBanner();
+});
+// Step-1 broadcast from openAttackConfirm (hit/miss BEFORE damage).
+// Only show MISS / FUMBLE here — a HIT will be followed by
+// combat.attack_result, and we don't want to double-play a ring.
+ws.on('combat.hit_result', d => {
+  if (!d || d.hit) return;  // hit is handled by attack_result
+  _playCombatFxFromPayload(d);
 });
 ws.on('combat.defend', d => {
   showToast(`🛡️ ${d.character_name} takes a defensive stance`);
@@ -2644,6 +2684,12 @@ ws.on('combat.character_killed', d => {
   if (d.character_id == CHAR_ID) {
     showToast('💀 You have been slain!');
   }
+});
+// Dedicated ability-landing broadcast (fired by the ability-use flow
+// below). Same payload shape as combat.attack_result, so we route it
+// through the same FX helper.
+ws.on('combat.ability_result', d => {
+  _playCombatFxFromPayload(d);
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -3931,6 +3977,33 @@ function _mountAbilityConfirm(panel, ab) {
         out = '<div>✅ Ability used</div>';
       }
       resultEl.innerHTML = out;
+      // ── Combat FX + broadcast ─────────────────────────────────
+      // Play a local animation and notify the rest of the table so
+      // every client sees the same hit/miss/crit ring. We keep the
+      // payload schema compatible with `combat.attack_result` so the
+      // same renderer (`_playCombatFxFromPayload`) handles both.
+      if (tgt) {
+        const fxPayload = {
+          attacker_id: CHAR_ID,
+          attacker_name: char && char.name,
+          target_id: tgt,
+          target_name: (tableParticipants || []).find(t => t.id === tgt)?.name || null,
+          hit:      state.hit_roll ? !!state.hit_roll.hit      : true,
+          critical: state.hit_roll ? !!state.hit_roll.critical : false,
+          fumble:   state.hit_roll ? !!state.hit_roll.fumble   : false,
+          // Server returns the actual applied damage (post-resistances)
+          // in `damage_applied` when the ability dealt HP damage.
+          final_damage: res.damage_applied ?? res.final_damage ?? null,
+        };
+        _playCombatFxFromPayload(fxPayload);
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({
+            type: 'combat.ability_result',
+            ...fxPayload,
+            ability_name: ab.name,
+          }));
+        }
+      }
       await loadChar();
       await loadAbilities();
       loadTableView();

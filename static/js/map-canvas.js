@@ -90,8 +90,195 @@ class MapCanvas {
     this._measureStart = null;
     this._measureEnd = null;
 
+    // ── Combat FX engine ─────────────────────────────────────
+    // Lightweight visual effects played over the canvas when combat
+    // events arrive via WebSocket (hits, misses, crits, fumbles,
+    // heals, generic damage). Each effect is a short-lived record
+    // with a `startTs`, `duration`, anchor `(x, y)` in normalised map
+    // coordinates, and a `type` that selects the renderer in
+    // `_renderFx`. While any effect is live, a rAF loop keeps the
+    // canvas repainting; once the list empties the loop shuts down so
+    // we don't burn CPU when nothing is happening.
+    this.fx = [];
+    this._fxAnimId = null;
+
     this._bindEvents();
     this._resize();
+  }
+
+  // Public: trigger a combat effect anchored on normalised map coords.
+  // `type` ∈ {hit, miss, crit, fumble, heal, damage}. Extra params:
+  //   text       — floating text above the token (e.g. "-5", "MISS")
+  //   color      — override primary colour
+  //   duration   — ms, defaults to 1200 (crit: 1500)
+  //   screenShake— true to add a brief CSS shake on <body>
+  playFx(type, nx, ny, opts = {}) {
+    if (nx == null || ny == null) return;
+    const now = performance.now();
+    const duration = opts.duration || (type === 'crit' ? 1500 : 1200);
+    this.fx.push({
+      type, x: nx, y: ny,
+      startTs: now,
+      duration,
+      text: opts.text || '',
+      color: opts.color || null,
+    });
+    if (opts.screenShake) this._triggerScreenShake(type === 'crit' ? 'hard' : 'soft');
+    this._startFxLoop();
+  }
+
+  // Convenience: find the token for a character_id and play FX there.
+  playFxOnCharacter(charId, type, opts = {}) {
+    if (charId == null) return;
+    const t = (this.tokens || []).find(tk => tk.character_id === charId);
+    if (!t || t.x == null || t.y == null) return;
+    this.playFx(type, t.x, t.y, opts);
+  }
+
+  _triggerScreenShake(intensity) {
+    // Prefer the closest positioned ancestor of the canvas so the
+    // shake doesn't move the whole page (which is jarring when the
+    // sidebar/character sheet is also visible). Falls back to <body>.
+    const host = this.canvas.closest('.battle-panel')
+              || this.canvas.closest('.panel')
+              || document.body;
+    const cls = intensity === 'hard' ? 'fx-shake-hard' : 'fx-shake-soft';
+    host.classList.remove('fx-shake-soft', 'fx-shake-hard');
+    // Force reflow so the animation restarts if a previous one is
+    // still running (reapplying the same class is a no-op otherwise).
+    void host.offsetWidth;
+    host.classList.add(cls);
+    setTimeout(() => host.classList.remove(cls),
+               intensity === 'hard' ? 520 : 320);
+  }
+
+  _startFxLoop() {
+    if (this._fxAnimId) return;
+    const tick = () => {
+      const now = performance.now();
+      this.fx = this.fx.filter(f => (now - f.startTs) < f.duration);
+      this.render();
+      if (this.fx.length > 0) {
+        this._fxAnimId = requestAnimationFrame(tick);
+      } else {
+        this._fxAnimId = null;
+      }
+    };
+    this._fxAnimId = requestAnimationFrame(tick);
+  }
+
+  // Render all active effects. Called last in `render()` so FX sit
+  // on top of tokens. All geometry is in MAP pixel space (we're
+  // inside the translate+scale transform set up by render()).
+  _renderFx(ctx) {
+    if (!this.fx.length) return;
+    const now = performance.now();
+    const gs = this.gridSize || 50;
+    for (const f of this.fx) {
+      const tNorm = Math.min(1, (now - f.startTs) / f.duration);
+      const eased = 1 - Math.pow(1 - tNorm, 2); // ease-out-quad for travel
+      const px = f.x * this.mapWidth;
+      const py = f.y * this.mapHeight;
+      ctx.save();
+      switch (f.type) {
+        case 'hit':
+        case 'damage': {
+          // Red expanding ring + floating damage text.
+          const col = f.color || '#ff4848';
+          const r0 = gs * 0.45;
+          const r = r0 + gs * 1.1 * eased;
+          ctx.globalAlpha = (1 - tNorm) * 0.85;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 4 / this.scale;
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+          // Inner softer ring for a bit of glow
+          ctx.globalAlpha = (1 - tNorm) * 0.35;
+          ctx.lineWidth = 10 / this.scale;
+          ctx.beginPath(); ctx.arc(px, py, r * 0.85, 0, Math.PI * 2); ctx.stroke();
+          if (f.text) this._drawFxText(ctx, f.text, px, py, eased, tNorm, col, 22);
+          break;
+        }
+        case 'crit': {
+          // Double ring (gold + red) + larger pulsing text.
+          const r0 = gs * 0.5;
+          const r = r0 + gs * 1.6 * eased;
+          ctx.globalAlpha = (1 - tNorm);
+          ctx.strokeStyle = '#ffcc32';
+          ctx.lineWidth = 5 / this.scale;
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = '#ff4848';
+          ctx.lineWidth = 3 / this.scale;
+          ctx.beginPath(); ctx.arc(px, py, r * 0.68, 0, Math.PI * 2); ctx.stroke();
+          // Burst rays — 8 short radial lines.
+          ctx.strokeStyle = '#ffd858';
+          ctx.lineWidth = 2.5 / this.scale;
+          ctx.globalAlpha = (1 - tNorm) * 0.9;
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            const r1 = r0 + gs * 0.4 * eased;
+            const r2 = r0 + gs * 1.0 * eased;
+            ctx.beginPath();
+            ctx.moveTo(px + Math.cos(a) * r1, py + Math.sin(a) * r1);
+            ctx.lineTo(px + Math.cos(a) * r2, py + Math.sin(a) * r2);
+            ctx.stroke();
+          }
+          if (f.text) this._drawFxText(ctx, f.text, px, py, eased, tNorm, '#ff5252', 30);
+          break;
+        }
+        case 'miss': {
+          this._drawFxText(ctx, f.text || 'MISS', px, py, eased, tNorm, '#b8b8b8', 20);
+          break;
+        }
+        case 'fumble': {
+          // Same as miss but with a wobble on X.
+          const wobble = Math.sin(tNorm * Math.PI * 4) * 12;
+          this._drawFxText(ctx, f.text || 'FUMBLE',
+                           px + wobble, py, eased, tNorm, '#d4a018', 22);
+          break;
+        }
+        case 'heal': {
+          const col = '#4ade80';
+          const r0 = gs * 0.45;
+          const r = r0 + gs * 0.7 * eased;
+          ctx.globalAlpha = (1 - tNorm) * 0.7;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3 / this.scale;
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+          // Gentle cross icon
+          ctx.globalAlpha = (1 - tNorm) * 0.6;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3 / this.scale;
+          const cs = gs * 0.22 * (1 - tNorm * 0.3);
+          ctx.beginPath();
+          ctx.moveTo(px - cs, py); ctx.lineTo(px + cs, py);
+          ctx.moveTo(px, py - cs); ctx.lineTo(px, py + cs);
+          ctx.stroke();
+          if (f.text) this._drawFxText(ctx, f.text, px, py, eased, tNorm, col, 22);
+          break;
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // Shared floating-text drawer used by every FX type. Text rises
+  // upward from the token and fades linearly.
+  _drawFxText(ctx, text, px, py, eased, tNorm, color, sizePx) {
+    const dy = -70 * eased;                // px in map space
+    const alpha = 1 - tNorm;
+    const fontPx = sizePx / this.scale;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `900 ${fontPx}px Inter, sans-serif`;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.lineWidth = 5 / this.scale;
+    ctx.strokeText(text, px, py + dy / this.scale);
+    ctx.fillStyle = color;
+    ctx.fillText(text, px, py + dy / this.scale);
+    ctx.restore();
   }
 
   // ── Load map image ──────────────────────────────────────────
@@ -636,6 +823,12 @@ class MapCanvas {
 
       ctx.globalAlpha = 1;
     }
+
+    // Combat FX — drawn last so they sit above every token and HP
+    // bar. The loop in `_startFxLoop` keeps calling render() while
+    // any effect is alive, giving us a smooth ~60fps animation
+    // without the rest of the scene having to be rebuilt by hand.
+    this._renderFx(ctx);
 
     ctx.restore();
   }

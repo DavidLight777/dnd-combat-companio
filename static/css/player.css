@@ -698,3 +698,5 @@
 .dice-roll-widget .result-breakdown {
   font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;
 }
+
+/* Combat FX shake keyframes live in base.css so GM + player share them. */

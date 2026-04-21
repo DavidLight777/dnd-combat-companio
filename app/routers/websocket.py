@@ -134,6 +134,13 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                 elif msg_type == "combat.attack_result":
                     await manager.broadcast_to_session(session_code, "combat.attack_result", msg)
 
+                # Combat FX: ability resolution (hit / miss / crit / fumble
+                # with optional damage). Fired by the player client right
+                # after POST /api/character-abilities/{id}/use succeeds so
+                # every other client plays the matching map animation.
+                elif msg_type in ("combat.ability_result", "combat.hit_result"):
+                    await manager.broadcast_to_session(session_code, msg_type, msg)
+
                 elif msg_type == "combat.character_downed":
                     await manager.broadcast_to_session(session_code, "combat.character_downed", msg)
 
