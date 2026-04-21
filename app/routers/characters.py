@@ -1,9 +1,10 @@
 """Character CRUD and stat management — session-aware version."""
 import random
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -16,6 +17,38 @@ from app.schemas import CharacterCreate, CharacterUpdate, HpPatch, ModifierCreat
 from app.game_mechanics import get_all_active_bonuses, aggregate_status_penalties, apply_advantage, format_advantage_breakdown, resolve_advantage_mode
 
 router = APIRouter(prefix="/api", tags=["characters"])
+
+
+# ── Expired-potion cleanup ───────────────────────────────────
+# Bug fix (Apr 2026): potion-sourced StatModifier rows carry an
+# `expires_at` wall-clock timestamp, but the only place that deleted
+# expired rows was `_process_participant_turn_end` in combat_events.
+# If the player drank the potion outside combat (or combat ended
+# before expiration), the row lingered with `is_active=True` and the
+# bonus kept applying forever. Reproduced: a character showed +4 STR
+# from an `Elixir of Giants boost` 6 days after it should have worn off.
+#
+# Fix strategy: reap expired rows on EVERY `GET /characters/{id}`
+# (the hottest read path — both the GM and player sheets poll it
+# constantly). The sweep is cheap: one indexed DELETE per call.
+async def _expire_stale_potion_mods(char_id: int, db: AsyncSession) -> int:
+    """Delete any expired potion stat-mods for this character.
+
+    Returns the number of rows deleted. Safe to call anywhere — a
+    no-op when there are no expired rows. We compare against a naive
+    UTC `now` because SQLite's DateTime column strips timezone on
+    storage, so an aware comparison would mismatch on some drivers.
+    """
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = await db.execute(
+        sa_delete(StatModifier).where(
+            StatModifier.character_id == char_id,
+            StatModifier.source == "potion",
+            StatModifier.expires_at.is_not(None),
+            StatModifier.expires_at <= now_naive,
+        )
+    )
+    return int(result.rowcount or 0)
 
 
 # ── Helper: serialize character ──────────────────────────────
@@ -106,6 +139,13 @@ async def get_character(char_id: int, db: AsyncSession = Depends(get_session)):
     c = await db.get(Character, char_id)
     if not c:
         raise HTTPException(404, "Character not found")
+    # Bug fix (Apr 2026): sweep expired potion stat-mods before we
+    # serialize so the sheet never shows a bonus that should have
+    # faded. If anything got reaped, commit + refresh the row so the
+    # ORM re-loads `stat_modifiers` without the stale entries.
+    if await _expire_stale_potion_mods(char_id, db):
+        await db.commit()
+        await db.refresh(c)
     payload = _serialize_char(c)
     # Rework v2: surface race HP die for the level-up preview.
     hp_die, hp_dice_count, race_name = 8, 1, None
@@ -129,12 +169,24 @@ async def update_character(char_id: int, body: CharacterUpdate, db: AsyncSession
     c = await db.get(Character, char_id)
     if not c:
         raise HTTPException(404, "Character not found")
-    for field, val in body.model_dump(exclude_unset=True).items():
+    # Snapshot CON before the write so we can ripple the delta through to the
+    # inventory slot cap using the canonical formula (+2 slots per +1 CON).
+    # We intentionally apply a DELTA to preserve any GM override already on
+    # max_inventory_slots (e.g. magical boon). Skip for NPC unlimited (=0) or
+    # if the caller explicitly sends max_inventory_slots in the same payload.
+    patch = body.model_dump(exclude_unset=True)
+    old_con = int(c.constitution or 0)
+    for field, val in patch.items():
         # Map legacy gold_copper → wealth_bronze
         if field == "gold_copper":
             c.wealth_bronze = val
             continue
         setattr(c, field, val)
+    if "constitution" in patch and "max_inventory_slots" not in patch:
+        new_con = int(c.constitution or 0)
+        con_delta = new_con - old_con
+        if con_delta and int(c.max_inventory_slots or 0) > 0:
+            c.max_inventory_slots = max(0, int(c.max_inventory_slots) + 2 * con_delta)
     await db.commit()
     await db.refresh(c)
     return _serialize_char(c)
@@ -309,8 +361,19 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
         valid = {"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
         if a not in valid or b not in valid or a == b:
             raise HTTPException(400, "Provide two distinct stats (stat_a != stat_b)")
+        # Track CON delta so we can bump the inventory slot cap by the same
+        # amount as the wizard formula (10 + 2 × CON). We apply a DELTA rather
+        # than recompute from scratch to preserve any GM override already on
+        # max_inventory_slots (e.g. a +N magical boon).
+        old_con = int(c.constitution or 0)
         setattr(c, a, int(getattr(c, a) or 0) + 1)
         setattr(c, b, int(getattr(c, b) or 0) + 1)
+        new_con = int(c.constitution or 0)
+        con_delta = new_con - old_con
+        if con_delta and int(c.max_inventory_slots or 0) > 0:
+            c.max_inventory_slots = max(0, int(c.max_inventory_slots) + 2 * con_delta)
+            chosen["slots_delta"] = 2 * con_delta
+            chosen["max_inventory_slots"] = c.max_inventory_slots
         chosen["stat_a"] = a
         chosen["stat_b"] = b
 

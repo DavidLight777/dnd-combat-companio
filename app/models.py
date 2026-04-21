@@ -116,8 +116,10 @@ class Character(Base):
     # Rework v2: identity (cosmetic only)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     gender: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Rework v2: inventory slot cap. Formula on creation:
-    #   slots = (declined_stats ? 10 : 12) + 2 × constitution
+    # Rework v2: inventory slot cap. Canonical formula on wizard finalize:
+    #   slots = 10 + 2 × constitution
+    # So CON 0 → 10, CON 1 → 12, CON 2 → 14, ...  (decline is encoded in
+    # CON=0 already, no extra +2 baseline on "accept").
     # GM can override on NPCs. 0 = unlimited (NPC default).
     max_inventory_slots: Mapped[int] = mapped_column(Integer, default=12)
     # Rework v2: did the player decline stats for an advantage roll?

@@ -2993,6 +2993,54 @@ ws.on('session.state', data => {
   refreshChars();
 });
 
+// ══════════════════════════════════════════════════════════════
+// GENERIC ENTITY INVALIDATION — live refresh without page reload
+// ══════════════════════════════════════════════════════════════
+// Server emits `entity.invalidated` after every DB commit via the
+// SQLAlchemy after_commit dispatcher (app/realtime.py). Payload:
+//   { changes: [{ entity, character_id, action }, ...] }
+// GM cares about almost everything — the party list / combat panel /
+// quest panel should track any player's mutations. Each refresher is
+// debounced so a flood of writes collapses into a single refetch.
+const _gmInvRefreshers = {
+  Character:            () => {
+    refreshChars?.();
+    if (typeof activeCombat !== 'undefined' && activeCombat) loadCombatPanel?.();
+    if (typeof loadMapState === 'function') loadMapState();
+  },
+  InventoryItem:        () => { /* GM-side inventory lives in a modal — owner reloads on open */ },
+  CharacterAbility:     () => { loadGmAbilities?.(); },
+  StatModifier:         () => { refreshChars?.(); },
+  AttackModifier:       () => { refreshChars?.(); },
+  DamageModifier:       () => { refreshChars?.(); },
+  CharacterEffect:      () => { refreshChars?.(); },
+  CharacterQuest:       () => { loadQuests?.(); },
+  CharacterProfession:  () => { refreshChars?.(); },
+  TurnTimer:            () => { refreshChars?.(); },
+};
+const _gmInvPending = new Set();
+let _gmInvTimer = null;
+function _gmInvFlush() {
+  const keys = Array.from(_gmInvPending);
+  _gmInvPending.clear();
+  _gmInvTimer = null;
+  for (const key of keys) {
+    const fn = _gmInvRefreshers[key];
+    if (fn) try { fn(); } catch (e) { console.warn('gm inv refresh', key, e); }
+  }
+}
+ws.on('entity.invalidated', d => {
+  if (!d || !Array.isArray(d.changes)) return;
+  for (const ch of d.changes) {
+    if (ch && ch.entity && _gmInvRefreshers[ch.entity]) {
+      _gmInvPending.add(ch.entity);
+    }
+  }
+  if (_gmInvPending.size === 0) return;
+  if (_gmInvTimer) clearTimeout(_gmInvTimer);
+  _gmInvTimer = setTimeout(_gmInvFlush, 200);
+});
+
 ws.on('session.player_joined', data => {
   $('#connected-count').textContent = data.connected_count;
   addLog('session.player_joined', `${data.role} joined (${data.connected_count} online)`);

@@ -196,7 +196,7 @@ def run(base: str) -> int:
                                      "intelligence", "wisdom", "charisma")))
     s.check("character mana_max = 10 default", ch.get("mana_max") == 10)
     s.check("character armor_class = 0 default", ch.get("armor_class") == 0)
-    # declined → slots = 10; formula: (declined?10:12) + 2*CON. CON=0 here.
+    # declined → slots = 10; canonical formula: 10 + 2*CON. CON=0 here.
     s.check("max_inventory_slots = 10 (declined formula)", ch.get("max_inventory_slots") == 10)
     s.check("character exposes race_name", ch.get("race_name") == "Stoneborn")
     s.check("character exposes hp_die/hp_dice_count",

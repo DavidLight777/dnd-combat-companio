@@ -33,7 +33,7 @@
 | 3 | **Starting Item** | roll d20 → **fixed** rarity (1 ⇒ Broken-Common, 2–9 Common, 10–14 Uncommon, 15–18 Rare, 19–20 Epic). Player fills the form. Weapon: dice count, dice type, hit_stat, damage_stat, damage_type, description. Consumable: effect (heal/buff/DoT), charges, description. Submit → **GM approval queue**. | `wizard.data.starting_item_proposal` |
 | 4 | **Stat Choice** | two big buttons:<br>• **Accept** — all stats = 1<br>• **Decline** — all stats = 0 BUT the Step-5 feature roll is made with **advantage** (2d20 keep max) | `character.declined_stats = true/false`; stats written to the DB |
 | 5 | **Feature Roll** | d20 (1d20 or 2d20-max based on Step 4) → rarity → d4 → one of the 4 pool entries GM placed in that rarity bucket | grants a `CharacterAbility` automatically (no approval) |
-| 6 | **Finalize** | roll race's HP die → `max_hp = hp_dice_count × d(hp_die)`; `mana_max = 10`; `armor_class = 0`; `max_inventory_slots = (declined ? 10 : 12) + 2 × CON`. Show summary → **Enter Game**. | marks wizard `is_completed`; redirects to `/player`. Item still pending GM approval and appears after it. |
+| 6 | **Finalize** | roll race's HP die → `max_hp = hp_dice_count × d(hp_die)`; `mana_max = 10`; `armor_class = 0`; `max_inventory_slots = 10 + 2 × CON` (CON 0 → 10, CON 1 → 12, +2 per CON). Show summary → **Enter Game**. | marks wizard `is_completed`; redirects to `/player`. Item still pending GM approval and appears after it. |
 
 ### d20 → rarity (fixed, max Epic)
 

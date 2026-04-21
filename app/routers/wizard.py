@@ -575,9 +575,15 @@ async def finalize(char_id: int, db: AsyncSession = Depends(get_session)):
 
     # Mana / AC stay at level-0 defaults (10 / 0) \u2014 no feature logic yet.
     # Slot cap \u2014 see formula in REWORK_PLAN.md §1 Step 6.
+    # Slot cap — canonical formula:
+    #     slots = 10 + 2 × constitution
+    # CON 0 (declined) → 10, CON 1 (accepted) → 12, +2 per extra CON.
+    # The decline branch is already encoded in the CON value itself
+    # (Step 4 zeroes every stat on decline), so we MUST NOT add a
+    # second "+2 on accept" baseline — that produced a 14-slot off-by-one
+    # bug for fresh L0 accepted characters.
     declined = bool(char.declined_stats)
-    base_slots = 10 if declined else 12
-    char.max_inventory_slots = base_slots + 2 * max(0, int(char.constitution))
+    char.max_inventory_slots = 10 + 2 * max(0, int(char.constitution))
 
     # Mark wizard completed. is_completed=True even if the GM hasn't approved
     # the item yet \u2014 player enters /player and sees a "waiting" banner there.

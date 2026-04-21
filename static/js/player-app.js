@@ -2170,6 +2170,90 @@ ws.on('status_effect.expired', d => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// GENERIC ENTITY INVALIDATION — live refresh without page reload
+// ══════════════════════════════════════════════════════════════
+// The server emits `entity.invalidated` after every DB commit via the
+// SQLAlchemy after_commit dispatcher (app/realtime.py). Payload:
+//   { changes: [{ entity, character_id, action }, ...] }
+// We map each entity type to the existing loader and debounce so that
+// bursts of writes (e.g. batch HP update + status effect tick) collapse
+// into a single refetch.
+const _invRefreshers = {
+  // Character: re-load the full sheet (HP / stats / slots), the at-the-table
+  // view (other players' HP bars) and the battle-map token state.
+  Character:            () => {
+    loadChar();
+    // wealth_bronze lives on Character; currency panel has its own loader.
+    if (typeof loadCurrency === 'function') loadCurrency();
+    if (typeof loadTableView === 'function') loadTableView();
+    if (typeof loadPlayerMapState === 'function') loadPlayerMapState();
+  },
+  // InventoryItem: owned items changed. Refresh the bag, currency, the
+  // aggregated bonuses/penalties panel (equip/unequip flips bonuses) and
+  // the character sheet (max HP / AC can depend on equipment). Also
+  // rerender the action menu (weapon in hand gates attack cards).
+  InventoryItem:        () => {
+    loadInventory();
+    if (typeof loadCurrency === 'function') loadCurrency();
+    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+    loadChar();
+  },
+  CharacterAbility:     () => {
+    if (typeof loadAbilities === 'function') loadAbilities();
+    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  },
+  StatModifier:         () => {
+    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+    loadChar();
+  },
+  AttackModifier:       () => {
+    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  },
+  DamageModifier:       () => {
+    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  },
+  CharacterEffect:      () => {
+    if (typeof loadStatusEffects === 'function') loadStatusEffects();
+    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  },
+  CharacterQuest:       () => {
+    if (typeof loadPlayerQuests === 'function') loadPlayerQuests();
+  },
+  CharacterProfession:  () => { loadChar(); },
+  TurnTimer:            () => { loadChar(); },
+};
+const _invPending = new Set();
+let _invTimer = null;
+function _invFlush() {
+  const keys = Array.from(_invPending);
+  _invPending.clear();
+  _invTimer = null;
+  for (const key of keys) {
+    const fn = _invRefreshers[key];
+    if (fn) try { fn(); } catch (e) { console.warn('inv refresh', key, e); }
+  }
+}
+ws.on('entity.invalidated', d => {
+  if (!d || !Array.isArray(d.changes)) return;
+  const me = parseInt(CHAR_ID);
+  for (const ch of d.changes) {
+    if (!ch || !ch.entity) continue;
+    // Only react to rows that touch our own character — the player UI
+    // shows nothing for other characters' inventories / abilities etc.
+    // Character rows are always interesting (own = HP/stats, others =
+    // table-view HP bars and map token HP).
+    if (ch.entity === 'Character') {
+      _invPending.add('Character');
+    } else if (ch.character_id != null && ch.character_id === me) {
+      _invPending.add(ch.entity);
+    }
+  }
+  if (_invPending.size === 0) return;
+  if (_invTimer) clearTimeout(_invTimer);
+  _invTimer = setTimeout(_invFlush, 200);
+});
+
+// ══════════════════════════════════════════════════════════════
 // STAGE 5 — COMBAT BANNER & INITIATIVE
 // ══════════════════════════════════════════════════════════════
 let playerCombat = null;

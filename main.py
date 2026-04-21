@@ -12,6 +12,10 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
+# Registers SQLAlchemy after_commit listeners that fan out
+# `entity.invalidated` WS events for every DB mutation. Must be imported
+# before any router touches the DB so the hooks are active on day one.
+from app import realtime  # noqa: F401
 from app.routers.sessions import router as sessions_router
 from app.routers.characters import router as characters_router
 from app.routers.combat import router as combat_router
