@@ -263,6 +263,14 @@ class MapData(Base):
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
     grid_size: Mapped[int] = mapped_column(Integer, default=50)
     grid_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Grid style toggle: "square" (king-move / Chebyshev distance) or
+    # "hex" (pointy-top hexagons, axial hex distance). Affects rendering,
+    # snap-to-cell, movement budget, weapon/ability range enforcement
+    # and the measure tool. Fog of war stays indexed by square cells
+    # regardless — fog tiles are a crude visibility mask, not a
+    # gameplay surface, and re-hexifying existing saved fog would be
+    # destructive.
+    grid_type: Mapped[str] = mapped_column(String(10), default="square")
     fog_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     revealed_cells: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [[col,row],...]
     image_width: Mapped[int] = mapped_column(Integer, default=0)

@@ -167,19 +167,18 @@ async def _session_has_active_combat(session_id: int, db: AsyncSession) -> bool:
 def _chebyshev_cells(
     x0: float, y0: float, x1: float, y1: float,
     map_w: int, map_h: int, grid_size: int,
+    grid_type: str = "square",
 ) -> float:
-    """Distance between two normalised positions, measured in whole cells.
+    """Distance between two normalised positions, in whole cells.
 
-    Uses the Chebyshev (king-move) metric: diagonal moves cost 1, same
-    as orthogonal. Positions are normalised (0..1) so we convert into
-    pixels first, then divide by cell size. Returns 0 on degenerate
-    inputs so callers can use it safely in arithmetic.
+    Square grids use the Chebyshev (king-move) metric; hex grids use
+    the pointy-top axial hex distance. Returns 0 on degenerate inputs.
+    Delegates to :mod:`app.combat_range.grid_cells` so every gameplay
+    surface — movement, range checks, measure tool — agrees on the
+    exact metric. Name is preserved for call-site compatibility.
     """
-    if not map_w or not map_h or not grid_size:
-        return 0.0
-    dx_cells = abs(x1 - x0) * map_w / grid_size
-    dy_cells = abs(y1 - y0) * map_h / grid_size
-    return max(dx_cells, dy_cells)
+    from app.combat_range import grid_cells
+    return grid_cells(x0, y0, x1, y1, map_w, map_h, grid_size, grid_type)
 
 
 async def _effective_speed_cells(character: Character, db: AsyncSession) -> int:
@@ -333,6 +332,7 @@ async def get_map_state(session_code: str, db: AsyncSession = Depends(get_sessio
         "image_height": map_data.image_height,
         "grid_size": map_data.grid_size,
         "grid_enabled": map_data.grid_enabled,
+        "grid_type": getattr(map_data, "grid_type", "square") or "square",
         "fog_enabled": map_data.fog_enabled,
         "remember_explored": map_data.remember_explored,
         "revealed_cells": json.loads(map_data.revealed_cells),
@@ -383,6 +383,7 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
                 move_distance_cells = _chebyshev_cells(
                     c.map_x or 0.0, c.map_y or 0.0, new_x or 0.0, new_y or 0.0,
                     md.image_width, md.image_height, md.grid_size,
+                    getattr(md, "grid_type", "square") or "square",
                 )
                 # Round to whole cells — snap-to-grid on the client
                 # guarantees integer deltas, but float noise around 1e-6
@@ -458,6 +459,9 @@ async def update_map_settings(session_code: str, body: dict, db: AsyncSession = 
         map_data.grid_size = max(20, min(100, body["grid_size"]))
     if "grid_enabled" in body:
         map_data.grid_enabled = body["grid_enabled"]
+    if "grid_type" in body:
+        gt = str(body["grid_type"] or "").lower()
+        map_data.grid_type = gt if gt in ("square", "hex") else "square"
     if "fog_enabled" in body:
         map_data.fog_enabled = body["fog_enabled"]
     if "remember_explored" in body:

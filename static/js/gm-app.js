@@ -2498,7 +2498,7 @@ async function loadMapState() {
     const state = await api.get(`/api/map/${SESSION_CODE}`);
     if (state.has_map) {
       await mapCanvas.loadImage(state.image_url);
-      mapCanvas.setGrid(state.grid_size, state.grid_enabled);
+      mapCanvas.setGrid(state.grid_size, state.grid_enabled, state.grid_type || 'square');
       mapCanvas.setFog(state.fog_enabled, state.revealed_cells);
       mapCanvas.setTokens(state.tokens);
       // Load overlays
@@ -2515,6 +2515,11 @@ async function loadMapState() {
       $('#btn-toggle-fog').textContent = `Fog: ${mapFogEnabled ? 'ON' : 'OFF'}`;
       $('#grid-size-slider').value = state.grid_size;
       $('#grid-size-label').textContent = state.grid_size;
+      const styleBtn = $('#btn-grid-style');
+      if (styleBtn) {
+        const t = state.grid_type || 'square';
+        styleBtn.textContent = t === 'hex' ? 'Style: ⬡ Hex' : 'Style: ▢ Square';
+      }
     }
   } catch { /* no map yet */ }
 }
@@ -2548,15 +2553,28 @@ document.addEventListener('change', async e => {
 $('#btn-toggle-grid').addEventListener('click', async () => {
   mapGridEnabled = !mapGridEnabled;
   $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
-  mapCanvas.setGrid(mapCanvas.gridSize, mapGridEnabled);
+  mapCanvas.setGrid(mapCanvas.gridSize, mapGridEnabled, mapCanvas.gridType);
   await api.patch(`/api/map/${SESSION_CODE}/settings`, { grid_enabled: mapGridEnabled });
 });
+
+// Grid style toggle (square ↔ hex)
+const _gridStyleBtn = $('#btn-grid-style');
+if (_gridStyleBtn) {
+  _gridStyleBtn.addEventListener('click', async () => {
+    const next = (mapCanvas.gridType === 'hex') ? 'square' : 'hex';
+    mapCanvas.setGrid(mapCanvas.gridSize, mapGridEnabled, next);
+    _gridStyleBtn.textContent = next === 'hex' ? 'Style: ⬡ Hex' : 'Style: ▢ Square';
+    try {
+      await api.patch(`/api/map/${SESSION_CODE}/settings`, { grid_type: next });
+    } catch (e) { console.warn('grid_type save failed', e); }
+  });
+}
 
 // Grid size slider
 $('#grid-size-slider').addEventListener('input', e => {
   const v = parseInt(e.target.value);
   $('#grid-size-label').textContent = v;
-  if (mapCanvas) mapCanvas.setGrid(v, mapGridEnabled);
+  if (mapCanvas) mapCanvas.setGrid(v, mapGridEnabled, mapCanvas.gridType);
 });
 $('#grid-size-slider').addEventListener('change', async e => {
   await api.patch(`/api/map/${SESSION_CODE}/settings`, { grid_size: parseInt(e.target.value) });
@@ -3002,21 +3020,66 @@ ws.on('session.state', data => {
 // GM cares about almost everything — the party list / combat panel /
 // quest panel should track any player's mutations. Each refresher is
 // debounced so a flood of writes collapses into a single refetch.
+function _gmCall(fn, ...args) {
+  if (typeof fn === 'function') { try { fn(...args); } catch (e) { console.warn('gm refresh error', e); } }
+}
 const _gmInvRefreshers = {
-  Character:            () => {
-    refreshChars?.();
-    if (typeof activeCombat !== 'undefined' && activeCombat) loadCombatPanel?.();
-    if (typeof loadMapState === 'function') loadMapState();
+  // ── Character-scoped ──────────────────────────────────────
+  Character: () => {
+    _gmCall(refreshChars);
+    if (typeof activeCombat !== 'undefined' && activeCombat) _gmCall(loadCombatPanel);
+    _gmCall(loadMapState);
   },
-  InventoryItem:        () => { /* GM-side inventory lives in a modal — owner reloads on open */ },
-  CharacterAbility:     () => { loadGmAbilities?.(); },
-  StatModifier:         () => { refreshChars?.(); },
-  AttackModifier:       () => { refreshChars?.(); },
-  DamageModifier:       () => { refreshChars?.(); },
-  CharacterEffect:      () => { refreshChars?.(); },
-  CharacterQuest:       () => { loadQuests?.(); },
-  CharacterProfession:  () => { refreshChars?.(); },
-  TurnTimer:            () => { refreshChars?.(); },
+  // GM-side per-character inventory / notes / memory panels live in
+  // modals that re-fetch on open. Refreshing the party list on these
+  // mutations still helps because HP / slot counters live there.
+  InventoryItem:       () => { _gmCall(refreshChars); },
+  InventoryItemPoison: () => {},
+  CharacterAbility:    () => { _gmCall(loadGmAbilities); _gmCall(refreshChars); },
+  StatModifier:        () => { _gmCall(refreshChars); },
+  AttackModifier:      () => { _gmCall(refreshChars); },
+  DamageModifier:      () => { _gmCall(refreshChars); },
+  CharacterEffect:     () => { _gmCall(refreshChars); },
+  CharacterStatusEffect: () => { _gmCall(refreshChars); },
+  CharacterQuest:      () => { _gmCall(loadQuests); },
+  CharacterProfession: () => { _gmCall(refreshChars); },
+  TurnTimer:           () => { _gmCall(refreshChars); },
+  CharacterNote:       () => {},   // only visible in notes modal
+  CharacterMemory:     () => {},   // only visible in memory modal
+  CharacterWizardState:() => { _gmCall(loadWizardPending); },
+  NpcReputation:       () => {},
+  NpcShopInventory:    () => {},
+  // ── Session-scoped ────────────────────────────────────────
+  Session: () => { _gmCall(refreshChars); },
+  CombatEvent: () => {
+    _gmCall(refreshChars);
+    _gmCall(loadCombatPanel);
+    _gmCall(loadMapState);
+  },
+  CombatParticipant: () => {
+    _gmCall(loadCombatPanel);
+    _gmCall(refreshChars);
+  },
+  CombatAction: () => { _gmCall(loadCombatPanel); },
+  InitiativeOrder: () => { _gmCall(loadCombatPanel); },
+  SessionAnnouncement: () => { _gmCall(loadAnnouncements); },
+  QuestTemplate: () => { _gmCall(loadQuests); },
+  MapData:    () => { _gmCall(loadMapState); },
+  MapMarker:  () => { _gmCall(loadMapState); },
+  MapDrawing: () => { _gmCall(loadMapState); },
+  MapObject:  () => { _gmCall(loadMapState); },
+  NpcFolder:    () => { _gmCall(loadNpcLibrary); },
+  NpcTemplate:  () => { _gmCall(loadNpcLibrary); },
+  EventTemplate:() => { _gmCall(loadNpcLibrary); },
+  ShopItem:     () => {},   // only visible in shop editor modal
+  TradeSession: () => {},   // trade modals manage themselves
+  // ── Global templates ──────────────────────────────────────
+  Ability:        () => { _gmCall(loadGmAbilities); },
+  Race:           () => { _gmCall(loadRacesClasses); },
+  CharacterClass: () => { _gmCall(loadRacesClasses); },
+  StatusEffectTemplate: () => {},
+  PoisonTemplate:       () => {},
+  EquipmentTemplate:    () => {},
 };
 const _gmInvPending = new Set();
 let _gmInvTimer = null;

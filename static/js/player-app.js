@@ -1138,6 +1138,8 @@ function renderEquipmentSlots(items) {
       if (item) {
         if (await confirmAction(`Unequip ${item.name} from ${SLOT_LABELS[slot]}?`)) {
           await api.patch(`/api/inventory/${item.inventory_id}/equip`, { equip: false });
+          // UX: auto-switch to Bag so the unequipped item is visible immediately.
+          invTab = 'bag';
           loadInventory();
         }
       }
@@ -1211,6 +1213,9 @@ function renderInventoryGrid(items, opts = {}) {
       const isEquipped = btn.dataset.isEquipped === 'true';
       if (isEquipped) {
         await api.patch(`/api/inventory/${invId}/equip`, { equip: false });
+        // UX: auto-switch to the destination tab so the card visibly
+        // "moves" without the player having to flip tabs manually.
+        invTab = 'bag';
         loadInventory();
       } else {
         openSlotSelector(invId);
@@ -1485,6 +1490,8 @@ function openSlotSelector(inventoryId) {
       const slot = btn.dataset.pickSlot;
       await api.patch(`/api/inventory/${inventoryId}/equip`, { equip: true, slot });
       modal.style.display = 'none';
+      // UX: jump to Equipped so the player sees the item land in its slot.
+      invTab = 'equipped';
       loadInventory();
     });
   });
@@ -1596,7 +1603,7 @@ async function _applyMapStateTo(canvas, state) {
   if (!canvas || !state) return;
   if (state.has_map && state.image_url) {
     try { await canvas.loadImage(state.image_url); } catch {}
-    canvas.setGrid(state.grid_size, state.grid_enabled);
+    canvas.setGrid(state.grid_size, state.grid_enabled, state.grid_type || 'square');
     canvas.setFog(state.fog_enabled, state.revealed_cells);
   } else {
     // No map yet — still render an empty grid so the player sees the
@@ -2178,49 +2185,72 @@ ws.on('status_effect.expired', d => {
 // We map each entity type to the existing loader and debounce so that
 // bursts of writes (e.g. batch HP update + status effect tick) collapse
 // into a single refetch.
+function _call(fn, ...args) {
+  if (typeof fn === 'function') { try { fn(...args); } catch (e) { console.warn('refresh error', e); } }
+}
 const _invRefreshers = {
-  // Character: re-load the full sheet (HP / stats / slots), the at-the-table
-  // view (other players' HP bars) and the battle-map token state.
-  Character:            () => {
+  // ── Character-scoped ──────────────────────────────────────
+  // Character: the sheet, at-the-table HP bars, map tokens, currency
+  // (wealth_bronze lives on Character).
+  Character: () => {
     loadChar();
-    // wealth_bronze lives on Character; currency panel has its own loader.
-    if (typeof loadCurrency === 'function') loadCurrency();
-    if (typeof loadTableView === 'function') loadTableView();
-    if (typeof loadPlayerMapState === 'function') loadPlayerMapState();
+    _call(loadCurrency);
+    _call(loadTableView);
+    _call(loadPlayerMapState);
+    _call(loadCombatBanner);
   },
-  // InventoryItem: owned items changed. Refresh the bag, currency, the
-  // aggregated bonuses/penalties panel (equip/unequip flips bonuses) and
-  // the character sheet (max HP / AC can depend on equipment). Also
-  // rerender the action menu (weapon in hand gates attack cards).
-  InventoryItem:        () => {
+  InventoryItem: () => {
     loadInventory();
-    if (typeof loadCurrency === 'function') loadCurrency();
-    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
-    loadChar();
+    _call(loadCurrency);
+    _call(renderBonusesPenalties);
+    loadChar();  // max HP / AC can change with gear
   },
-  CharacterAbility:     () => {
-    if (typeof loadAbilities === 'function') loadAbilities();
-    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  InventoryItemPoison: () => { loadInventory(); },
+  CharacterAbility: () => { _call(loadAbilities); _call(renderBonusesPenalties); },
+  StatModifier:    () => { _call(renderBonusesPenalties); loadChar(); },
+  AttackModifier:  () => { _call(renderBonusesPenalties); },
+  DamageModifier:  () => { _call(renderBonusesPenalties); },
+  CharacterEffect: () => { _call(loadStatusEffects); _call(renderBonusesPenalties); },
+  CharacterStatusEffect: () => { _call(loadStatusEffects); _call(renderBonusesPenalties); },
+  CharacterQuest:  () => { _call(loadPlayerQuests); },
+  CharacterProfession: () => { loadChar(); },
+  TurnTimer: () => { loadChar(); },
+  CharacterNote: () => { _call(loadPlayerNotes); },
+  CharacterMemory: () => { _call(loadMemory); },
+  CharacterWizardState: () => { /* wizard has its own WS events */ },
+  NpcReputation: () => { _call(loadTableView); },
+  NpcShopInventory: () => { /* only visible while trade modal open */ },
+  // ── Session-scoped ────────────────────────────────────────
+  Session: () => {
+    _call(loadCombatBanner);
+    _call(loadTableView);
   },
-  StatModifier:         () => {
-    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
-    loadChar();
+  CombatEvent: () => {
+    _call(loadCombatBanner);
+    _call(loadTableView);
+    _call(loadPlayerMapState);
   },
-  AttackModifier:       () => {
-    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  CombatParticipant: () => {
+    _call(loadCombatBanner);
+    _call(loadTableView);
   },
-  DamageModifier:       () => {
-    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
+  CombatAction: () => {
+    _call(loadCombatBanner);
   },
-  CharacterEffect:      () => {
-    if (typeof loadStatusEffects === 'function') loadStatusEffects();
-    if (typeof renderBonusesPenalties === 'function') renderBonusesPenalties();
-  },
-  CharacterQuest:       () => {
-    if (typeof loadPlayerQuests === 'function') loadPlayerQuests();
-  },
-  CharacterProfession:  () => { loadChar(); },
-  TurnTimer:            () => { loadChar(); },
+  InitiativeOrder: () => { _call(loadCombatBanner); },
+  SessionAnnouncement: () => { _call(loadPlayerAnnouncements); },
+  QuestTemplate: () => { _call(loadPlayerQuests); },   // template desc may change
+  MapData:    () => { _call(loadPlayerMapState); },
+  MapMarker:  () => { _call(loadPlayerMapState); },
+  MapDrawing: () => { _call(loadPlayerMapState); },
+  MapObject:  () => { _call(loadPlayerMapState); },
+  // Global templates — player UI mostly doesn't care, but ability
+  // templates change the rendered ability description on the fly.
+  Ability:        () => { _call(loadAbilities); },
+  Race:           () => { /* selection is at character-creation time */ },
+  CharacterClass: () => { loadChar(); },
+  StatusEffectTemplate: () => { _call(loadStatusEffects); },
+  PoisonTemplate: () => { _call(loadInventory); },
 };
 const _invPending = new Set();
 let _invTimer = null;
@@ -2238,15 +2268,16 @@ ws.on('entity.invalidated', d => {
   const me = parseInt(CHAR_ID);
   for (const ch of d.changes) {
     if (!ch || !ch.entity) continue;
-    // Only react to rows that touch our own character — the player UI
-    // shows nothing for other characters' inventories / abilities etc.
-    // Character rows are always interesting (own = HP/stats, others =
-    // table-view HP bars and map token HP).
-    if (ch.entity === 'Character') {
-      _invPending.add('Character');
-    } else if (ch.character_id != null && ch.character_id === me) {
-      _invPending.add(ch.entity);
+    if (!_invRefreshers[ch.entity]) continue;
+    // Character rows always matter: own = my sheet; others = table-view
+    // HP bars and map token HP. Character-scoped rows (those carrying a
+    // character_id) only matter if they belong to ME — other players'
+    // inventory / abilities / notes etc. don't render in my UI. All
+    // remaining (session-scoped) entities are kept unconditionally.
+    if (ch.character_id != null && ch.character_id !== me && ch.entity !== 'Character') {
+      continue;
     }
+    _invPending.add(ch.entity);
   }
   if (_invPending.size === 0) return;
   if (_invTimer) clearTimeout(_invTimer);
@@ -3193,22 +3224,83 @@ if ($('#btn-clear-target')) {
 // FIX 2 — ACTION MENU (2×2 card grid with slide-in confirmation)
 // ══════════════════════════════════════════════════════════════
 
-// Confirmation panel — rendered inside #action-menu-body, replaces cards
+// Confirmation panel — rendered as a fixed overlay above the Actions
+// panel. `_closeConfirmPanel` tears down both the panel and its
+// backdrop, and restores the inline Actions strip that was hidden
+// while the overlay was up.
 function _closeConfirmPanel() {
+  const backdrop = document.getElementById('action-confirm-backdrop');
+  if (backdrop) backdrop.remove();
   const p = document.getElementById('action-confirm-panel');
   if (p) p.remove();
+  const body = document.getElementById('action-menu-body');
+  if (body) {
+    body.style.visibility = '';
+    delete body.dataset._hidden;
+  }
   renderActionMenu();
 }
 
 function _mountConfirmPanel(innerHtml) {
   const body = $('#action-menu-body');
   if (!body) return null;
-  body.innerHTML = `<div id="action-confirm-panel" class="action-confirm slide-in"
-    style="width:100%;background:var(--bg-surface-2);border:1px solid var(--border-active);
-           border-radius:var(--r-md);padding:10px 12px">
-    ${innerHtml}
-  </div>`;
-  return document.getElementById('action-confirm-panel');
+  // The in-sidebar layout fought us every time — flex-wrap parent,
+  // nested panels with `overflow:hidden`, variable sibling heights,
+  // viewport-cached HTML — so we bail on the inline approach and
+  // render the confirm panel as a FIXED overlay anchored to the
+  // viewport. This makes the max-height + scroll deterministic and
+  // identical on every browser, regardless of how tall the ability
+  // flow grows.
+  //
+  // UX: the overlay is placed over the right-sidebar column (same
+  // visual location as before) with a semi-transparent backdrop so
+  // the rest of the screen is clearly secondary while rolling.
+  // Clicking the backdrop closes the panel, same as the ✕ button.
+  //
+  // We still return a DOM node anchored at `#action-confirm-panel`
+  // so the existing `_closeConfirmPanel()` / `querySelector` code
+  // keeps working unchanged.
+  // Clean up any stale overlay first (defensive — a hot-reload or
+  // double-click could otherwise leave two stacked backdrops).
+  document.querySelectorAll('#action-confirm-backdrop, #action-confirm-panel')
+    .forEach(n => n.remove());
+  // Hide the inline body so the Actions strip doesn't show behind.
+  body.dataset._hidden = '1';
+  body.style.visibility = 'hidden';
+  const backdrop = document.createElement('div');
+  backdrop.id = 'action-confirm-backdrop';
+  backdrop.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,0.55);
+    z-index:9000;display:flex;align-items:center;justify-content:center;
+    padding:24px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+  `;
+  const panel = document.createElement('div');
+  panel.id = 'action-confirm-panel';
+  panel.className = 'action-confirm slide-in';
+  panel.style.cssText = `
+    width:min(420px, 92vw);max-height:min(85vh, 820px);
+    background:var(--bg-surface-2);border:1px solid var(--border-active);
+    border-radius:var(--r-md);box-shadow:0 8px 32px rgba(0,0,0,0.55);
+    padding:12px 14px 18px 14px;overflow-y:auto;overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  `;
+  panel.innerHTML = innerHtml;
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+  // Backdrop click-outside closes the panel (but only on the backdrop
+  // itself, not when clicks bubble up from inner widgets).
+  backdrop.addEventListener('mousedown', e => {
+    if (e.target === backdrop) _closeConfirmPanel();
+  });
+  // Esc to close.
+  const escHandler = e => {
+    if (e.key === 'Escape') {
+      _closeConfirmPanel();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+  return panel;
 }
 
 function _actionCard({id, icon, label, sub, subColor = 'var(--text-muted)'}) {
@@ -3734,18 +3826,25 @@ function _mountAbilityConfirm(panel, ab) {
   };
 
   if (needsHit && typeof createDiceRollWidget === 'function') {
+    // Rework v3 — parity with the regular Attack panel:
+    // the player may roll N×d20 for the hit check. ADV/DIS interpret
+    // "N dice" as a pool — take the highest (ADV) or lowest (DIS) of
+    // the whole pool. With Normal mode a pool > 1 is still permitted
+    // (e.g. "Superior advantage" house rules) but only the first die
+    // is used, so the UX mirrors `makeAdvToggle`'s stepper behaviour.
+    // The *dice type* is always d20 and is locked by `fixedDiceType`.
     createDiceRollWidget(area.querySelector('#ap-hit-widget'), {
       label: `Attack d20${statVal ? ` + ${statVal} ${hitStatLabel}` : ''}`,
       defaultDiceCount: 1, defaultDiceType: 20,
-      showDiceSelector: false, showAdvantage: true,
-      onRoll: async ({ advantageMode }) => {
-        const d1 = 1 + Math.floor(Math.random() * 20);
-        let chosen = d1, all = [d1];
-        if (advantageMode === 'advantage' || advantageMode === 'disadvantage') {
-          const d2 = 1 + Math.floor(Math.random() * 20);
-          all = [d1, d2];
-          chosen = advantageMode === 'advantage' ? Math.max(d1, d2) : Math.min(d1, d2);
-        }
+      showDiceSelector: true, fixedDiceType: 20, showAdvantage: true,
+      onRoll: async ({ diceCount, advantageMode }) => {
+        const n = Math.max(1, Math.min(20, diceCount | 0));
+        const all = [];
+        for (let i = 0; i < n; i++) all.push(1 + Math.floor(Math.random() * 20));
+        let chosen;
+        if (advantageMode === 'advantage')       chosen = Math.max(...all);
+        else if (advantageMode === 'disadvantage') chosen = Math.min(...all);
+        else                                      chosen = all[0];
         const total = chosen + statVal;
         const fumble = chosen === 1;
         const crit = chosen === 20;
@@ -3754,8 +3853,10 @@ function _mountAbilityConfirm(panel, ab) {
         const tgt = tgtId ? (tableParticipants||[]).find(t => t.id === tgtId) : null;
         const ac = tgt?.armor_class ?? 10;
         const hit = fumble ? false : (crit || total >= ac);
-        const advTag = advantageMode !== 'normal' ? `${advantageMode === 'advantage' ? 'ADV' : 'DIS'}[${all.join(',')}] took ${chosen} · ` : '';
-        const bd = `${advTag}D20(${chosen}) + ${hitStatLabel}(${statVal >= 0 ? '+' : ''}${statVal}) = ${total} vs AC ${ac} → ${fumble ? 'FUMBLE' : crit ? 'CRIT' : hit ? 'HIT' : 'MISS'}`;
+        const poolTag = n > 1
+          ? `${advantageMode === 'advantage' ? 'ADV' : advantageMode === 'disadvantage' ? 'DIS' : 'POOL'}[${all.join(',')}] took ${chosen} · `
+          : '';
+        const bd = `${poolTag}D20(${chosen}) + ${hitStatLabel}(${statVal >= 0 ? '+' : ''}${statVal}) = ${total} vs AC ${ac} → ${fumble ? 'FUMBLE' : crit ? 'CRIT' : hit ? 'HIT' : 'MISS'}`;
         state.hit_roll = { total, hit, critical: crit, fumble, breakdown: bd };
         const resEl = area.querySelector('#ap-hit-result');
         if (resEl) resEl.innerHTML = `<span style="color:${hit ? 'var(--accent-green)' : 'var(--accent-red)'}">${bd}</span>`;
@@ -3767,11 +3868,17 @@ function _mountAbilityConfirm(panel, ab) {
   }
 
   if (hasDamageDice && typeof createDiceRollWidget === 'function') {
+    // Rework v3 — damage dice count & die type are authored by the GM
+    // on the Ability template (`ab.damage_dice_count` / `_type`). The
+    // player must NOT be able to inflate their own damage by bumping
+    // these in the widget, so we lock both: `lockDiceCount` makes the
+    // count input readonly, `fixedDiceType` disables the die dropdown.
     createDiceRollWidget(area.querySelector('#ap-dmg-widget'), {
       label: `Effect ${ab.damage_dice_count}d${ab.damage_dice_type}${dmgStatVal ? ` + ${dmgStatVal} ${dmgStatLabel}` : ''}`,
       defaultDiceCount: ab.damage_dice_count || 1,
       defaultDiceType: ab.damage_dice_type || 6,
       showDiceSelector: true, showAdvantage: true,
+      lockDiceCount: true, fixedDiceType: ab.damage_dice_type || 6,
       onRoll: async ({ diceCount, diceType, advantageMode }) => {
         const rollOnce = () => {
           const rolls = [];

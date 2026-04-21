@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p10">
-  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p10">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p12">
+  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p12">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -358,6 +358,7 @@
             📁 Upload Map <input type="file" id="map-upload" accept="image/*" style="display:none">
           </label>
           <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
+          <button class="btn btn-ghost btn-xs" id="btn-grid-style" title="Switch between square and hex grid">Style: ▢ Square</button>
           <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
           <input type="range" id="grid-size-slider" min="20" max="100" value="50" style="width:80px">
           <span id="grid-size-label" style="font-size:0.72rem;min-width:28px">50</span>
@@ -592,9 +593,9 @@
     </div>
   </div>
 
-  <script src="/static/js/websocket-client.js?v=reworkv3p10"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv3p10"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv3p10"></script>
-  <script src="/static/js/gm-app.js?v=reworkv3p10"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv3p12"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p12"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p12"></script>
+  <script src="/static/js/gm-app.js?v=reworkv3p12"></script>
 </body>
 </html>

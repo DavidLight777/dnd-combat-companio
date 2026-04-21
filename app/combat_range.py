@@ -1,9 +1,14 @@
 """Rework v3 Phase 7 — shared range-enforcement helpers.
 
 Both weapon attacks and ability casts need the same question answered:
-"is the target close enough?" The math is Chebyshev (king-move) cells
-on the current battle map, reusing the exact metric `map.py` already
-uses for movement and wall-collision so every gameplay surface agrees.
+"is the target close enough?" The math is cells on the current battle
+map, reusing the exact metric used for movement and wall-collision so
+every gameplay surface agrees.
+
+Two grid styles are supported (`MapData.grid_type`):
+
+* ``"square"`` — Chebyshev (king-move) distance: diagonal = 1 cell.
+* ``"hex"``    — pointy-top hexagon axial distance.
 
 Design choices:
 
@@ -14,13 +19,11 @@ Design choices:
   grid fight yet, or a pre-map session) the check is skipped rather
   than throwing, so legacy flows (chip-view, quick-tests) keep
   working. The enforcement layer is strictly additive.
-* `max(1, distance_rounded)` — adjacent cells read as 0 distance in
-  Chebyshev math, but "range 1 = melee adjacent" is the expected
-  vocabulary. We clamp so range=1 means "touching cell or adjacent".
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -46,21 +49,63 @@ class RangeCheck:
     max_cells: int = 0
 
 
+_SQRT3 = math.sqrt(3.0)
+
+
 def _chebyshev_cells(
     x0: float, y0: float, x1: float, y1: float,
     map_w: int, map_h: int, grid_size: int,
 ) -> float:
-    """Distance in whole cells between two normalised (0..1) positions.
-
-    Duplicated here so this module has no runtime dependency on
-    `app.routers.map` (router imports combat_range, not the reverse).
-    Kept byte-identical to the movement enforcement metric.
-    """
+    """King-move distance in whole cells between two normalised positions."""
     if not map_w or not map_h or not grid_size:
         return 0.0
     dx = abs(x1 - x0) * map_w / grid_size
     dy = abs(y1 - y0) * map_h / grid_size
     return max(dx, dy)
+
+
+def _hex_cells(
+    x0: float, y0: float, x1: float, y1: float,
+    map_w: int, map_h: int, grid_size: int,
+) -> float:
+    """Pointy-top axial hex distance in whole cells.
+
+    Cell size convention matches the canvas: ``hex_width = grid_size``,
+    so the axial size ``s = grid_size / sqrt(3)``. Returns a continuous
+    distance; callers round as needed.
+    """
+    if not map_w or not map_h or not grid_size:
+        return 0.0
+    size = grid_size / _SQRT3
+    # normalised → pixel
+    px0, py0 = x0 * map_w, y0 * map_h
+    px1, py1 = x1 * map_w, y1 * map_h
+    # pixel → axial (q, r). Pointy-top formulae from Red Blob Games.
+    def _ax(px: float, py: float) -> tuple[float, float]:
+        q = (_SQRT3 / 3.0 * px - py / 3.0) / size
+        r = (2.0 / 3.0 * py) / size
+        return q, r
+    q0, r0 = _ax(px0, py0)
+    q1, r1 = _ax(px1, py1)
+    dq = q1 - q0
+    dr = r1 - r0
+    ds = -dq - dr
+    return (abs(dq) + abs(dr) + abs(ds)) / 2.0
+
+
+def grid_cells(
+    x0: float, y0: float, x1: float, y1: float,
+    map_w: int, map_h: int, grid_size: int,
+    grid_type: str = "square",
+) -> float:
+    """Public distance helper — dispatches on ``grid_type``.
+
+    Falls back to Chebyshev on anything other than ``"hex"`` so legacy
+    rows and typos are safe.
+    """
+    if grid_type == "hex":
+        return _hex_cells(x0, y0, x1, y1, map_w, map_h, grid_size)
+    return _chebyshev_cells(x0, y0, x1, y1, map_w, map_h, grid_size)
 
 
 async def check_range(
@@ -96,10 +141,11 @@ async def check_range(
     if not md or not md.grid_size or not md.image_width or not md.image_height:
         return RangeCheck(ok=True, skipped=True, max_cells=range_cells)
 
-    dist = _chebyshev_cells(
+    dist = grid_cells(
         attacker.map_x, attacker.map_y,
         target.map_x, target.map_y,
         md.image_width, md.image_height, md.grid_size,
+        getattr(md, "grid_type", "square") or "square",
     )
     # Snap-to-grid places tokens at integer cell centres, so rounding
     # clears float noise (~1e-6) that would otherwise tip an exact

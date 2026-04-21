@@ -48,6 +48,11 @@ class MapCanvas {
     this.tokens = [];
     this.gridSize = 50;
     this.gridEnabled = true;
+    // Grid style: 'square' (king-move, Chebyshev distance) or 'hex'
+    // (pointy-top hexagons, axial hex distance). Affects rendering,
+    // snap-to-cell, movement-reach overlay, and the measure tool.
+    // Fog of war stays square-indexed regardless (see render()).
+    this.gridType = 'square';
     this.fogEnabled = false;
     this.revealedCells = new Set();
 
@@ -178,29 +183,152 @@ class MapCanvas {
     this.render();
   }
 
-  // Snap a normalised (0..1) coordinate pair to the nearest grid-cell
-  // centre. Returns the same pair unchanged if snapping is disabled or
-  // impossible (grid off / no map / zero size). Tokens render at cell
-  // centres, so we round down to the containing cell and add half a
-  // cell back — matching the visual position of a placed token.
+  // ── Hex grid math (pointy-top, axial q/r) ──────────────────
+  // Convention: hex_width = gridSize, so axial size s = gridSize / √3.
+  // This gives cells the same perceived width as a square cell of
+  // identical gridSize — the "Size" slider keeps meaning the same
+  // thing when the GM flips the style toggle.
+  _hexSize() { return this.gridSize / Math.sqrt(3); }
+
+  _axialToPixel(q, r) {
+    const gs = this.gridSize;
+    return {
+      x: gs * (q + r / 2),
+      y: gs * (Math.sqrt(3) / 2) * r,
+    };
+  }
+
+  _pixelToAxial(px, py) {
+    const s = this._hexSize();
+    const q = (Math.sqrt(3) / 3 * px - py / 3) / s;
+    const r = (2 / 3 * py) / s;
+    return { q, r };
+  }
+
+  // Cube-round a fractional axial pair to the nearest integer hex.
+  _hexRound(q, r) {
+    const s = -q - r;
+    let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+    const dq = Math.abs(rq - q);
+    const dr = Math.abs(rr - r);
+    const ds = Math.abs(rs - s);
+    if (dq > dr && dq > ds)      rq = -rr - rs;
+    else if (dr > ds)            rr = -rq - rs;
+    // else rs would be adjusted but we don't use it.
+    return { q: rq, r: rr };
+  }
+
+  _hexDistance(a, b) {
+    return (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
+  }
+
+  // Snap a normalised (0..1) coordinate pair to the nearest cell centre.
+  // Returns the same pair unchanged if snapping is disabled or impossible.
   _snapNorm(nx, ny) {
     if (!this.snapToGrid || !this.gridEnabled) return { x: nx, y: ny };
     if (!this.mapWidth || !this.mapHeight || !this.gridSize) return { x: nx, y: ny };
     const px = nx * this.mapWidth;
     const py = ny * this.mapHeight;
-    const sx = (Math.floor(px / this.gridSize) + 0.5) * this.gridSize;
-    const sy = (Math.floor(py / this.gridSize) + 0.5) * this.gridSize;
-    // Clamp inside the map so snap near the edge doesn't overshoot.
+    let sx, sy;
+    if (this.gridType === 'hex') {
+      const frac = this._pixelToAxial(px, py);
+      const hex = this._hexRound(frac.q, frac.r);
+      const centre = this._axialToPixel(hex.q, hex.r);
+      sx = centre.x; sy = centre.y;
+    } else {
+      sx = (Math.floor(px / this.gridSize) + 0.5) * this.gridSize;
+      sy = (Math.floor(py / this.gridSize) + 0.5) * this.gridSize;
+    }
     return {
       x: Math.max(0, Math.min(1, sx / this.mapWidth)),
       y: Math.max(0, Math.min(1, sy / this.mapHeight)),
     };
   }
 
-  setGrid(size, enabled) {
+  setGrid(size, enabled, type) {
     this.gridSize = size;
     this.gridEnabled = enabled;
+    if (type === 'hex' || type === 'square') this.gridType = type;
     this.render();
+  }
+
+  // Draw a single pointy-top hexagon outline centred on (cx, cy).
+  _hexPath(ctx, cx, cy, size) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      // Pointy-top: first corner is straight up (−π/2 + 60°k).
+      const a = -Math.PI / 2 + i * Math.PI / 3;
+      const x = cx + size * Math.cos(a);
+      const y = cy + size * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  // Render the full hex grid covering the map. We iterate (q, r) across
+  // axial bounds computed from the four map corners, widened by one so
+  // partial cells at the edges still get stroked.
+  _renderHexGrid(ctx) {
+    const size = this._hexSize();
+    const w = this.mapWidth, h = this.mapHeight;
+    // Axial bounds from the four map corners.
+    const corners = [
+      this._pixelToAxial(0, 0),
+      this._pixelToAxial(w, 0),
+      this._pixelToAxial(0, h),
+      this._pixelToAxial(w, h),
+    ];
+    let qMin = Infinity, qMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+    for (const c of corners) {
+      if (c.q < qMin) qMin = c.q;
+      if (c.q > qMax) qMax = c.q;
+      if (c.r < rMin) rMin = c.r;
+      if (c.r > rMax) rMax = c.r;
+    }
+    qMin = Math.floor(qMin) - 1; qMax = Math.ceil(qMax) + 1;
+    rMin = Math.floor(rMin) - 1; rMax = Math.ceil(rMax) + 1;
+    // Clip hex strokes to the map rectangle so edge hexes don't spill
+    // out over the canvas background.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.clip();
+    for (let r = rMin; r <= rMax; r++) {
+      for (let q = qMin; q <= qMax; q++) {
+        const c = this._axialToPixel(q, r);
+        this._hexPath(ctx, c.x, c.y, size);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Reachable-cell overlay in hex mode. Centred on the player's token
+  // in pixel space; draws a filled+stroked hex for every cell within
+  // `reach` hex-distance of the containing hex (excluding own cell).
+  _renderReachHex(ctx, px, py, reach) {
+    const size = this._hexSize();
+    const frac = this._pixelToAxial(px, py);
+    const ownHex = this._hexRound(frac.q, frac.r);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, this.mapWidth, this.mapHeight);
+    ctx.clip();
+    for (let dq = -reach; dq <= reach; dq++) {
+      const dr1 = Math.max(-reach, -dq - reach);
+      const dr2 = Math.min(reach, -dq + reach);
+      for (let dr = dr1; dr <= dr2; dr++) {
+        if (dq === 0 && dr === 0) continue;
+        const q = ownHex.q + dq, r = ownHex.r + dr;
+        const c = this._axialToPixel(q, r);
+        // Skip hexes whose centre is outside the map rect.
+        if (c.x < 0 || c.y < 0 || c.x > this.mapWidth || c.y > this.mapHeight) continue;
+        this._hexPath(ctx, c.x, c.y, size);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   setFog(enabled, revealedCells) {
@@ -247,15 +375,50 @@ class MapCanvas {
     }
 
     // Grid
+    //
+    // Many user-uploaded maps come with a square grid already baked
+    // into the texture. At the old opacity (0.12) the canvas overlay
+    // was invisible under that texture, which made the hex toggle
+    // look like "squares still showing". Two fixes applied here:
+    //   1) In hex mode, paint a faint dark wash over the image so the
+    //      baked squares recede and the hex lines can dominate.
+    //   2) Stroke the grid in TWO passes — a dark outline + a bright
+    //      inner line — so it stays legible on any background, bright
+    //      or dark, without squinting.
     if (this.gridEnabled && this.mapWidth > 0) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-      ctx.lineWidth = 0.5 / this.scale;
-      const gs = this.gridSize;
-      for (let x = 0; x <= this.mapWidth; x += gs) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.mapHeight); ctx.stroke();
+      if (this.gridType === 'hex' && this.mapImage) {
+        // Dim the baked-in texture just enough for the hex overlay
+        // to read clearly. 18% black is invisible on dark maps and
+        // softens busy light maps without killing detail.
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(0, 0, this.mapWidth, this.mapHeight);
+        ctx.restore();
       }
-      for (let y = 0; y <= this.mapHeight; y += gs) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.mapWidth, y); ctx.stroke();
+      const gs = this.gridSize;
+      const outerW = 2.5 / this.scale;
+      const innerW = 1.2 / this.scale;
+      const drawTwice = (drawFn) => {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = outerW;
+        drawFn();
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+        ctx.lineWidth = innerW;
+        drawFn();
+        ctx.restore();
+      };
+      if (this.gridType === 'hex') {
+        drawTwice(() => this._renderHexGrid(ctx));
+      } else {
+        drawTwice(() => {
+          for (let x = 0; x <= this.mapWidth; x += gs) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.mapHeight); ctx.stroke();
+          }
+          for (let y = 0; y <= this.mapHeight; y += gs) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.mapWidth, y); ctx.stroke();
+          }
+        });
       }
     }
 
@@ -306,10 +469,20 @@ class MapCanvas {
       ctx.setLineDash([6 / this.scale, 4 / this.scale]);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Distance label
-      const dx = ex - sx, dy = ey - sy;
-      const distPx = Math.sqrt(dx * dx + dy * dy);
-      const distCells = (this.gridSize > 0) ? (distPx / this.gridSize).toFixed(1) : distPx.toFixed(0);
+      // Distance label — metric matches the active grid style.
+      let distCells;
+      if (this.gridSize > 0) {
+        if (this.gridType === 'hex') {
+          const a = this._pixelToAxial(sx, sy);
+          const b = this._pixelToAxial(ex, ey);
+          distCells = this._hexDistance(a, b).toFixed(1);
+        } else {
+          const dx = Math.abs(ex - sx), dy = Math.abs(ey - sy);
+          distCells = (Math.max(dx, dy) / this.gridSize).toFixed(1);
+        }
+      } else {
+        distCells = '0';
+      }
       const midX = (sx + ex) / 2, midY = (sy + ey) / 2;
       ctx.fillStyle = '#00ff88';
       ctx.font = `bold ${14 / this.scale}px Inter, sans-serif`;
@@ -351,24 +524,26 @@ class MapCanvas {
         && this.mapWidth > 0) {
       const own = this.tokens.find(t => t.character_id === this.ownCharacterId);
       if (own && own.x != null && own.y != null) {
-        const cx = Math.floor(own.x * this.mapWidth / this.gridSize);
-        const cy = Math.floor(own.y * this.mapHeight / this.gridSize);
         const reach = Math.floor(this.movementLeftCells);
-        const gs = this.gridSize;
         ctx.save();
-        // Gold tint per cell within Chebyshev reach.
         ctx.fillStyle = 'rgba(255,215,96,0.12)';
         ctx.strokeStyle = 'rgba(255,215,96,0.45)';
         ctx.lineWidth = 1 / this.scale;
-        for (let dx = -reach; dx <= reach; dx++) {
-          for (let dy = -reach; dy <= reach; dy++) {
-            if (dx === 0 && dy === 0) continue; // don't tint own cell
-            const col = cx + dx, row = cy + dy;
-            const px0 = col * gs, py0 = row * gs;
-            // Skip out-of-map cells.
-            if (px0 < 0 || py0 < 0 || px0 >= this.mapWidth || py0 >= this.mapHeight) continue;
-            ctx.fillRect(px0, py0, gs, gs);
-            ctx.strokeRect(px0 + 0.5 / this.scale, py0 + 0.5 / this.scale, gs - 1 / this.scale, gs - 1 / this.scale);
+        if (this.gridType === 'hex') {
+          this._renderReachHex(ctx, own.x * this.mapWidth, own.y * this.mapHeight, reach);
+        } else {
+          const gs = this.gridSize;
+          const cx = Math.floor(own.x * this.mapWidth / gs);
+          const cy = Math.floor(own.y * this.mapHeight / gs);
+          for (let dx = -reach; dx <= reach; dx++) {
+            for (let dy = -reach; dy <= reach; dy++) {
+              if (dx === 0 && dy === 0) continue;
+              const col = cx + dx, row = cy + dy;
+              const px0 = col * gs, py0 = row * gs;
+              if (px0 < 0 || py0 < 0 || px0 >= this.mapWidth || py0 >= this.mapHeight) continue;
+              ctx.fillRect(px0, py0, gs, gs);
+              ctx.strokeRect(px0 + 0.5 / this.scale, py0 + 0.5 / this.scale, gs - 1 / this.scale, gs - 1 / this.scale);
+            }
           }
         }
         ctx.restore();
