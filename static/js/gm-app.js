@@ -3313,6 +3313,8 @@ function openItemEditor(itemId = null) {
       $('#item-ed-wdice-type').value = item.weapon_stats.dice_type;
       $('#item-ed-wdmg-type').value = item.weapon_stats.damage_type;
       $('#item-ed-wrange').value = item.weapon_stats.range || '';
+      // Rework v3 Phase 7: grid-cell range (1 = melee, higher = ranged).
+      $('#item-ed-wrange-cells').value = item.weapon_stats.range_cells ?? 1;
       // Rework Phase 2: which stat contributes the +bonus for hit / damage
       $('#item-ed-whitstat').value = item.weapon_stats.hit_stat || 'strength';
       $('#item-ed-wdmgstat').value = item.weapon_stats.damage_stat ?? 'strength';
@@ -3448,6 +3450,8 @@ async function saveItem() {
       dice_type: parseInt($('#item-ed-wdice-type').value) || 6,
       damage_type: $('#item-ed-wdmg-type').value || 'physical',
       range: $('#item-ed-wrange').value.trim() || null,
+      // Rework v3 Phase 7: cell-range the server enforces against the battle map.
+      range_cells: Math.max(1, parseInt($('#item-ed-wrange-cells').value) || 1),
       // Rework Phase 2: stat-bonus sources for hit / damage rolls
       hit_stat: $('#item-ed-whitstat').value || 'strength',
       damage_stat: $('#item-ed-wdmgstat').value || null,
@@ -6464,11 +6468,16 @@ function showAbilityEditor(existing = null) {
         <div><label style="font-size:0.72rem">❤️ HP Cost</label><input id="ab-hpcost" type="number" value="${d.hp_cost||0}" min="0" style="width:60px"></div>
         <div><label style="font-size:0.72rem">⏳ Cooldown (turns)</label><input id="ab-cd" type="number" value="${d.cooldown_turns||0}" min="0" style="width:60px"></div>
       </div>
-      <div style="margin-top:6px;display:flex;gap:12px;align-items:center">
+      <div style="margin-top:6px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <label style="font-size:0.78rem"><input type="checkbox" id="ab-hitroll" ${d.requires_hit_roll?'checked':''}> Requires Hit Roll</label>
         <div id="ab-hitstat-row" style="display:${d.requires_hit_roll?'flex':'none'};gap:6px;align-items:center">
           <label style="font-size:0.72rem">Hit stat:</label>
           <select id="ab-hitstat" style="font-size:0.78rem">${_AB_STATS.map(s => `<option value="${s}" ${s===(d.hit_stat||'strength')?'selected':''}>${s.substring(0,3).toUpperCase()}</option>`).join('')}</select>
+        </div>
+        <!-- Rework v3 Phase 7: battle-grid range. 1 = touch/adjacent; higher = reach/ranged. -->
+        <div style="display:flex;gap:6px;align-items:center" title="Max distance in battle-grid cells (1 = touch)">
+          <label style="font-size:0.72rem">📏 Range (cells)</label>
+          <input id="ab-range-cells" type="number" value="${d.range_cells ?? 1}" min="1" max="40" style="width:56px">
         </div>
       </div>
     </fieldset>
@@ -6690,6 +6699,8 @@ function showAbilityEditor(existing = null) {
       cooldown_turns: parseInt(overlay.querySelector('#ab-cd').value) || 0,
       requires_hit_roll: overlay.querySelector('#ab-hitroll').checked,
       hit_stat: overlay.querySelector('#ab-hitstat').value,
+      // Rework v3 Phase 7: range in battle-grid cells (1 = touch / adjacent).
+      range_cells: Math.max(1, parseInt(overlay.querySelector('#ab-range-cells').value) || 1),
       damage_stat: hasDmg ? overlay.querySelector('#ab-dmgstat').value : 'strength',
       damage_dice_count: hasDmg ? (parseInt(overlay.querySelector('#ab-ddc').value)||1) : null,
       damage_dice_type: hasDmg ? (parseInt(overlay.querySelector('#ab-ddt').value)||6) : null,

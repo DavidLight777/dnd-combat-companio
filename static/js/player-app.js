@@ -3167,9 +3167,13 @@ function renderActionMenu() {
   const cards = [];
   if (wpn) {
     const ws = wpn.weapon_stats;
+    // Rework v3 Phase 7: show grid-cell range on the Attack card so
+    // the player knows how close they must be before clicking. Server
+    // still enforces the check; this is just pre-empting the 403.
+    const rng = ws.range_cells != null ? ` · 📏${ws.range_cells}` : '';
     cards.push(_actionCard({
       id: 'action-attack', icon: '⚔️', label: 'Attack',
-      sub: `${wpn.name} · ${ws.dice_count}d${ws.dice_type}`,
+      sub: `${wpn.name} · ${ws.dice_count}d${ws.dice_type}${rng}`,
     }));
   }
   if (activeAbs.length) {
@@ -3536,7 +3540,6 @@ function openAbilityPicker(ablist) {
 }
 
 function _mountAbilityConfirm(panel, ab) {
-  const needsTarget = ab.target_type === 'single' && (!ab.is_passive);
   const area = panel.querySelector('#ap-confirm-area');
   if (!area) return;
   // Rework v3 — classify the ability by its effects to show the right targets.
@@ -3552,6 +3555,17 @@ function _mountAbilityConfirm(panel, ab) {
     'stat_boost','apply_status','remove_status',
   ].includes(e.type));
   const _isOffensive = !!ab.requires_hit_roll || (_hasDamage && !_hasSupport);
+  // Rework v3 Phase 7 bug fix — previously `needsTarget` was strictly
+  // `target_type === 'single'`, which meant abilities with
+  // `target_type='aoe'` (very easy to pick in the creator) skipped the
+  // target dropdown and silently fell back to `target_id = null` on
+  // the server — where the damage was then applied to the CASTER
+  // instead of the intended enemy. Until we grow a proper AoE picker
+  // (area-on-map), ALL non-self / non-none abilities prompt for a
+  // primary target. Passive abilities still opt out of the picker.
+  const needsTarget = !ab.is_passive
+                   && ab.target_type !== 'self'
+                   && ab.target_type !== 'none';
 
   let targets;
   if (_isOffensive) {
@@ -3569,6 +3583,8 @@ function _mountAbilityConfirm(panel, ab) {
     ab.mana_cost ? `🔮 ${ab.mana_cost} mana` : null,
     ab.hp_cost   ? `❤️ ${ab.hp_cost} HP` : null,
     ab.cooldown_turns ? `⏳ CD ${ab.cooldown_turns}t` : null,
+    // Rework v3 Phase 7: show range so the player knows the reach.
+    (ab.range_cells != null && ab.target_type !== 'self') ? `📏 ${ab.range_cells} cells` : null,
   ].filter(Boolean).join(' · ');
 
   // Rework Phase 6: state across the two-step flow

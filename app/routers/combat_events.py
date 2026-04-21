@@ -785,6 +785,8 @@ async def _get_equipped_weapon(character_id: int, db: AsyncSession) -> dict | No
         "damage_bonus": 0,
         "attack_bonus": 0,
         "weapon_range": ws.weapon_range or "melee",
+        # Rework v3 Phase 7: cell-range for grid enforcement.
+        "range_cells": ws.range_cells if ws.range_cells is not None else 1,
         "weapon_properties": props,
         # Rework Phase 2: stat binding lives on the weapon itself
         "hit_stat": getattr(ws, "hit_stat", None) or "strength",
@@ -862,6 +864,26 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
 
     # 3. Get weapon
     weapon = await _get_equipped_weapon(body.attacker_id, db)
+
+    # 3a. Rework v3 Phase 7 — range enforcement. Weapons carry a
+    # `range_cells` value (default 1 = melee adjacent). If attacker
+    # and target are both placed on the current battle map, reject
+    # the call when the Chebyshev distance exceeds that budget. Non-
+    # grid flows (no map / missing positions) fall through via
+    # `RangeCheck.skipped=True` so this is strictly additive.
+    from app.combat_range import check_range
+    _weapon_range = (weapon or {}).get("range_cells") if weapon else None
+    _rc = await check_range(attacker, target, _weapon_range, db)
+    if not _rc.ok:
+        raise HTTPException(403, {
+            "error": True, "code": "OUT_OF_RANGE",
+            "message": (
+                f"Out of range — {target.name} is {_rc.distance_cells:g} cells away, "
+                f"weapon reaches {_rc.max_cells}."
+            ),
+            "distance_cells": _rc.distance_cells,
+            "max_cells": _rc.max_cells,
+        })
 
     # 4. Resolve advantage mode (player choice + forced status)
     adv_mode = resolve_advantage_mode(body.advantage, atk_status_penalties)
@@ -1082,6 +1104,22 @@ async def hit_roll(body: HitRollBody, db: AsyncSession = Depends(get_session)):
 
     atk_item_bonuses, atk_status_penalties = await _get_char_bonuses_and_penalties(attacker, db)
     weapon = await _get_equipped_weapon(body.attacker_id, db)
+
+    # Rework v3 Phase 7 — mirror the range enforcement that
+    # /execute-attack does, so the two-step flow can't bypass it.
+    from app.combat_range import check_range
+    _weapon_range = (weapon or {}).get("range_cells") if weapon else None
+    _rc = await check_range(attacker, target, _weapon_range, db)
+    if not _rc.ok:
+        raise HTTPException(403, {
+            "error": True, "code": "OUT_OF_RANGE",
+            "message": (
+                f"Out of range — {target.name} is {_rc.distance_cells:g} cells away, "
+                f"weapon reaches {_rc.max_cells}."
+            ),
+            "distance_cells": _rc.distance_cells,
+            "max_cells": _rc.max_cells,
+        })
 
     adv_mode = resolve_advantage_mode(body.advantage, atk_status_penalties)
     attacker_stats = _char_stats_dict(attacker)

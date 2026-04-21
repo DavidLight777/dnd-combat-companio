@@ -16,18 +16,39 @@
   border-radius: var(--r-sm);
 }
 
-/* ── Main Layout ───────────────────────────────────────────── */
+/* ── Main Layout — Rework v3 Phase 7: 3-column grid ──────────
+   left = char sidebar (avatar, stats, roll)
+   center = battle field (stretches to fill)
+   right = actions + bonuses + penalties + advanced + quests + announcements
+   Each column scrolls independently so the map never disappears. */
 .main-layout {
-  display: flex; height: calc(100vh - 44px - 52px); overflow: hidden;
+  display: grid;
+  grid-template-columns: 240px 1fr 300px;
+  height: calc(100vh - 44px - 52px);
+  overflow: hidden;
 }
-.main-area {
-  flex: 1; overflow-y: auto; padding: 16px; min-width: 0;
+.main-center {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  padding: 12px;
+  overflow: hidden;                 /* the battle panel eats the remainder */
+  gap: 8px;
 }
-.sidebar-right {
-  width: 300px; min-width: 300px;
-  background: var(--bg-surface); border-left: 1px solid var(--border);
-  overflow-y: auto; padding: 12px;
+.main-center > .battle-panel {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
 }
+.right-sidebar {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0;
+}
+/* Legacy name kept in case any JS / tests still reference it. */
+.main-area { display: none; }
+.sidebar-right { display: none; }
 
 /* ── FIX 2: LEFT CHARACTER SIDEBAR (per diagram) ─────────── */
 .char-sidebar {
@@ -74,12 +95,51 @@
 }
 .cs-section-lbl { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
 
-@media (max-width: 900px) {
-  .main-layout { flex-direction: column; }
-  .sidebar-right { width: 100%; min-width: 0; border-left: none; border-top: 1px solid var(--border); max-height: 40vh; }
-  .char-sidebar { width: 100%; min-width: 0; flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+/* Rework v3 Phase 7: stack the 3 columns vertically below ~980 px.
+   Lose the fixed viewport height so the whole layout scrolls naturally
+   on phones / tablets. The map keeps its 60vh fallback height. */
+@media (max-width: 980px) {
+  .main-layout {
+    display: flex; flex-direction: column;
+    height: auto; overflow: visible;
+  }
+  .char-sidebar,
+  .right-sidebar {
+    width: 100%; min-width: 0;
+    max-height: none;
+    border-right: none; border-left: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .char-sidebar { flex: 0 0 auto; }
+  .main-center { overflow: visible; min-height: 0; }
+  .main-center > .battle-panel { flex: 0 0 auto; height: 60vh; }
   .cs-avatar { width: 72px; height: 72px; font-size: 1.8rem; }
+  /* Hide the expand-height button on small screens since the map
+     already takes a reasonable chunk — the toggle becomes confusing
+     when the layout no longer uses a locked viewport height. */
+  #btn-grid-expand { display: none; }
 }
+
+/* Desktop-only: the map canvas wrapper stretches to fill whatever
+   vertical space the center column offers. Override the inline
+   `height:420px` fallback from the markup. */
+@media (min-width: 981px) {
+  #player-grid-wrap { height: auto !important; }
+  /* The expand-height JS toggles inline height — disable it on
+     desktop since the map already fills the column. */
+  #btn-grid-expand { display: none; }
+}
+
+/* Panels nested inside the right-sidebar must shrink under the
+   global `min-width:300px` baseline — the column itself is 300 px
+   (minus padding), so we override both min-width and the base
+   flex-basis to let them collapse cleanly. */
+.right-sidebar .panel,
+.right-sidebar .panel.panel-full {
+  flex: 1 1 auto; min-width: 0; max-width: 100%;
+}
+.right-sidebar .panel-header h2 { font-size: 0.85rem; }
+.right-sidebar .panel-body { padding: 8px 10px; }
 
 /* ── Panels Grid ───────────────────────────────────────────── */
 .panels-row {

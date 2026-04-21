@@ -218,6 +218,27 @@ def _sanitize_damage_modes(raw) -> list:
     return out
 
 
+def _sanitize_range_cells(raw, fallback: int = 1) -> int:
+    """Coerce any GM payload into a valid `range_cells` int.
+
+    Accepts int/str inputs, clamps to [1, 40] (40 cells = across the
+    whole typical map — sanity upper bound), and falls back on the
+    caller's default for garbage inputs. We never store `None` via
+    this helper because JSON from the GM form often loses the field
+    type; callers that explicitly want unlimited-range should pass
+    `None` straight through without calling this.
+    """
+    if raw is None or raw == "":
+        return fallback
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return fallback
+    if v < 1:
+        return 1
+    return min(40, v)
+
+
 # ══════════════════════════════════════════════════════════════
 # ITEMS CRUD
 # ══════════════════════════════════════════════════════════════
@@ -308,6 +329,8 @@ async def create_item(body: dict, db: AsyncSession = Depends(get_session)):
             damage_type=ws.get("damage_type", "physical"),
             range=ws.get("range"),
             weapon_range=ws.get("weapon_range", "melee"),
+            # Rework v3 Phase 7: range in battle-grid cells (default 1 = melee).
+            range_cells=_sanitize_range_cells(ws.get("range_cells"), 1),
             weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
             # Rework Phase 2: stat that adds its value as bonus to hit / damage rolls
             hit_stat=ws.get("hit_stat", "strength"),
@@ -359,6 +382,11 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
             for k in ["dice_count", "dice_type", "damage_type", "range", "weapon_range", "hit_stat", "damage_stat"]:
                 if k in ws:
                     setattr(item.weapon_stats, k, ws[k])
+            # Rework v3 Phase 7: range in cells. Use the sanitizer so
+            # garbage ("", "melee", negative ints) normalises to a safe
+            # int rather than corrupting the row.
+            if "range_cells" in ws:
+                item.weapon_stats.range_cells = _sanitize_range_cells(ws.get("range_cells"), item.weapon_stats.range_cells or 1)
             if "weapon_properties" in ws:
                 wp = ws["weapon_properties"]
                 item.weapon_stats.weapon_properties = json.dumps(wp) if isinstance(wp, list) else (wp or "[]")
@@ -371,6 +399,7 @@ async def update_item(item_id: int, body: dict, db: AsyncSession = Depends(get_s
                 item_id=item.id,
                 **{k: ws[k] for k in ["dice_count", "dice_type", "damage_type", "range"] if k in ws},
                 weapon_range=ws.get("weapon_range", "melee"),
+                range_cells=_sanitize_range_cells(ws.get("range_cells"), 1),
                 weapon_properties=json.dumps(wp) if isinstance(wp, list) else (wp or "[]"),
                 hit_stat=ws.get("hit_stat", "strength"),
                 damage_stat=ws.get("damage_stat") if ws.get("damage_stat") is not None else "strength",
@@ -481,6 +510,10 @@ def _item_dict(i: Item) -> dict:
             "id": ws.id, "dice_count": ws.dice_count, "dice_type": ws.dice_type,
             "damage_type": ws.damage_type, "range": ws.range,
             "weapon_range": ws.weapon_range or "melee",
+            # Rework v3 Phase 7: cell-range for client UI (shows `📏 N` in
+            # the weapon card and disables the attack button when the
+            # selected target is further away).
+            "range_cells": ws.range_cells if ws.range_cells is not None else 1,
             "weapon_properties": json.loads(ws.weapon_properties) if ws.weapon_properties else [],
             # Rework Phase 2: expose hit_stat / damage_stat so GM editor can show them
             "hit_stat": getattr(ws, "hit_stat", None) or "strength",

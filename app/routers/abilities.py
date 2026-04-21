@@ -47,7 +47,7 @@ _ABILITY_FIELDS = (
     "mana_cost", "hp_cost", "cooldown_turns",
     "requires_hit_roll", "hit_stat", "damage_stat",
     "damage_dice_count", "damage_dice_type",
-    "is_passive", "range",
+    "is_passive", "range", "range_cells",
     # Rework v2: unified "особенность или умение" pool fields
     "rarity", "is_in_starting_pool", "max_uses",
     "is_conditional", "conditional_text",
@@ -168,6 +168,8 @@ def _ability_dict(a: Ability) -> dict:
         # Dice
         "damage_dice_count": a.damage_dice_count,
         "damage_dice_type": a.damage_dice_type,
+        # Rework v3 Phase 7: range in battle-grid cells.
+        "range_cells": a.range_cells if a.range_cells is not None else 1,
         # Passive
         "is_passive": a.is_passive,
         "passive_effect": _parse_json_field(a.passive_effect),
@@ -470,17 +472,80 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     except Exception:
         effects_list = []
 
+    # Rework v3 Phase 7 bug fix — the Ability row has top-level
+    # `damage_dice_count` / `damage_dice_type` fields, and the player UI
+    # already shows a damage widget based on those. The previous server
+    # code only applied damage when the effects JSON explicitly
+    # contained `{"type":"damage"}`, so any ability created with just
+    # the top-level dice fields (and no JSON effect entry) silently
+    # did zero damage — exactly the bug report. Synthesise an implicit
+    # damage effect so the loop below applies it. We only inject when
+    # the effects list doesn't already carry an explicit damage entry,
+    # so manually-authored abilities stay untouched.
+    if (
+        ability.damage_dice_count
+        and ability.damage_dice_type
+        and not any(isinstance(e, dict) and e.get("type") == "damage" for e in effects_list)
+    ):
+        effects_list = list(effects_list) + [{
+            "type": "damage",
+            "dice_count": int(ability.damage_dice_count),
+            "dice_type":  int(ability.damage_dice_type),
+            "flat_bonus": 0,
+            # Marker so we know in the damage branch below to also add
+            # the caster's damage_stat modifier — matches what the
+            # player-side dmg widget was already doing client-side.
+            "_implicit_from_top_level": True,
+        }]
+
     # Rework v3 — Player-to-Player targeting. If body.target_id is set, heal /
     # buff / cleanse / damage effects land on the TARGET instead of the caster.
     # Resource costs (mana / HP cost) are always paid by the caster. When
     # target_id is missing or equals the caster, everything stays self-cast.
     target_id = body.get("target_id")
+    # Rework v3 Phase 7 — guard-rail. If the ability is offensive (has a
+    # damage effect or requires a hit roll) and the caller did NOT supply
+    # a target, we used to silently self-target — which looked like
+    # "damage didn't apply" to the player because they watched the
+    # enemy's HP. Detect that case up front and fail loudly so the UI
+    # can show a clear error instead of confusing everyone.
+    _has_damage = any(
+        isinstance(e, dict) and e.get("type") == "damage" for e in effects_list
+    )
+    _is_offensive = bool(ability.requires_hit_roll) or _has_damage
+    if _is_offensive and (not target_id or int(target_id) == char.id):
+        # target_type=='self' is an edge case — a self-damage ability
+        # is legal, but any other target_type means the client forgot
+        # to send target_id.
+        if ability.target_type not in ("self",):
+            raise HTTPException(400, {
+                "error": True, "code": "TARGET_REQUIRED",
+                "message": f"{ability.name} needs a target — pick an enemy.",
+            })
     if target_id and int(target_id) != char.id:
         target_char = await db.get(Character, int(target_id))
         if not target_char:
             target_char = char
     else:
         target_char = char
+
+    # Rework v3 Phase 7 — range enforcement for ability casts.
+    # `Ability.range_cells` defaults to 1 (touch/adjacent). Self-cast
+    # (caster == target) always passes; so do abilities with
+    # `range_cells` in (None, 0) which encode "unlimited range".
+    if target_char.id != char.id:
+        from app.combat_range import check_range
+        _rc = await check_range(char, target_char, ability.range_cells, db)
+        if not _rc.ok:
+            raise HTTPException(403, {
+                "error": True, "code": "OUT_OF_RANGE",
+                "message": (
+                    f"Out of range — {target_char.name} is {_rc.distance_cells:g} cells away, "
+                    f"{ability.name} reaches {_rc.max_cells}."
+                ),
+                "distance_cells": _rc.distance_cells,
+                "max_cells": _rc.max_cells,
+            })
 
     for eff in effects_list:
         etype = eff.get("type", "")

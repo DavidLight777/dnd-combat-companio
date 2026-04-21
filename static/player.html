@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Player</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv2">
-  <link rel="stylesheet" href="/static/css/player.css?v=reworkv2">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p10">
+  <link rel="stylesheet" href="/static/css/player.css?v=reworkv3p10">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -141,7 +141,14 @@
           </div>
         </aside>
 
-        <div class="main-area">
+        <!-- ══ CENTER — Battle Field stretches to fill ══════════════
+             Rework v3 Phase 7: the Main tab is now a 3-column grid
+             (char-sidebar | center | right-sidebar). The center owns
+             the tactical map exclusively so it can dominate screen
+             real-estate. Banners / status badges sit above it; every-
+             thing else moved to the right sidebar or to the More tab.
+        ══════════════════════════════════════════════════════════════ -->
+        <div class="main-center">
           <!-- GM TIMER -->
           <div id="gm-timer-banner" style="display:none;text-align:center;padding:12px;margin-bottom:8px;border-radius:var(--r-lg);background:var(--surface-2);border:2px solid var(--accent-orange)">
             <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">⏱ GM Timer</div>
@@ -158,44 +165,28 @@
             <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div></div>
           </div>
 
-
           <!-- STATUS EFFECTS -->
           <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
 
-          <!-- ══ BATTLE FIELD (Rework v3 Phase 1) ═════════════════════
-               Always-visible tactical grid. Replaces the chip-style
-               "At the Table" view as the primary spatial surface for
-               players. Click a token to select it as your target —
-               the selection wires into the same Actions / Attack /
-               Ability / Potion pipelines as before (selectedTargetId).
-               Legacy chip containers below are kept hidden so existing
-               JS (renderTableView, etc.) keeps updating them without
-               errors; they'll be removed in a later phase.
-          ═════════════════════════════════════════════════════════ -->
-          <div class="panels-row">
-            <section class="panel panel-full" id="player-grid-panel">
-              <div class="panel-header" style="display:flex;align-items:center;gap:6px">
-                <h2 style="flex:1;margin:0">🗺️ Battle Field</h2>
-                <span id="player-grid-status" style="font-size:0.72rem;color:var(--text-muted)"></span>
-                <!-- Phase 6: players upload their own token portrait. -->
-                <button class="btn btn-ghost btn-xs" id="btn-player-portrait" title="Upload your token portrait">🖼️</button>
-                <button class="btn btn-ghost btn-xs" id="btn-grid-fit" title="Fit map to view">⛶</button>
-                <button class="btn btn-ghost btn-xs" id="btn-grid-expand" title="Expand / collapse grid height">⇕</button>
-              </div>
-              <div class="panel-body" style="padding:0">
-                <div id="player-grid-wrap" style="position:relative;width:100%;height:420px;background:#1a1814;border-top:1px solid var(--border);overflow:hidden">
-                  <canvas id="player-grid-canvas" style="display:block;width:100%;height:100%"></canvas>
-                  <div id="player-grid-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.82rem;pointer-events:none;text-align:center;padding:16px">
-                    Waiting for the GM to set up the battlefield…
-                  </div>
-                </div>
-                <div id="selected-target-info" style="display:none;margin:8px;padding:6px 10px;border-radius:var(--r-md);background:var(--bg-surface-2);border:1px solid var(--accent);font-size:0.82rem">
-                  🎯 Target: <strong id="selected-target-name">—</strong>
-                  <button class="btn btn-ghost btn-xs" id="btn-clear-target" style="margin-left:8px">✕ Clear</button>
+          <!-- BATTLE FIELD — fills remaining vertical space on desktop. -->
+          <section class="panel panel-full battle-panel" id="player-grid-panel">
+            <div class="panel-header" style="display:flex;align-items:center;gap:6px">
+              <h2 style="flex:1;margin:0">🗺️ Battle Field</h2>
+              <span id="player-grid-status" style="font-size:0.72rem;color:var(--text-muted)"></span>
+              <!-- Phase 6: players upload their own token portrait. -->
+              <button class="btn btn-ghost btn-xs" id="btn-player-portrait" title="Upload your token portrait">🖼️</button>
+              <button class="btn btn-ghost btn-xs" id="btn-grid-fit" title="Fit map to view">⛶</button>
+              <button class="btn btn-ghost btn-xs" id="btn-grid-expand" title="Expand / collapse grid height">⇕</button>
+            </div>
+            <div class="panel-body" style="padding:0;display:flex;flex-direction:column;flex:1;min-height:0">
+              <div id="player-grid-wrap" style="position:relative;width:100%;height:420px;background:#1a1814;border-top:1px solid var(--border);overflow:hidden;flex:1;min-height:0">
+                <canvas id="player-grid-canvas" style="display:block;width:100%;height:100%"></canvas>
+                <div id="player-grid-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.82rem;pointer-events:none;text-align:center;padding:16px">
+                  Waiting for the GM to set up the battlefield…
                 </div>
               </div>
-            </section>
-          </div>
+            </div>
+          </section>
 
           <!-- Legacy chip lists, hidden. renderTableView() still writes to
                these nodes; removing the nodes would throw on every update. -->
@@ -204,71 +195,75 @@
             <div id="table-view-npcs"></div>
             <div id="table-view-grid"></div>
           </div>
+        </div>
+
+        <!-- ══ RIGHT SIDEBAR — Actions + bonuses + advanced ══════════
+             Everything the player interacts with mid-battle sits here
+             so the map stays unobstructed. Scrolls independently.
+        ══════════════════════════════════════════════════════════════ -->
+        <aside class="right-sidebar" id="right-sidebar">
+          <!-- Selected target info moved to top of the action column.
+               Visible only when a token is selected on the battlefield. -->
+          <div id="selected-target-info" style="display:none;padding:6px 10px;border-radius:var(--r-md);background:var(--bg-surface-2);border:1px solid var(--accent);font-size:0.82rem">
+            🎯 Target: <strong id="selected-target-name">—</strong>
+            <button class="btn btn-ghost btn-xs" id="btn-clear-target" style="margin-left:8px">✕ Clear</button>
+          </div>
 
           <!-- ACTION MENU -->
-          <div class="panels-row">
-            <section class="panel panel-full">
-              <div class="panel-header"><h2>⚡ Actions</h2></div>
-              <div class="panel-body" id="action-menu-body" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-            </section>
-          </div>
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>⚡ Actions</h2></div>
+            <div class="panel-body" id="action-menu-body" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          </section>
 
-          <!-- FIX 4: REACTIONS PANEL (combat-only, collapsible) -->
-          <div id="reactions-panel" class="panels-row" style="display:none">
-            <section class="panel panel-full" style="border-color:var(--accent-orange);border-width:2px">
-              <div class="panel-header" style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1)">
-                <h2 style="flex:1;color:var(--accent-orange);margin:0">⚡ Reactions</h2>
-                <button class="btn btn-ghost btn-xs" id="reactions-toggle" title="Collapse/Expand">▼</button>
+          <!-- REACTIONS PANEL (combat-only, collapsible) -->
+          <section id="reactions-panel" class="panel panel-full" style="display:none;border-color:var(--accent-orange);border-width:2px">
+            <div class="panel-header" style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1)">
+              <h2 style="flex:1;color:var(--accent-orange);margin:0">⚡ Reactions</h2>
+              <button class="btn btn-ghost btn-xs" id="reactions-toggle" title="Collapse/Expand">▼</button>
+            </div>
+            <div class="panel-body" id="reactions-content">
+              <div id="reactions-list" style="display:flex;flex-direction:column;gap:6px"></div>
+              <div class="reactions-note" style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);font-style:italic">
+                Reactions can be used once per round
               </div>
-              <div class="panel-body" id="reactions-content">
-                <div id="reactions-list" style="display:flex;flex-direction:column;gap:6px"></div>
-                <div class="reactions-note" style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);font-style:italic">
-                  Reactions can be used once per round
-                </div>
-              </div>
-            </section>
-          </div>
+            </div>
+          </section>
 
-          <!-- INFO PANEL: Bonuses & Penalties -->
-          <div class="panels-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <section class="panel">
-              <div class="panel-header"><h2>✅ Active Bonuses</h2></div>
-              <div class="panel-body" id="active-bonuses-list" style="font-size:0.8rem">
-                <span class="text-muted">No active bonuses</span>
-              </div>
-            </section>
-            <section class="panel">
-              <div class="panel-header"><h2>❌ Active Penalties</h2></div>
-              <div class="panel-body" id="active-penalties-list" style="font-size:0.8rem">
-                <span class="text-muted">No active penalties</span>
-              </div>
-            </section>
-          </div>
+          <!-- BONUSES -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>✅ Active Bonuses</h2></div>
+            <div class="panel-body" id="active-bonuses-list" style="font-size:0.8rem">
+              <span class="text-muted">No active bonuses</span>
+            </div>
+          </section>
 
-          <!-- FIX 2: Legacy panels — moved off Main view, still functional via <details> toggle -->
-          <details class="legacy-panels" style="margin-top:8px">
+          <!-- PENALTIES -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>❌ Active Penalties</h2></div>
+            <div class="panel-body" id="active-penalties-list" style="font-size:0.8rem">
+              <span class="text-muted">No active penalties</span>
+            </div>
+          </section>
+
+          <!-- ADVANCED / MANUAL ROLL TOOLS -->
+          <details class="legacy-panels">
             <summary style="cursor:pointer;font-size:0.78rem;color:var(--text-muted);padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
               ⚙️ Advanced / manual roll tools
             </summary>
-            <div style="padding-top:8px">
-              <!-- FIX 4: FREE DICE ROLL — any dice, any count, advantage, optional private -->
-              <div class="panels-row">
-                <section class="panel panel-full">
-                  <div class="panel-header"><h2>🎲 Free Roll</h2></div>
-                  <div class="panel-body">
-                    <div id="free-roll-widget-host"></div>
-                    <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--text-muted);margin-top:6px">
-                      <input type="checkbox" id="free-roll-private"> Private roll (GM won't see)
-                    </label>
-                  </div>
-                </section>
-              </div>
+            <div style="padding-top:8px;display:flex;flex-direction:column;gap:8px">
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>🎲 Free Roll</h2></div>
+                <div class="panel-body">
+                  <div id="free-roll-widget-host"></div>
+                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--text-muted);margin-top:6px">
+                    <input type="checkbox" id="free-roll-private"> Private roll (GM won't see)
+                  </label>
+                </div>
+              </section>
 
-              <!-- STATS -->
               <div class="stats-grid" id="stats-grid"></div>
 
-              <!-- CHARACTERISTIC ROLL -->
-              <div style="margin:8px 0;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+              <div style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                   <span style="font-size:0.82rem;font-weight:700">🎲</span>
                   <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
@@ -294,42 +289,35 @@
                 <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
               </div>
 
-              <!-- Attack & Damage + Incoming -->
-              <div class="panels-row">
-                <section class="panel">
-                  <div class="panel-header"><h2>⚔️ Attack & Damage Roll</h2></div>
-                  <div class="panel-body" id="attack-body"></div>
-                </section>
-                <section class="panel">
-                  <div class="panel-header"><h2>🛡️ Incoming Damage</h2></div>
-                  <div class="panel-body" id="defense-body"></div>
-                </section>
-              </div>
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>⚔️ Attack &amp; Damage Roll</h2></div>
+                <div class="panel-body" id="attack-body"></div>
+              </section>
 
-              <!-- Recovery + Turn Counter -->
-              <div class="panels-row">
-                <section class="panel">
-                  <div class="panel-header"><h2>💚 HP Recovery</h2></div>
-                  <div class="panel-body" id="heal-body"></div>
-                </section>
-                <section class="panel">
-                  <div class="panel-header"><h2>⏱️ Turn Counter</h2></div>
-                  <div class="panel-body" id="turns-body"></div>
-                </section>
-              </div>
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>🛡️ Incoming Damage</h2></div>
+                <div class="panel-body" id="defense-body"></div>
+              </section>
 
-              <!-- Effects -->
-              <div class="panels-row">
-                <section class="panel panel-full">
-                  <div class="panel-header"><h2>✨ Effects & Passive Bonuses</h2></div>
-                  <div class="panel-body" id="effects-body"></div>
-                </section>
-              </div>
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>💚 HP Recovery</h2></div>
+                <div class="panel-body" id="heal-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>⏱️ Turn Counter</h2></div>
+                <div class="panel-body" id="turns-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>✨ Effects &amp; Passive Bonuses</h2></div>
+                <div class="panel-body" id="effects-body"></div>
+              </section>
             </div>
           </details>
 
-          <!-- Quests (collapsible) -->
-          <details class="panels-row" style="margin-bottom:8px">
+          <!-- QUESTS -->
+          <details>
             <summary style="cursor:pointer;font-weight:700;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">📜 Quests</summary>
             <div style="padding:8px">
               <div style="display:flex;gap:8px;margin-bottom:8px">
@@ -341,47 +329,40 @@
             </div>
           </details>
 
-          <!-- Announcements -->
-          <div class="panels-row">
-            <section class="panel panel-full">
-              <div class="panel-header"><h2>📢 Announcements</h2></div>
-              <div class="panel-body" id="player-announcements">
-                <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
-              </div>
-            </section>
-          </div>
+          <!-- ANNOUNCEMENTS -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>📢 Announcements</h2></div>
+            <div class="panel-body" id="player-announcements">
+              <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
+            </div>
+          </section>
 
-          <!-- Log -->
-          <div class="panels-row">
-            <section class="panel panel-full">
-              <div class="panel-header" style="display:flex;align-items:center;gap:12px">
-                <h2 style="flex:1">📜 Log</h2>
-                <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
-                <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
-              </div>
-              <div class="panel-body">
-                <div id="calc-log" class="calc-log"></div>
-                <div id="roll-history-log" class="calc-log" style="display:none"></div>
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <!-- SIDEBAR: Enemy Damage Calc (FIX 2: hidden; still kept so JS refs don't break) -->
-        <div class="sidebar-right" style="display:none">
-          <h2 style="margin-bottom:12px">🎯 Enemy Damage Calc</h2>
-          <div id="enemy-calc-body"></div>
-        </div>
+          <!-- Kept so legacy JS (#enemy-calc-body) can still write to it. -->
+          <div id="enemy-calc-body" style="display:none"></div>
+        </aside>
       </div>
     </div>
 
-    <!-- ══ MORE / DEBUG TAB (FIX 2: placeholder per spec) ═══════ -->
-    <div class="player-tab" id="tab-more" style="display:none;padding:24px;text-align:center">
-      <div style="max-width:380px;margin:48px auto;color:var(--text-muted);font-size:0.9rem">
-        <div style="font-size:2rem;margin-bottom:8px">⚙️</div>
-        <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px">Nothing to show here</div>
-        <div style="font-size:0.78rem">Extra / legacy tools will appear here when you need them.
-        For manual rolls you can still expand the <em>Advanced / manual roll tools</em> section on the Main tab.</div>
+    <!-- ══ MORE TAB — Activity log (Rework v3 Phase 7) ═══════════
+         Calc Log + Roll History used to sit at the bottom of the
+         Main tab, pushing the battlefield upward. They're quiet
+         reference material, so they moved here. Switching the
+         sub-tabs below preserves every prior writer (`calc-log`,
+         `roll-history-log` DOM ids remain unchanged).
+    ══════════════════════════════════════════════════════════════ -->
+    <div class="player-tab" id="tab-more" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+            <h2 style="flex:1">📜 Activity Log</h2>
+            <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
+            <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
+          </div>
+          <div class="panel-body">
+            <div id="calc-log" class="calc-log"></div>
+            <div id="roll-history-log" class="calc-log" style="display:none"></div>
+          </div>
+        </section>
       </div>
     </div>
 
@@ -503,9 +484,9 @@
     <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
   </nav>
 
-  <script src="/static/js/websocket-client.js?v=reworkv3p7"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv3p7"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv3p7"></script>
-  <script src="/static/js/player-app.js?v=reworkv3p7"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv3p10"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p10"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p10"></script>
+  <script src="/static/js/player-app.js?v=reworkv3p10"></script>
 </body>
 </html>

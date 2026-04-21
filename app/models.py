@@ -396,6 +396,11 @@ class ItemWeaponStats(Base):
     damage_type: Mapped[str] = mapped_column(String(20), default="physical")
     range: Mapped[str | None] = mapped_column(Text, nullable=True)
     weapon_range: Mapped[str] = mapped_column(String(10), default="melee")  # melee / ranged
+    # Rework v3 Phase 7: range in battle-grid cells (Chebyshev metric).
+    # Enforced server-side when both attacker and target have map
+    # positions. `None` or 0 = "no limit" (e.g. siege weapons); 1 =
+    # melee adjacent (includes the attacker's own cell); ≥2 = ranged.
+    range_cells: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
     weapon_properties: Mapped[str] = mapped_column(Text, default="[]")  # JSON: ["finesse","two-handed","light",...]
     # Rework: which character stat contributes the +bonus to hit / damage (strength, dexterity, ...)
     hit_stat: Mapped[str] = mapped_column(String(20), default="strength")
@@ -818,6 +823,11 @@ class Ability(Base):
     # Effects chain
     effect: Mapped[str] = mapped_column(Text, default="{}")  # JSON — same schema as use_effect
     range: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Rework v3 Phase 7: range in battle-grid cells (Chebyshev metric).
+    # Enforced server-side when attacker & target both have map
+    # positions. `None` = unlimited (ritual / self-cast). `0` is
+    # treated the same as `None`. 1 = melee / touch.
+    range_cells: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
 
     # ── Rework v2 — unified "особенность или умение" pool ─────────
     # Rarity bucket used by the creation-wizard feature roll.

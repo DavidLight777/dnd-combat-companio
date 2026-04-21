@@ -40,6 +40,9 @@ async def init_db():
         ("characters",        "movement_used_this_turn","movement_used_this_turn FLOAT DEFAULT 0"),
         # Rework v3 Phase 6: portrait image url for token rendering.
         ("characters",        "token_image_url",        "token_image_url TEXT"),
+        # Rework v3 Phase 7: range in cells for weapons & abilities.
+        ("item_weapon_stats", "range_cells",            "range_cells INTEGER DEFAULT 1"),
+        ("abilities",         "range_cells",            "range_cells INTEGER DEFAULT 1"),
     ]
     async with engine.begin() as conn:
         for table, col, coldef in _migrations:

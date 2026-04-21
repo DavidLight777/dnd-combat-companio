@@ -104,6 +104,8 @@ async def _get_equipped_weapon(char_id: int, db: AsyncSession) -> dict | None:
         "dice_type": ws.dice_type,
         "damage_type": ws.damage_type,
         "weapon_range": ws.weapon_range or "melee",
+        # Rework v3 Phase 7: cell-range for grid enforcement.
+        "range_cells": ws.range_cells if ws.range_cells is not None else 1,
         "weapon_properties": props,
         "attack_bonus": atk_bonus,
         "damage_bonus": dmg_bonus,
@@ -177,6 +179,25 @@ async def perform_attack(combat_id: int, body: dict, db: AsyncSession = Depends(
 
     # Get weapon
     weapon = await _get_equipped_weapon(attacker_id, db)
+
+    # Rework v3 Phase 7 — range enforcement for the /combat/{id}/attack
+    # endpoint (the active-combat flow used by the GM's automated
+    # attack button). Matches the behaviour of /execute-attack and
+    # /hit-roll in combat_events.py so NO attack surface bypasses the
+    # range check.
+    from app.combat_range import check_range
+    _weapon_range = (weapon or {}).get("range_cells") if weapon else None
+    _rc = await check_range(attacker, target, _weapon_range, db)
+    if not _rc.ok:
+        raise HTTPException(403, {
+            "error": True, "code": "OUT_OF_RANGE",
+            "message": (
+                f"Out of range — {target.name} is {_rc.distance_cells:g} cells away, "
+                f"weapon reaches {_rc.max_cells}."
+            ),
+            "distance_cells": _rc.distance_cells,
+            "max_cells": _rc.max_cells,
+        })
 
     # Get item bonuses and status penalties
     equipped = await _get_equipped_items(attacker_id, db)

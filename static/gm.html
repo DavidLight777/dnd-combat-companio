@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p7">
-  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p7">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p10">
+  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p10">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -244,6 +244,11 @@
                 </select>
                 <label style="font-size:0.78rem">Range:</label>
                 <input type="text" id="item-ed-wrange" placeholder="melee" style="width:70px">
+                <!-- Rework v3 Phase 7: grid-cell range. Enforced server-side:
+                     attackers beyond this many cells from the target on the
+                     battle map get a 403 OUT_OF_RANGE toast. -->
+                <label style="font-size:0.78rem" title="Max distance in battle-grid cells">📏 Cells:</label>
+                <input type="number" id="item-ed-wrange-cells" value="1" min="1" max="40" style="width:56px" title="Range in cells (1 = melee adjacent)">
               </div>
               <!-- Rework: stat that contributes bonus to hit & damage rolls -->
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
@@ -587,9 +592,9 @@
     </div>
   </div>
 
-  <script src="/static/js/websocket-client.js?v=reworkv3p7"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv3p7"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv3p7"></script>
-  <script src="/static/js/gm-app.js?v=reworkv3p7"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv3p10"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p10"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p10"></script>
+  <script src="/static/js/gm-app.js?v=reworkv3p10"></script>
 </body>
 </html>
