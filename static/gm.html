@@ -72,6 +72,7 @@
         <button class="gm-tab" data-tab="combat">⚔️ Combat</button>
         <button class="gm-tab" data-tab="initiative">Initiative</button>
         <button class="gm-tab" data-tab="map">Map</button>
+        <button class="gm-tab" data-tab="builder">🏗️ Builder</button>
         <button class="gm-tab" data-tab="actions">Quick Actions</button>
         <button class="gm-tab" data-tab="log">Event Log</button>
         <button class="gm-tab" data-tab="races-classes">Races & Professions</button>
@@ -397,6 +398,39 @@
         </div>
         <div style="flex:1;position:relative;overflow:hidden;background:#111">
           <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
+        </div>
+      </div>
+
+      <!-- TAB: Builder -->
+      <div class="tab-content" id="tab-builder" style="padding:0;display:none;flex-direction:column;height:calc(100vh - 160px)">
+        <div id="builder-toolbar" style="display:flex;gap:6px;padding:8px 12px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+          <select id="builder-floor-select" class="btn btn-ghost btn-sm" style="min-width:120px"></select>
+          <button id="btn-new-floor" class="btn btn-primary btn-sm">+ Floor</button>
+          <button id="btn-delete-floor" class="btn btn-danger btn-sm">🗑</button>
+          <button id="btn-activate-floor" class="btn btn-ghost btn-sm">▶ Activate</button>
+          <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs">▢ Square</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
+          <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:80px">
+          <span id="builder-tile-size-val" style="font-size:0.72rem;min-width:28px">50</span>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button class="btn btn-ghost btn-xs builder-brush active" data-brush="floor" title="Floor">⬜</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="wall" title="Wall">🧱</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="door" title="Door">🚪</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="water" title="Water">💧</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="pit" title="Pit">🕳️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_up" title="Stairs Up">⬆️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_down" title="Stairs Down">⬇️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="trap" title="Trap Tile">⚠️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="erase" title="Erase">🧹</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button id="btn-clear-tiles" class="btn btn-ghost btn-xs">Clear</button>
+          <button id="btn-save-tiles" class="btn btn-primary btn-xs">💾 Save</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button id="btn-place-trap" class="btn btn-danger btn-xs" title="Place Interactive Trap">⚠️ Trap</button>
+        </div>
+        <div style="flex:1;position:relative;overflow:hidden;background:#111">
+          <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
         </div>
       </div>
 

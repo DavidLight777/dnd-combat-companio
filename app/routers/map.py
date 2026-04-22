@@ -11,7 +11,7 @@ from PIL import Image
 from app.database import get_session, DATA_DIR
 from app.models import (
     Session, Character, MapData, MapMarker, MapDrawing,
-    CombatEvent, CombatParticipant, MapObject,
+    CombatEvent, CombatParticipant, MapObject, MapFloor, MapTrap,
 )
 from app.websocket_manager import manager
 
@@ -322,22 +322,37 @@ async def get_map_state(session_code: str, db: AsyncSession = Depends(get_sessio
             "token_image_url": c.token_image_url,
         })
 
-    if not map_data:
-        return {"has_map": False, "tokens": tokens}
+    out: dict = {"has_map": False, "tokens": tokens}
 
-    return {
-        "has_map": True,
-        "image_url": map_data.image_url,
-        "image_width": map_data.image_width,
-        "image_height": map_data.image_height,
-        "grid_size": map_data.grid_size,
-        "grid_enabled": map_data.grid_enabled,
-        "grid_type": getattr(map_data, "grid_type", "square") or "square",
-        "fog_enabled": map_data.fog_enabled,
-        "remember_explored": map_data.remember_explored,
-        "revealed_cells": json.loads(map_data.revealed_cells),
-        "tokens": tokens,
-    }
+    if map_data:
+        out = {
+            "has_map": True,
+            "image_url": map_data.image_url,
+            "image_width": map_data.image_width,
+            "image_height": map_data.image_height,
+            "grid_size": map_data.grid_size,
+            "grid_enabled": map_data.grid_enabled,
+            "grid_type": getattr(map_data, "grid_type", "square") or "square",
+            "fog_enabled": map_data.fog_enabled,
+            "remember_explored": map_data.remember_explored,
+            "revealed_cells": json.loads(map_data.revealed_cells),
+            "tokens": tokens,
+        }
+
+    # Map Builder: include active floor tiles + metadata even when no image map
+    try:
+        active_floor = (await db.execute(
+            select(MapFloor).where(MapFloor.session_id == session.id).where(MapFloor.is_active == True)
+        )).scalar_one_or_none()
+        if active_floor:
+            out["active_floor_id"] = active_floor.id
+            out["active_floor_name"] = active_floor.name
+            out["active_floor_tiles"] = json.loads(active_floor.tiles_json or "{}")
+            out["active_floor_grid_type"] = active_floor.grid_type or "square"
+            out["active_floor_tile_size"] = active_floor.tile_size or 50
+    except Exception:
+        pass
+    return out
 
 
 # ── Move token ───────────────────────────────────────────────
@@ -669,22 +684,40 @@ async def get_overlays(session_code: str, db: AsyncSession = Depends(get_session
     if not session:
         raise HTTPException(404)
 
+    # Map Builder: only overlays belonging to the active floor (or
+    # with no floor assignment for backward compat) are shipped.
+    active_floor = (await db.execute(
+        select(MapFloor).where(MapFloor.session_id == session.id).where(MapFloor.is_active == True)
+    )).scalar_one_or_none()
+    active_floor_id = active_floor.id if active_floor else None
+
     markers_result = await db.execute(
         select(MapMarker).where(MapMarker.session_id == session.id)
     )
     drawings_result = await db.execute(
         select(MapDrawing).where(MapDrawing.session_id == session.id)
     )
-    # Rework v3 Phase 5: ship map objects alongside markers + drawings
-    # so a single GET /overlays endpoint covers every overlay layer.
     objects_result = await db.execute(
         select(MapObject).where(MapObject.session_id == session.id)
     )
+    traps_result = await db.execute(
+        select(MapTrap).where(MapTrap.session_id == session.id)
+    )
+
+    def _belongs_to_active_floor(row):
+        return getattr(row, 'floor_id', None) is None or getattr(row, 'floor_id', None) == active_floor_id
 
     return {
-        "markers":  [_ser_marker(m)  for m in markers_result.scalars().all()],
-        "drawings": [_ser_drawing(d) for d in drawings_result.scalars().all()],
-        "objects":  [_ser_object(o)  for o in objects_result.scalars().all()],
+        "markers":  [_ser_marker(m)  for m in markers_result.scalars().all() if _belongs_to_active_floor(m)],
+        "drawings": [_ser_drawing(d) for d in drawings_result.scalars().all() if _belongs_to_active_floor(d)],
+        "objects":  [_ser_object(o)  for o in objects_result.scalars().all() if _belongs_to_active_floor(o)],
+        "traps":    [{
+            "id": t.id, "col": t.col, "row": t.row, "name": t.name,
+            "trap_type": t.trap_type, "trigger_type": t.trigger_type,
+            "is_hidden": t.is_hidden, "is_triggered": t.is_triggered,
+            "is_disarmed": t.is_disarmed, "damage_dice": t.damage_dice,
+            "damage_type": t.damage_type, "dc_detect": t.dc_detect,
+        } for t in traps_result.scalars().all() if _belongs_to_active_floor(t)],
     }
 
 

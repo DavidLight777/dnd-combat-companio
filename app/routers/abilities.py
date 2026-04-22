@@ -11,6 +11,7 @@ from app.database import get_session
 from app.models import (
     Ability, CharacterAbility, Character, CharacterStatusEffect,
     StatusEffectTemplate, StatModifier, AttackModifier, DamageModifier,
+    Session,
 )
 
 router = APIRouter(prefix="/api", tags=["abilities"])
@@ -547,6 +548,22 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
                 "max_cells": _rc.max_cells,
             })
 
+    # Defense reaction: if ability requires hit roll, hit is normal (not crit/miss),
+    # and there are damage effects targeting another character → defer damage.
+    deferred_damage_effects = []
+    needs_defense = False
+    if (
+        ability.requires_hit_roll
+        and hit_info is not None
+        and hit_ok
+        and not is_crit
+        and target_char.id != char.id
+    ):
+        for eff in effects_list:
+            if isinstance(eff, dict) and eff.get("type") == "damage":
+                needs_defense = True
+                deferred_damage_effects.append(eff)
+
     for eff in effects_list:
         etype = eff.get("type", "")
 
@@ -648,6 +665,10 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
                 results.append(f"Removed: {status_name}{tgt_tag}")
 
         elif etype == "damage":
+            # Skip if this effect is deferred for defense reaction
+            if needs_defense and eff in deferred_damage_effects:
+                results.append(f"Damage pending — waiting for defense reaction")
+                continue
             # Rework Phase 6: if a hit roll was required and it missed → skip damage entirely
             if ability.requires_hit_roll and hit_info is not None and not hit_ok:
                 results.append(f"Damage skipped — attack missed")
@@ -677,6 +698,55 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     if ca.current_uses is not None:
         ca.current_uses = max(0, ca.current_uses - 1)
 
+    # Defense reaction: if damage was deferred, create pending defense and return early.
+    if needs_defense:
+        from app.defense_reactions import create_pending_defense, broadcast_defense_request
+        # Resolve session code safely (avoid lazy-load)
+        session_code = ""
+        if char.session_id:
+            sess = await db.get(Session, char.session_id)
+            if sess:
+                session_code = sess.code
+        # Build context so we can replay damage after defense fails
+        ability_context = {
+            "ca_id": ca_id,
+            "body": body,
+            "is_crit": is_crit,
+            "target_id": target_char.id,
+            "target_name": target_char.name,
+            "deferred_effects": deferred_damage_effects,
+        }
+        pd = create_pending_defense(
+            attacker_id=char.id,
+            target_id=target_char.id,
+            session_id=char.session_id or 0,
+            session_code=session_code,
+            attack_total=int(hit_info.get("total", 10)) if hit_info else 10,
+            attack_roll_d20=int(hit_info.get("d20", 20)) if hit_info else 20,
+            attacker_name=char.name,
+            target_name=target_char.name,
+            target_ac=target_char.armor_class,
+            critical=False,
+            fumble=False,
+            hit=True,
+            weapon_name=ability.name,
+            ability_context=ability_context,
+        )
+        await broadcast_defense_request(pd)
+        await db.commit()
+        return {
+            "ok": True,
+            "ability_name": ability.name,
+            "results": results,
+            "character_id": char.id,
+            "current_hp": char.current_hp,
+            "mana_current": char.mana_current,
+            "cooldown_remaining": ca.cooldown_remaining,
+            "current_uses": ca.current_uses,
+            "pending_defense_id": pd.id,
+            "waiting_for_defense": True,
+        }
+
     await db.commit()
     return {
         "ok": True,
@@ -687,4 +757,92 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
         "mana_current": char.mana_current,
         "cooldown_remaining": ca.cooldown_remaining,
         "current_uses": ca.current_uses,
+    }
+
+
+async def _apply_ability_damage_only(
+    ca_id: int,
+    body: dict,
+    db: AsyncSession,
+) -> dict:
+    """Replay only the deferred damage effects of an ability use.
+    Called by defense_reactions when defense fails so the ability damage lands.
+    Assumes costs / cooldown / non-damage effects were already applied.
+    """
+    from app.game_mechanics import get_effective_mana_max
+
+    ca = await db.get(CharacterAbility, ca_id)
+    if not ca:
+        raise HTTPException(404, "Character ability not found")
+    ability = ca.ability
+    char = await db.get(Character, ca.character_id)
+    target_char = char
+    target_id = body.get("target_id")
+    if target_id and int(target_id) != char.id:
+        t = await db.get(Character, int(target_id))
+        if t:
+            target_char = t
+
+    hit_info = body.get("hit_roll") or None
+    is_crit = bool(hit_info.get("critical", False)) if hit_info else False
+
+    def _override_dc(default_dc):
+        v = body.get("override_dice_count")
+        return int(v) if (v is not None and int(v) > 0) else int(default_dc)
+    def _override_dt(default_dt):
+        v = body.get("override_dice_type")
+        return int(v) if (v is not None and int(v) > 0) else int(default_dt)
+
+    # Re-parse effects
+    try:
+        eff_data = json.loads(ability.effect) if isinstance(ability.effect, str) else ability.effect
+        effects_list = eff_data.get("effects", []) if isinstance(eff_data, dict) else eff_data if isinstance(eff_data, list) else []
+    except Exception:
+        effects_list = []
+
+    if (
+        ability.damage_dice_count
+        and ability.damage_dice_type
+        and not any(isinstance(e, dict) and e.get("type") == "damage" for e in effects_list)
+    ):
+        effects_list = list(effects_list) + [{
+            "type": "damage",
+            "dice_count": int(ability.damage_dice_count),
+            "dice_type": int(ability.damage_dice_type),
+            "flat_bonus": 0,
+            "_implicit_from_top_level": True,
+        }]
+
+    results = []
+    for eff in effects_list:
+        if not isinstance(eff, dict) or eff.get("type") != "damage":
+            continue
+        dc = _override_dc(eff.get("dice_count", 1))
+        dt = _override_dt(eff.get("dice_type", 6))
+        fb = eff.get("flat_bonus", 0)
+        actual_dc = dc * 2 if is_crit else dc
+        rolls = [random.randint(1, dt) for _ in range(max(1, actual_dc))]
+        total = sum(rolls) + fb
+        old_hp = target_char.current_hp
+        target_char.current_hp = max(0, target_char.current_hp - total)
+        if target_char.current_hp <= 0:
+            target_char.is_alive = False
+        crit_tag = " CRIT×2" if is_crit else ""
+        results.append(
+            f"Damage{crit_tag}: {actual_dc}d{dt}+{fb}={total} → "
+            f"-{old_hp - target_char.current_hp} HP to {target_char.name}"
+        )
+
+    await db.commit()
+    await db.refresh(target_char)
+    return {
+        "ok": True,
+        "ability_name": ability.name,
+        "results": results,
+        "character_id": char.id,
+        "target_id": target_char.id,
+        "target_hp_before": old_hp if 'old_hp' in locals() else target_char.current_hp,
+        "target_hp_after": target_char.current_hp,
+        "target_downed": target_char.current_hp <= 0,
+        "mana_current": char.mana_current,
     }

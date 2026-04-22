@@ -135,6 +135,9 @@
 .gm-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+/* Map & Builder tabs are flex columns; override the generic block rule */
+#tab-map.active,
+#tab-builder.active { display: flex !important; }
 
 /* ── Toggle + mod rows (reuse from player.css) ─────────────── */
 .toggle-switch { position: relative; display: inline-block; width: 32px; height: 18px; }

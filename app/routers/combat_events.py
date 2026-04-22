@@ -1179,6 +1179,31 @@ async def hit_roll(body: HitRollBody, db: AsyncSession = Depends(get_session)):
         weapon_name = "Unarmed"
         damage_modes = []
 
+    # Defense reaction: on a normal hit (not crit, not fumble, not miss)
+    # create a pending defense so the target can choose dodge or static AC.
+    pending_defense_id = None
+    if hit and not critical and not fumble:
+        from app.defense_reactions import create_pending_defense, broadcast_defense_request
+        sess = await db.get(Session, attacker.session_id)
+        session_code = sess.code if sess else ""
+        pd = create_pending_defense(
+            attacker_id=attacker.id,
+            target_id=target.id,
+            session_id=attacker.session_id or 0,
+            session_code=session_code,
+            attack_total=total,
+            attack_roll_d20=d20,
+            attacker_name=attacker.name,
+            target_name=target.name,
+            target_ac=target.armor_class,
+            critical=critical,
+            fumble=fumble,
+            hit=hit,
+            weapon_name=weapon_name,
+        )
+        pending_defense_id = pd.id
+        await broadcast_defense_request(pd)
+
     return {
         "hit": hit,
         "critical": critical,
@@ -1198,7 +1223,57 @@ async def hit_roll(body: HitRollBody, db: AsyncSession = Depends(get_session)):
         "default_dice_type": default_dt,
         # Rework v3: preset damage modes available on the weapon (can be empty)
         "damage_modes": damage_modes,
+        "pending_defense_id": pending_defense_id,
     }
+
+
+class ResolveDefenseBody(BaseModel):
+    mode: str  # "ac" | "dodge_dex" | "dodge_con"
+    dice_count: int = 1          # for dodge_dex / dodge_con: how many d20 to roll
+    advantage: str = "normal"    # "normal" | "advantage" | "disadvantage"
+
+
+@router.post("/defense/{pending_id}/resolve")
+async def resolve_defense(pending_id: str, body: ResolveDefenseBody, db: AsyncSession = Depends(get_session)):
+    """Resolve a pending defense: target chooses AC, dodge (DEX), or brace (CON)."""
+    from app.defense_reactions import (
+        get_pending_defense, resolve_pending_defense, apply_ability_damage_on_failed_defense,
+    )
+    from app.game_mechanics import stat_modifier
+
+    pd = get_pending_defense(pending_id)
+    if not pd:
+        raise HTTPException(404, "Pending defense not found")
+    if pd.resolved:
+        raise HTTPException(400, "Defense already resolved")
+
+    target = await db.get(Character, pd.target_id)
+    if not target:
+        raise HTTPException(404, "Target character not found")
+
+    target_stats = {
+        "armor_class": target.armor_class,
+        "dexterity": target.dexterity,
+        "constitution": target.constitution,
+    }
+
+    result = await resolve_pending_defense(
+        pending_id,
+        body.mode,
+        target_stats=target_stats,
+        dice_count=body.dice_count,
+        advantage_mode=body.advantage,
+    )
+    if not result:
+        raise HTTPException(400, "Could not resolve defense")
+
+    # If this originated from an ability and defense failed, apply deferred damage
+    if not result.get("success") and pd.ability_context:
+        dmg_res = await apply_ability_damage_on_failed_defense(pd, db)
+        if dmg_res:
+            result["ability_damage"] = dmg_res
+
+    return result
 
 
 @router.post("/damage-roll")

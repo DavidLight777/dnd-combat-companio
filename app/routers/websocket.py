@@ -144,6 +144,11 @@ async def websocket_endpoint(websocket: WebSocket, session_code: str, token: str
                 elif msg_type == "combat.character_downed":
                     await manager.broadcast_to_session(session_code, "combat.character_downed", msg)
 
+                elif msg_type in ("combat.defense_request", "combat.defense_resolved"):
+                    await manager.broadcast_to_session(session_code, msg_type, {
+                        k: v for k, v in msg.items() if k != "type"
+                    })
+
                 elif msg_type == "table.updated":
                     await manager.broadcast_to_session(session_code, "table.updated", msg)
 

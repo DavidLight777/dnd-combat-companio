@@ -65,6 +65,11 @@ class MapCanvas {
     // refresh from the /overlays endpoint.
     this.mapObjects = [];
 
+    // Map Builder: tile grid overlay (col,row -> tile_type)
+    this.tiles = {};
+    // Map Builder: traps list for rendering
+    this.traps = [];
+
     // Transform
     this.offsetX = 0;
     this.offsetY = 0;
@@ -236,6 +241,29 @@ class MapCanvas {
                            px + wobble, py, eased, tNorm, '#d4a018', 22);
           break;
         }
+        case 'defended': {
+          // Blue shield ring expanding outward + floating text.
+          const col = f.color || '#48aaff';
+          const r0 = gs * 0.4;
+          const r = r0 + gs * 1.0 * eased;
+          ctx.globalAlpha = (1 - tNorm) * 0.8;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 4 / this.scale;
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+          // Small hexagon / shield icon inside
+          ctx.globalAlpha = (1 - tNorm) * 0.7;
+          const hs = gs * 0.18 * (1 - tNorm * 0.2);
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const ang = (Math.PI / 3) * i - Math.PI / 2;
+            const hx = px + Math.cos(ang) * hs;
+            const hy = py + Math.sin(ang) * hs;
+            if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+          }
+          ctx.closePath(); ctx.stroke();
+          if (f.text) this._drawFxText(ctx, f.text, px, py, eased, tNorm, col, 24);
+          break;
+        }
         case 'heal': {
           const col = '#4ade80';
           const r0 = gs * 0.45;
@@ -283,6 +311,10 @@ class MapCanvas {
 
   // ── Load map image ──────────────────────────────────────────
   loadImage(url) {
+    // Skip redundant reload: same URL keeps current pan/zoom intact.
+    if (this._currentImageUrl === url && this.mapImage) {
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -290,6 +322,7 @@ class MapCanvas {
         this.mapImage = img;
         this.mapWidth = img.naturalWidth;
         this.mapHeight = img.naturalHeight;
+        this._currentImageUrl = url;
         this._fitToView();
         this.render();
         resolve();
@@ -300,13 +333,46 @@ class MapCanvas {
   }
 
   setTokens(tokens) {
-    this.tokens = tokens;
+    // If the user is currently dragging a token, merge the incoming
+    // server data instead of wholesale replacement.  Preserving the
+    // dragged object's x/y stops the token from snapping back to its
+    // old position on every WS refresh.
+    if (this.dragToken && tokens && tokens.length) {
+      const byId = new Map(tokens.map(t => [t.character_id, t]));
+      this.tokens = this.tokens.map(oldT => {
+        const incoming = byId.get(oldT.character_id);
+        if (!incoming) return oldT;
+        if (oldT === this.dragToken) {
+          // Keep live drag coordinates; update everything else.
+          return Object.assign({}, incoming, { x: oldT.x, y: oldT.y });
+        }
+        return { ...incoming };
+      });
+      // Append any brand-new tokens that weren't in the old array.
+      const oldIds = new Set(this.tokens.map(t => t.character_id));
+      for (const t of tokens) {
+        if (!oldIds.has(t.character_id)) this.tokens.push({ ...t });
+      }
+    } else {
+      this.tokens = tokens || [];
+    }
     this.render();
   }
 
   // Phase 5: drop-in replacement of the wall/object list.
   setObjects(objects) {
     this.mapObjects = Array.isArray(objects) ? objects : [];
+    this.render();
+  }
+
+  setTiles(tiles, gridType = 'square') {
+    this.tiles = tiles || {};
+    this.tileGridType = gridType;
+    this.render();
+  }
+
+  setTraps(traps) {
+    this.traps = traps || [];
     this.render();
   }
 
@@ -560,6 +626,9 @@ class MapCanvas {
     if (this.mapImage) {
       ctx.drawImage(this.mapImage, 0, 0, this.mapWidth, this.mapHeight);
     }
+
+    // Map Builder: render tiles
+    this._renderTiles(ctx);
 
     // Grid
     //
@@ -1180,6 +1249,89 @@ class MapCanvas {
     window.addEventListener('resize', () => this._resize());
   }
 
+  // ── Map Builder tile rendering ─────────────────────────────
+  _renderTiles(ctx) {
+    if (!this.tiles || !Object.keys(this.tiles).length) return;
+    const colors = {
+      floor: 'rgba(90,90,90,0.55)',
+      wall:  'rgba(160,160,160,0.85)',
+      door:  'rgba(160,82,45,0.75)',
+      water: 'rgba(30,80,130,0.70)',
+      pit:   'rgba(30,30,30,0.85)',
+      stairs_up:   'rgba(200,160,20,0.70)',
+      stairs_down: 'rgba(220,150,60,0.70)',
+      trap:  'rgba(180,0,0,0.75)',
+    };
+    const icons = { door:'🚪', water:'💧', pit:'🕳', stairs_up:'⬆', stairs_down:'⬇', trap:'⚠' };
+    const gs = this.gridSize;
+    const mw = this.mapWidth || this.canvas.width;
+    const mh = this.mapHeight || this.canvas.height;
+
+    if (this.tileGridType === 'hex') {
+      const size = gs / Math.sqrt(3);
+      const _axialToPixel = (q, r) => ({ x: gs * (q + r / 2), y: gs * (Math.sqrt(3) / 2 * r) });
+      const _hexPath = (cx, cy, sz) => {
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = -Math.PI / 2 + i * Math.PI / 3;
+          ctx.lineTo(cx + sz * Math.cos(a), cy + sz * Math.sin(a));
+        }
+        ctx.closePath();
+      };
+      // Tiles
+      for (const [key, type] of Object.entries(this.tiles)) {
+        const [q, r] = key.split(',').map(Number);
+        const c = _axialToPixel(q, r);
+        if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
+        ctx.fillStyle = colors[type] || colors.floor;
+        _hexPath(c.x, c.y, size - 1);
+        ctx.fill();
+        if (icons[type]) {
+          ctx.font = `${gs * 0.4}px sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(icons[type], c.x, c.y);
+        }
+      }
+      // Traps in hex
+      for (const t of (this.traps || [])) {
+        const c = _axialToPixel(t.col, t.row);
+        if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
+        if (this.role !== 'gm' && t.is_hidden) continue;
+        ctx.fillStyle = 'rgba(255,69,0,0.6)';
+        _hexPath(c.x, c.y, size - 2);
+        ctx.fill();
+        ctx.font = `${gs * 0.4}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(t.is_triggered ? '💥' : t.is_disarmed ? '🔒' : '⚠', c.x, c.y);
+      }
+    } else {
+      // Square grid
+      for (const [key, type] of Object.entries(this.tiles)) {
+        const [col, row] = key.split(',').map(Number);
+        const px = col * gs, py = row * gs;
+        if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
+        ctx.fillStyle = colors[type] || colors.floor;
+        ctx.fillRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
+        if (icons[type]) {
+          ctx.font = `${gs * 0.55}px sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(icons[type], px + gs / 2, py + gs / 2);
+        }
+      }
+      // Traps (square)
+      for (const t of (this.traps || [])) {
+        const px = t.col * gs, py = t.row * gs;
+        if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
+        if (this.role !== 'gm' && t.is_hidden) continue;
+        ctx.fillStyle = 'rgba(255,69,0,0.6)';
+        ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
+        ctx.font = `${gs * 0.5}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(t.is_triggered ? '💥' : t.is_disarmed ? '🔒' : '⚠', px + gs / 2, py + gs / 2);
+      }
+    }
+  }
+
   // ── Render a saved/preview drawing ──────────────────────────
   _renderDrawing(ctx, d) {
     const pts = d.points || [];
@@ -1342,6 +1494,7 @@ class MapCanvas {
     if (!parent) return;
     this.canvas.width = parent.clientWidth;
     this.canvas.height = parent.clientHeight;
+    if (this.scale === 0) this._fitToView();
     this.render();
   }
 }

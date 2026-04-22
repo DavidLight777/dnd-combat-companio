@@ -293,6 +293,8 @@ class MapMarker(Base):
     color: Mapped[str] = mapped_column(Text, default="#ff0000")
     visible_to_players: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+    # Map Builder: which floor this marker belongs to
+    floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
 
 
 class MapDrawing(Base):
@@ -308,6 +310,8 @@ class MapDrawing(Base):
     fill_opacity: Mapped[float] = mapped_column(Float, default=0.2)
     visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
     label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Map Builder: which floor this drawing belongs to
+    floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
 
 
 # Rework v3 Phase 5: rectangular obstacles placed by the GM. They
@@ -333,6 +337,64 @@ class MapObject(Base):
     blocks_movement: Mapped[bool] = mapped_column(Boolean, default=True)
     blocks_vision: Mapped[bool] = mapped_column(Boolean, default=False)
     visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Map Builder: door open/close state
+    is_open: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Map Builder: which floor this object belongs to
+    floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP BUILDER — Floors / Levels
+# ══════════════════════════════════════════════════════════════
+class MapFloor(Base):
+    __tablename__ = "map_floors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, default="Floor 1")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Tile grid size (matches MapData.grid_size at creation time)
+    tile_size: Mapped[int] = mapped_column(Integer, default=50)
+    # Grid type: square or hex
+    grid_type: Mapped[str] = mapped_column(String(10), default="square")
+    # JSON: {"col,row": "wall", "col,row": "floor", ...}
+    tiles_json: Mapped[str] = mapped_column(Text, default="{}")
+    # Is this the currently active floor for the session?
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional background tint when no image is loaded
+    background_color: Mapped[str] = mapped_column(Text, default="#2a2a2a")
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP BUILDER — Traps
+# ══════════════════════════════════════════════════════════════
+class MapTrap(Base):
+    __tablename__ = "map_traps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
+    # Grid position (col,row) — snap to grid
+    col: Mapped[int] = mapped_column(Integer, default=0)
+    row: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(Text, default="Trap")
+    description: Mapped[str] = mapped_column(Text, default="")
+    trap_type: Mapped[str] = mapped_column(String(20), default="mechanical")  # mechanical, magical, natural
+    trigger_type: Mapped[str] = mapped_column(String(20), default="pressure")  # pressure, proximity, tripwire, spell
+    # Difficulty classes
+    dc_detect: Mapped[int] = mapped_column(Integer, default=10)
+    dc_disarm: Mapped[int] = mapped_column(Integer, default=10)
+    # Damage on trigger
+    damage_dice: Mapped[str] = mapped_column(Text, default="")
+    damage_type: Mapped[str] = mapped_column(String(20), default="piercing")
+    # Status effect JSON on trigger
+    status_effect_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # States
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=True)       # only GM sees
+    is_triggered: Mapped[bool] = mapped_column(Boolean, default=False)     # has gone off
+    is_disarmed: Mapped[bool] = mapped_column(Boolean, default=False)      # safely removed
+    # Which characters have spotted this trap
+    discovered_by_json: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of char ids
 
 
 # ══════════════════════════════════════════════════════════════

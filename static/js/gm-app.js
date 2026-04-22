@@ -90,10 +90,12 @@ $$('.gm-tab').forEach(tab => {
     tab.classList.add('active');
     const panel = $(`#tab-${tab.dataset.tab}`);
     panel.classList.add('active');
-    if (tab.dataset.tab === 'map') {
+    if (tab.dataset.tab === 'map' || tab.dataset.tab === 'builder') {
       panel.style.display = 'flex';
-      initMapCanvas();
-      if (mapCanvas) { mapCanvas._resize(); mapCanvas.render(); }
+      if (tab.dataset.tab === 'map') {
+        initMapCanvas();
+        if (mapCanvas) { mapCanvas._resize(); mapCanvas.render(); }
+      }
     } else {
       panel.style.display = 'block';
     }
@@ -932,13 +934,18 @@ async function renderCharDetail() {
             }
 
             if (res.hit) {
-              // Show step 2 — use server-suggested dice defaults (reflects equipped weapon)
-              dmgWidgetState.diceCount = res.default_dice_count || weaponDefaults.diceCount;
-              dmgWidgetState.diceType  = res.default_dice_type  || weaponDefaults.diceType;
-              dmgWidgetState.advantageMode = 'normal';
-              area.querySelector('#npc-atk-step1').style.display = 'none';
-              area.querySelector('#npc-atk-step2').style.display = '';
-              mountDmgWidget();
+              if (res.pending_defense_id) {
+                // Defense reaction: pause flow, show waiting indicator
+                resultDiv.innerHTML += '<div style="margin-top:4px;color:var(--accent)">⏳ Waiting for target defense...</div>';
+              } else {
+                // Show step 2 — use server-suggested dice defaults (reflects equipped weapon)
+                dmgWidgetState.diceCount = res.default_dice_count || weaponDefaults.diceCount;
+                dmgWidgetState.diceType  = res.default_dice_type  || weaponDefaults.diceType;
+                dmgWidgetState.advantageMode = 'normal';
+                area.querySelector('#npc-atk-step1').style.display = 'none';
+                area.querySelector('#npc-atk-step2').style.display = '';
+                mountDmgWidget();
+              }
             } else {
               atkBtn.disabled = false;
               atkBtn.textContent = '🎯 Re-roll Hit';
@@ -2496,30 +2503,51 @@ function initMapCanvas() {
 async function loadMapState() {
   try {
     const state = await api.get(`/api/map/${SESSION_CODE}`);
+    initMapCanvas(); // ensure canvas object exists even if tab not yet open
     if (state.has_map) {
       await mapCanvas.loadImage(state.image_url);
       mapCanvas.setGrid(state.grid_size, state.grid_enabled, state.grid_type || 'square');
       mapCanvas.setFog(state.fog_enabled, state.revealed_cells);
-      mapCanvas.setTokens(state.tokens);
-      // Load overlays
-      try {
-        const overlays = await api.get(`/api/map/${SESSION_CODE}/overlays`);
-        mapCanvas.setDrawings(overlays.drawings);
-        mapCanvas.setMarkers(overlays.markers);
-        // Phase 5: map objects (walls/zones).
-        if (overlays.objects) mapCanvas.setObjects(overlays.objects);
-      } catch {}
-      mapGridEnabled = state.grid_enabled;
-      mapFogEnabled = state.fog_enabled;
-      $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
-      $('#btn-toggle-fog').textContent = `Fog: ${mapFogEnabled ? 'ON' : 'OFF'}`;
-      $('#grid-size-slider').value = state.grid_size;
-      $('#grid-size-label').textContent = state.grid_size;
-      const styleBtn = $('#btn-grid-style');
-      if (styleBtn) {
-        const t = state.grid_type || 'square';
-        styleBtn.textContent = t === 'hex' ? 'Style: ⬡ Hex' : 'Style: ▢ Square';
+    } else {
+      // No uploaded image — initialise a blank surface so Builder tiles still render.
+      mapCanvas.mapImage = null;
+      mapCanvas.mapWidth = 2000;
+      mapCanvas.mapHeight = 2000;
+      mapCanvas.setGrid(50, true, 'square');
+      mapCanvas.setFog(false, []);
+      mapCanvas._fitToView();
+    }
+    mapCanvas.setTokens(state.tokens || []);
+    // Load overlays
+    try {
+      const overlays = await api.get(`/api/map/${SESSION_CODE}/overlays`);
+      mapCanvas.setDrawings(overlays.drawings);
+      mapCanvas.setMarkers(overlays.markers);
+      // Phase 5: map objects (walls/zones).
+      if (overlays.objects) mapCanvas.setObjects(overlays.objects);
+      // Map Builder: traps
+      if (overlays.traps) mapCanvas.setTraps(overlays.traps);
+    } catch {}
+    if (state.active_floor_tiles) {
+      // Floor tile size wins if no image was uploaded — tiles align to the grid
+      const tsz = state.active_floor_tile_size || state.grid_size || 50;
+      if (!state.has_map) {
+        mapCanvas.gridSize = tsz;
       }
+      mapCanvas.setTiles(state.active_floor_tiles, state.active_floor_grid_type || 'square');
+      // Fit view to tile bounding box so GM sees what they drew
+      if (!state.has_map && typeof _fitMapToTiles === 'function') _fitMapToTiles(mapCanvas);
+    }
+    mapGridEnabled = state.grid_enabled;
+    mapFogEnabled = state.fog_enabled;
+    $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
+    $('#btn-toggle-fog').textContent = `Fog: ${mapFogEnabled ? 'ON' : 'OFF'}`;
+    $('#grid-size-slider').value = state.grid_size;
+    $('#grid-size-label').textContent = state.grid_size;
+    const styleBtn = $('#btn-grid-style');
+    if (styleBtn) {
+      const t = state.grid_type || 'square';
+      styleBtn.textContent = t === 'hex' ? 'Style: ⬡ Hex' : 'Style: ▢ Square';
     }
   } catch { /* no map yet */ }
 }
@@ -4934,6 +4962,129 @@ ws.on('combat.character_killed', d => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════
+// DEFENSE REACTION SYSTEM (GM side)
+// ══════════════════════════════════════════════════════════════
+function showGmDefenseModal(data) {
+  if (document.getElementById(`gm-defense-modal-${data.pending_defense_id}`)) return;
+  const overlay = document.createElement('div');
+  overlay.id = `gm-defense-modal-${data.pending_defense_id}`;
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:380px;text-align:center">
+      <h3 style="margin-top:0">🛡️ Defense Reaction</h3>
+      <div style="margin:8px 0;font-size:0.9rem">
+        <strong>${data.attacker_name}</strong> attacks <strong>${data.target_name}</strong>!<br>
+        <span style="color:var(--text-muted)">Roll: ${data.attack_total} vs AC ${data.target_ac}</span>
+      </div>
+      <!-- Dice mode + count (only applies to dodge/brace) -->
+      <div id="gm-def-dice-ctrl" style="display:flex;align-items:center;gap:8px;justify-content:center;margin:10px 0;font-size:0.78rem">
+        <span style="color:var(--text-muted)">Mode:</span>
+        <div class="adv-toggle" id="gm-def-adv">
+          <button data-mode="disadvantage">Disadv</button>
+          <button data-mode="normal" class="active">Normal</button>
+          <button data-mode="advantage">Adv</button>
+        </div>
+        <div style="display:inline-flex;align-items:center;gap:4px">
+          <span style="color:var(--text-muted)">🎲×</span>
+          <button type="button" class="btn btn-ghost btn-xs" id="gm-def-dice-minus" style="padding:0 6px">−</button>
+          <span id="gm-def-dice-count" style="font-weight:600;min-width:12px;text-align:center">1</span>
+          <button type="button" class="btn btn-ghost btn-xs" id="gm-def-dice-plus" style="padding:0 6px">+</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" id="gm-def-ac">🛡️ Accept on AC (${data.target_ac})</button>
+        <button class="btn btn-ghost btn-sm" id="gm-def-dex">💨 Dodge (d20 + DEX)</button>
+        <button class="btn btn-ghost btn-sm" id="gm-def-con">🧱 Brace (d20 + CON)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // --- dice controls state ---
+  let defState = { advantageMode: 'normal', diceCount: 1 };
+  function _renderDefDice() {
+    const host = overlay.querySelector('#gm-def-adv');
+    if (!host) return;
+    host.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === defState.advantageMode);
+    });
+    overlay.querySelector('#gm-def-dice-count').textContent = defState.diceCount;
+  }
+  overlay.querySelectorAll('#gm-def-adv button').forEach(b => {
+    b.addEventListener('click', () => {
+      defState.advantageMode = b.dataset.mode;
+      if (defState.advantageMode !== 'normal' && defState.diceCount < 2) defState.diceCount = 2;
+      _renderDefDice();
+    });
+  });
+  overlay.querySelector('#gm-def-dice-minus').addEventListener('click', () => {
+    const min = defState.advantageMode === 'normal' ? 1 : 2;
+    defState.diceCount = Math.max(min, defState.diceCount - 1);
+    _renderDefDice();
+  });
+  overlay.querySelector('#gm-def-dice-plus').addEventListener('click', () => {
+    defState.diceCount = Math.min(20, defState.diceCount + 1);
+    _renderDefDice();
+  });
+
+  async function resolve(mode) {
+    overlay.querySelectorAll('button').forEach(b => b.disabled = true);
+    try {
+      const payload = { mode };
+      if (mode !== 'ac') {
+        payload.dice_count = defState.diceCount;
+        payload.advantage = defState.advantageMode;
+      }
+      const res = await api.post(`/api/combat/defense/${data.pending_defense_id}/resolve`, payload);
+      let msg = res.success
+        ? `✅ Defense succeeded! ${res.defense_breakdown} ≥ ${res.attack_total}`
+        : `❌ Defense failed. ${res.defense_breakdown} < ${res.attack_total}`;
+      overlay.querySelector('.modal-content').innerHTML = `<div style="padding:12px;font-weight:700">${msg}</div>`;
+      setTimeout(() => overlay.remove(), 1500);
+    } catch (e) {
+      const d = e?.body?.detail;
+      overlay.querySelector('.modal-content').innerHTML = `<div style="color:var(--accent-red);padding:12px">${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || 'Failed')}</div>`;
+      setTimeout(() => overlay.remove(), 2000);
+    }
+  }
+
+  overlay.querySelector('#gm-def-ac').addEventListener('click', () => resolve('ac'));
+  overlay.querySelector('#gm-def-dex').addEventListener('click', () => resolve('dodge_dex'));
+  overlay.querySelector('#gm-def-con').addEventListener('click', () => resolve('dodge_con'));
+}
+
+ws.on('combat.defense_request', d => {
+  const target = characters.find(c => c.id === d.target_id);
+  // If target is an NPC, GM must choose defense manually
+  if (target && target.is_npc) {
+    showGmDefenseModal(d);
+  } else {
+    // Player target — show a lightweight waiting toast
+    showToast(`⏳ ${d.target_name} is choosing defense vs ${d.attacker_name}...`);
+  }
+});
+
+ws.on('combat.defense_resolved', d => {
+  document.querySelectorAll('.gm-defense-waiting-banner').forEach(e => e.remove());
+  document.querySelectorAll(`.modal-overlay`).forEach(e => {
+    if (e.id === `gm-defense-modal-${d.id}`) e.remove();
+  });
+  // Map FX
+  if (typeof mapCanvas !== 'undefined' && mapCanvas) {
+    mapCanvas.playFxOnCharacter(d.target_id, 'defended', {
+      text: d.success ? 'DEFENDED!' : 'HIT',
+      color: d.success ? '#48aaff' : '#ff4848',
+    });
+  }
+  if (d.success) {
+    showToast(`🛡️ ${d.target_name} defended against ${d.attacker_name}! ${d.defense_breakdown}`);
+    addLog('gm.combat', `🛡️ Defense success: ${d.target_name} — ${d.defense_breakdown} vs ${d.attack_total}`);
+  } else {
+    showToast(`💥 ${d.target_name} failed defense vs ${d.attacker_name}. ${d.defense_breakdown}`);
+    addLog('gm.combat', `💥 Defense failed: ${d.target_name} — ${d.defense_breakdown} vs ${d.attack_total}`);
+  }
+});
+
 // FIX 7: Player dismissed a trade modal → log to GM's roll log
 ws.on('trade.dismissed', d => {
   const name = d.player_name || `Player #${d.player_id}`;
@@ -6980,6 +7131,493 @@ ws.on('table.updated', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// MAP BUILDER
+// ══════════════════════════════════════════════════════════════
+let builderCanvas = null;
+let builderFloors = [];
+let currentFloorId = null;
+
+class BuilderCanvas {
+  constructor(canvasEl) {
+    this.canvas = canvasEl;
+    this.ctx = canvasEl.getContext('2d');
+    this.tileSize = 50; // match MapCanvas gridSize so tiles align
+    this.tiles = {}; // "c,r" -> type (square) or "q,r" -> type (hex)
+    this.offsetX = 0; this.offsetY = 0; this.scale = 1;
+    this.brush = 'floor'; this.isPainting = false; this.isDragging = false;
+    this.dragStart = {x:0,y:0};
+    this.gridType = 'square'; // 'square' | 'hex'
+    this._bindEvents(); this._resize();
+  }
+  _resize() {
+    const p = this.canvas.parentElement;
+    if (!p) return;
+    this.canvas.width = p.clientWidth; this.canvas.height = p.clientHeight;
+    this.render();
+  }
+  setBrush(b) { this.brush = b; }
+  setTiles(t) { this.tiles = t || {}; this.render(); }
+  getTiles() { return { ...this.tiles }; }
+  clear() { this.tiles = {}; this.render(); }
+  setGridType(t) { this.gridType = (t === 'hex') ? 'hex' : 'square'; this.render(); }
+
+  // ── Hex helpers (pointy-top axial) ───────────────────────────
+  _hexSize() { return this.tileSize / Math.sqrt(3); }
+  _axialToPixel(q, r) {
+    const gs = this.tileSize;
+    return { x: gs * (q + r / 2), y: gs * (Math.sqrt(3) / 2 * r) };
+  }
+  _pixelToAxial(px, py) {
+    const s = this._hexSize();
+    const q = (Math.sqrt(3) / 3 * px - py / 3) / s;
+    const r = (2 / 3 * py) / s;
+    return { q, r };
+  }
+  _hexRound(q, r) {
+    const s = -q - r;
+    let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+    if (dq > dr && dq > ds) rq = -rr - rs;
+    else if (dr > ds) rr = -rq - rs;
+    return { q: rq, r: rr };
+  }
+  _hexPath(ctx, cx, cy, size) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 3;
+      const x = cx + size * Math.cos(a);
+      const y = cy + size * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  _screenToTile(sx, sy) {
+    const mx = (sx - this.offsetX) / this.scale;
+    const my = (sy - this.offsetY) / this.scale;
+    if (this.gridType === 'hex') {
+      const frac = this._pixelToAxial(mx, my);
+      const hex = this._hexRound(frac.q, frac.r);
+      return { key: `${hex.q},${hex.r}`, q: hex.q, r: hex.r };
+    }
+    return { key: `${Math.floor(mx / this.tileSize)},${Math.floor(my / this.tileSize)}`, col: Math.floor(mx / this.tileSize), row: Math.floor(my / this.tileSize) };
+  }
+  render() {
+    const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, w, h);
+    ctx.save(); ctx.translate(this.offsetX, this.offsetY); ctx.scale(this.scale, this.scale);
+    const colors = { floor:'#333', wall:'#666', door:'#8B4513', water:'#1a4a6e', pit:'#111', stairs_up:'#b8860b', stairs_down:'#cd853f', trap:'#8b0000' };
+    const icons = { door:'🚪', water:'💧', pit:'🕳', stairs_up:'⬆', stairs_down:'⬇', trap:'⚠' };
+
+    if (this.gridType === 'hex') {
+      const size = this._hexSize();
+      const visibleW = w / this.scale, visibleH = h / this.scale;
+      // Determine axial bounds from visible rect
+      const corners = [
+        this._pixelToAxial(-this.offsetX / this.scale, -this.offsetY / this.scale),
+        this._pixelToAxial((-this.offsetX + w) / this.scale, -this.offsetY / this.scale),
+        this._pixelToAxial(-this.offsetX / this.scale, (-this.offsetY + h) / this.scale),
+        this._pixelToAxial((-this.offsetX + w) / this.scale, (-this.offsetY + h) / this.scale),
+      ];
+      let qMin = Infinity, qMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+      for (const c of corners) {
+        if (c.q < qMin) qMin = c.q; if (c.q > qMax) qMax = c.q;
+        if (c.r < rMin) rMin = c.r; if (c.r > rMax) rMax = c.r;
+      }
+      qMin = Math.floor(qMin) - 1; qMax = Math.ceil(qMax) + 1;
+      rMin = Math.floor(rMin) - 1; rMax = Math.ceil(rMax) + 1;
+
+      // Hex tiles
+      for (let q = qMin; q <= qMax; q++) {
+        for (let r = rMin; r <= rMax; r++) {
+          const t = this.tiles[`${q},${r}`];
+          if (!t) continue;
+          const c = this._axialToPixel(q, r);
+          ctx.fillStyle = colors[t] || '#333';
+          this._hexPath(ctx, c.x, c.y, size - 1);
+          ctx.fill();
+          if (icons[t]) {
+            ctx.font = `${this.tileSize * 0.45}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(icons[t], c.x, c.y);
+          }
+        }
+      }
+      // Hex grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1 / this.scale;
+      for (let q = qMin; q <= qMax; q++) {
+        for (let r = rMin; r <= rMax; r++) {
+          const c = this._axialToPixel(q, r);
+          this._hexPath(ctx, c.x, c.y, size);
+          ctx.stroke();
+        }
+      }
+    } else {
+      // Square grid
+      const cols = Math.ceil(w / (this.tileSize * this.scale)) + 2;
+      const rows = Math.ceil(h / (this.tileSize * this.scale)) + 2;
+      const startCol = Math.floor(-this.offsetX / (this.tileSize * this.scale));
+      const startRow = Math.floor(-this.offsetY / (this.tileSize * this.scale));
+      for (let c = startCol; c < startCol + cols; c++) {
+        for (let r = startRow; r < startRow + rows; r++) {
+          const t = this.tiles[`${c},${r}`];
+          if (!t) continue;
+          const x = c * this.tileSize, y = r * this.tileSize;
+          ctx.fillStyle = colors[t] || '#333';
+          ctx.fillRect(x + 0.5, y + 0.5, this.tileSize - 1, this.tileSize - 1);
+        }
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1 / this.scale;
+      for (let c = startCol; c <= startCol + cols; c++) {
+        ctx.beginPath(); ctx.moveTo(c * this.tileSize, startRow * this.tileSize);
+        ctx.lineTo(c * this.tileSize, (startRow + rows) * this.tileSize); ctx.stroke();
+      }
+      for (let r = startRow; r <= startRow + rows; r++) {
+        ctx.beginPath(); ctx.moveTo(startCol * this.tileSize, r * this.tileSize);
+        ctx.lineTo((startCol + cols) * this.tileSize, r * this.tileSize); ctx.stroke();
+      }
+      for (let c = startCol; c < startCol + cols; c++) {
+        for (let r = startRow; r < startRow + rows; r++) {
+          const t = this.tiles[`${c},${r}`];
+          if (!t || !icons[t]) continue;
+          ctx.font = `${this.tileSize * 0.55}px sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(icons[t], (c + 0.5) * this.tileSize, (r + 0.5) * this.tileSize);
+        }
+      }
+    }
+    ctx.restore();
+  }
+  _paintAt(sx, sy) {
+    const tile = this._screenToTile(sx, sy);
+    if (this.brush === 'erase') delete this.tiles[tile.key];
+    else this.tiles[tile.key] = this.brush;
+    this.render();
+  }
+  _bindEvents() {
+    const c = this.canvas;
+    c.addEventListener('mousedown', e => {
+      if (e.button === 0) { this.isPainting = true; this._paintAt(e.offsetX, e.offsetY); }
+      else { this.isDragging = true; this.dragStart = { x: e.offsetX - this.offsetX, y: e.offsetY - this.offsetY }; }
+    });
+    c.addEventListener('mousemove', e => {
+      if (this.isPainting) this._paintAt(e.offsetX, e.offsetY);
+      if (this.isDragging) { this.offsetX = e.offsetX - this.dragStart.x; this.offsetY = e.offsetY - this.dragStart.y; this.render(); }
+    });
+    c.addEventListener('mouseup', () => { this.isPainting = false; this.isDragging = false; });
+    c.addEventListener('mouseleave', () => { this.isPainting = false; this.isDragging = false; });
+    c.addEventListener('wheel', e => {
+      e.preventDefault();
+      const zoom = e.deltaY < 0 ? 1.1 : 0.9;
+      const newScale = Math.max(0.2, Math.min(5, this.scale * zoom));
+      this.offsetX = e.offsetX - (e.offsetX - this.offsetX) * (newScale / this.scale);
+      this.offsetY = e.offsetY - (e.offsetY - this.offsetY) * (newScale / this.scale);
+      this.scale = newScale; this.render();
+    }, { passive: false });
+    window.addEventListener('resize', () => this._resize());
+  }
+}
+
+async function loadBuilder() {
+  try { builderFloors = await api.get(`/api/map-builder/${SESSION_CODE}/floors`); } catch { builderFloors = []; }
+  renderBuilderFloorSelect();
+  if (builderFloors.length && !currentFloorId) currentFloorId = builderFloors[0].id;
+  if (currentFloorId) await loadBuilderFloor(currentFloorId);
+}
+
+function renderBuilderFloorSelect() {
+  const sel = document.getElementById('builder-floor-select');
+  if (!sel) return;
+  sel.innerHTML = builderFloors.map(f => `<option value="${f.id}" ${f.id === currentFloorId ? 'selected' : ''}>${f.name}</option>`).join('');
+}
+
+async function loadBuilderFloor(floorId) {
+  const f = builderFloors.find(x => x.id === floorId);
+  if (!f) return;
+  currentFloorId = floorId;
+  if (!builderCanvas) {
+    const el = document.getElementById('builder-canvas');
+    if (el) builderCanvas = new BuilderCanvas(el);
+  }
+  if (builderCanvas) {
+    try { builderCanvas.setTiles(JSON.parse(f.tiles_json || '{}')); } catch { builderCanvas.setTiles({}); }
+    builderCanvas.setGridType(f.grid_type || 'square');
+    builderCanvas.tileSize = f.tile_size || 50;
+    builderCanvas.render();
+    builderCanvas._resize();
+  }
+  // Update toggle button text
+  const gtBtn = document.getElementById('btn-builder-grid-type');
+  if (gtBtn) gtBtn.textContent = (f.grid_type === 'hex') ? '⬡ Hex' : '▢ Square';
+  // Update size slider to match saved tile_size
+  const szInp = document.getElementById('builder-tile-size');
+  const szLbl = document.getElementById('builder-tile-size-val');
+  if (szInp) szInp.value = f.tile_size || 50;
+  if (szLbl) szLbl.textContent = f.tile_size || 50;
+  renderBuilderFloorSelect();
+}
+
+async function createBuilderFloor(promptUser = true) {
+  const name = promptUser
+    ? prompt('Floor name:', 'Floor ' + (builderFloors.length + 1))
+    : 'Floor ' + (builderFloors.length + 1);
+  if (!name) return null;
+  try {
+    const f = await api.post(`/api/map-builder/${SESSION_CODE}/floors`, { name, sort_order: builderFloors.length });
+    builderFloors.push(f); currentFloorId = f.id;
+    renderBuilderFloorSelect(); await loadBuilderFloor(f.id);
+    return f;
+  } catch (e) {
+    showToast('Create floor failed: ' + (e.message || 'unknown'));
+    console.error('createBuilderFloor', e);
+    return null;
+  }
+}
+
+async function deleteBuilderFloor() {
+  if (!currentFloorId) return;
+  if (!confirm('Delete this floor?')) return;
+  await api.del(`/api/map-builder/floors/${currentFloorId}`);
+  builderFloors = builderFloors.filter(f => f.id !== currentFloorId);
+  currentFloorId = builderFloors.length ? builderFloors[0].id : null;
+  renderBuilderFloorSelect();
+  if (currentFloorId) loadBuilderFloor(currentFloorId); else if (builderCanvas) builderCanvas.clear();
+}
+
+async function activateBuilderFloor() {
+  // Auto-create a floor if user never made one
+  if (!currentFloorId) {
+    showToast('No floor — creating one...');
+    const f = await createBuilderFloor(false);
+    if (!f) return;
+  }
+  try {
+    // Persist tiles + settings first
+    if (builderCanvas) {
+      await api.patch(`/api/map-builder/floors/${currentFloorId}/tiles`, { tiles: builderCanvas.getTiles() });
+      await api.patch(`/api/map-builder/floors/${currentFloorId}`, {
+        grid_type: builderCanvas.gridType,
+        tile_size: builderCanvas.tileSize,
+      }).catch(() => {});
+      const ff = builderFloors.find(x => x.id === currentFloorId);
+      if (ff) {
+        ff.tiles_json = JSON.stringify(builderCanvas.getTiles());
+        ff.tile_size = builderCanvas.tileSize;
+        ff.grid_type = builderCanvas.gridType;
+      }
+    }
+    await api.post(`/api/map-builder/floors/${currentFloorId}/activate`);
+    builderFloors.forEach(f => f.is_active = (f.id === currentFloorId));
+    renderBuilderFloorSelect();
+    showToast('✅ Floor activated on Map');
+    // Refresh the GM's Map tab immediately and auto-fit
+    if (typeof loadMapState === 'function') {
+      await loadMapState();
+      if (mapCanvas) _fitMapToTiles(mapCanvas);
+    }
+  } catch (e) {
+    showToast('Activate failed: ' + (e.message || 'unknown error'));
+    console.error('activateBuilderFloor', e);
+  }
+}
+
+// Compute tile bounding box in map-pixel space and center MapCanvas on it.
+function _fitMapToTiles(canvas) {
+  if (!canvas || !canvas.tiles) return;
+  const keys = Object.keys(canvas.tiles);
+  if (!keys.length) return;
+  const gs = canvas.gridSize || 50;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  if (canvas.tileGridType === 'hex') {
+    for (const k of keys) {
+      const [q, r] = k.split(',').map(Number);
+      const x = gs * (q + r / 2), y = gs * (Math.sqrt(3) / 2 * r);
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  } else {
+    for (const k of keys) {
+      const [c, r] = k.split(',').map(Number);
+      const x = c * gs, y = r * gs;
+      if (x < minX) minX = x; if (x > maxX) maxX = x + gs;
+      if (y < minY) minY = y; if (y > maxY) maxY = y + gs;
+    }
+  }
+  const pad = gs * 2;
+  const bw = (maxX - minX) + pad * 2;
+  const bh = (maxY - minY) + pad * 2;
+  const sx = canvas.canvas.width / bw;
+  const sy = canvas.canvas.height / bh;
+  canvas.scale = Math.min(sx, sy);
+  canvas.offsetX = -(minX - pad) * canvas.scale + (canvas.canvas.width - bw * canvas.scale) / 2;
+  canvas.offsetY = -(minY - pad) * canvas.scale + (canvas.canvas.height - bh * canvas.scale) / 2;
+  canvas.render();
+}
+
+async function saveBuilderTiles() {
+  if (!builderCanvas) { showToast('Builder not ready'); return; }
+  // Auto-create a floor if user never made one
+  if (!currentFloorId) {
+    showToast('No floor — creating one...');
+    const f = await createBuilderFloor(false);
+    if (!f) return;
+  }
+  try {
+    await api.patch(`/api/map-builder/floors/${currentFloorId}/tiles`, { tiles: builderCanvas.getTiles() });
+    const f = builderFloors.find(x => x.id === currentFloorId);
+    if (f) {
+      f.tiles_json = JSON.stringify(builderCanvas.getTiles());
+      f.grid_type = builderCanvas.gridType;
+      f.tile_size = builderCanvas.tileSize;
+    }
+    // Also persist grid_type + tile_size
+    await api.patch(`/api/map-builder/floors/${currentFloorId}`, {
+      grid_type: builderCanvas.gridType,
+      tile_size: builderCanvas.tileSize,
+    }).catch(() => {});
+    showToast('💾 Saved. Click ▶ Activate to show on Map');
+  } catch (e) {
+    showToast('Save failed: ' + (e.message || 'unknown error'));
+    console.error('saveBuilderTiles', e);
+  }
+}
+
+function openBuilderTrapModal(col, row) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:360px">
+      <h3>⚠️ Place Trap</h3>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        <input id="bt-name" placeholder="Trap name" value="Spike Trap" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:var(--r-sm)">
+        <textarea id="bt-desc" placeholder="Description" rows="2" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:var(--r-sm)"></textarea>
+        <div style="display:flex;gap:6px">
+          <select id="bt-type" style="flex:1;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:var(--r-sm)">
+            <option value="mechanical">Mechanical</option><option value="magical">Magical</option><option value="natural">Natural</option>
+          </select>
+          <select id="bt-trigger" style="flex:1;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:var(--r-sm)">
+            <option value="pressure">Pressure</option><option value="proximity">Proximity</option><option value="tripwire">Tripwire</option><option value="spell">Spell</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="font-size:0.72rem;color:var(--text-muted)">Detect DC:</label>
+          <input id="bt-dc-detect" type="number" value="10" style="width:60px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm)">
+          <label style="font-size:0.72rem;color:var(--text-muted)">Disarm DC:</label>
+          <input id="bt-dc-disarm" type="number" value="10" style="width:60px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm)">
+        </div>
+        <input id="bt-damage" placeholder="Damage dice (e.g. 2d6+3)" value="1d8" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:var(--r-sm)">
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-ghost btn-sm" id="bt-cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="bt-save">Save Trap</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#bt-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#bt-save').addEventListener('click', async () => {
+    const payload = {
+      floor_id: currentFloorId, col, row,
+      name: overlay.querySelector('#bt-name').value || 'Trap',
+      description: overlay.querySelector('#bt-desc').value,
+      trap_type: overlay.querySelector('#bt-type').value,
+      trigger_type: overlay.querySelector('#bt-trigger').value,
+      dc_detect: parseInt(overlay.querySelector('#bt-dc-detect').value) || 10,
+      dc_disarm: parseInt(overlay.querySelector('#bt-dc-disarm').value) || 10,
+      damage_dice: overlay.querySelector('#bt-damage').value,
+      is_hidden: true,
+    };
+    try {
+      await api.post(`/api/map-builder/${SESSION_CODE}/traps`, payload);
+      showToast('Trap placed');
+      overlay.remove();
+    } catch (e) { showToast('Failed to place trap'); }
+  });
+}
+
+// Builder wiring
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('builder-floor-select');
+  if (sel) sel.addEventListener('change', e => loadBuilderFloor(parseInt(e.target.value)));
+  const newBtn = document.getElementById('btn-new-floor');
+  if (newBtn) newBtn.addEventListener('click', createBuilderFloor);
+  const delBtn = document.getElementById('btn-delete-floor');
+  if (delBtn) delBtn.addEventListener('click', deleteBuilderFloor);
+  const actBtn = document.getElementById('btn-activate-floor');
+  if (actBtn) actBtn.addEventListener('click', activateBuilderFloor);
+  const clearBtn = document.getElementById('btn-clear-tiles');
+  if (clearBtn) clearBtn.addEventListener('click', () => { if (builderCanvas) builderCanvas.clear(); });
+  const saveBtn = document.getElementById('btn-save-tiles');
+  if (saveBtn) saveBtn.addEventListener('click', saveBuilderTiles);
+  document.querySelectorAll('.builder-brush').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.builder-brush').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      if (builderCanvas) builderCanvas.setBrush(b.dataset.brush);
+    });
+  });
+  const trapBtn = document.getElementById('btn-place-trap');
+  if (trapBtn) trapBtn.addEventListener('click', () => {
+    if (!builderCanvas) return;
+    const c = builderCanvas.canvas;
+    const handler = async (e) => {
+      const tile = builderCanvas._screenToTile(e.offsetX, e.offsetY);
+      openBuilderTrapModal(tile.col, tile.row);
+      c.removeEventListener('click', handler);
+    };
+    c.addEventListener('click', handler);
+    showToast('Click a tile to place the trap');
+  });
+  // Tile size slider
+  const szInp = document.getElementById('builder-tile-size');
+  const szLbl = document.getElementById('builder-tile-size-val');
+  if (szInp) szInp.addEventListener('input', () => {
+    const v = parseInt(szInp.value) || 50;
+    if (szLbl) szLbl.textContent = v;
+    if (builderCanvas) { builderCanvas.tileSize = v; builderCanvas.render(); }
+  });
+  // Grid type toggle
+  const gtBtn = document.getElementById('btn-builder-grid-type');
+  if (gtBtn) gtBtn.addEventListener('click', () => {
+    if (!builderCanvas) return;
+    const next = builderCanvas.gridType === 'square' ? 'hex' : 'square';
+    builderCanvas.setGridType(next);
+    gtBtn.textContent = next === 'hex' ? '⬡ Hex' : '▢ Square';
+    // Save grid_type to current floor on server
+    if (currentFloorId) {
+      api.patch(`/api/map-builder/floors/${currentFloorId}`, { grid_type: next }).catch(() => {});
+      const f = builderFloors.find(x => x.id === currentFloorId);
+      if (f) f.grid_type = next;
+    }
+  });
+  // Tab switch hook
+  $$('.gm-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      if (tab.dataset.tab === 'builder') {
+        if (!builderCanvas) {
+          const el = document.getElementById('builder-canvas');
+          if (el) { builderCanvas = new BuilderCanvas(el); loadBuilder(); }
+        } else { builderCanvas._resize(); }
+      }
+    });
+  });
+});
+
+// Builder WS handlers
+ws.on('map.floor_added', d => { if (!builderFloors.find(f => f.id === d.id)) { builderFloors.push(d); renderBuilderFloorSelect(); } });
+ws.on('map.floor_updated', d => { const i = builderFloors.findIndex(f => f.id === d.id); if (i >= 0) builderFloors[i] = d; renderBuilderFloorSelect(); });
+ws.on('map.floor_deleted', d => { builderFloors = builderFloors.filter(f => f.id !== d.floor_id); if (currentFloorId === d.floor_id) { currentFloorId = builderFloors[0]?.id || null; if (currentFloorId) loadBuilderFloor(currentFloorId); } renderBuilderFloorSelect(); });
+ws.on('map.floor_activated', d => {
+  builderFloors.forEach(f => f.is_active = (f.id === d.floor_id));
+  renderBuilderFloorSelect();
+  showToast(`Floor activated: ${d.name || ''}`);
+  // Refresh GM Map tab and players so the new floor tiles appear
+  if (typeof loadMapState === 'function') loadMapState();
+});
+ws.on('map.tiles_updated', d => { const f = builderFloors.find(x => x.id === d.floor_id); if (f && currentFloorId === d.floor_id) loadBuilderFloor(d.floor_id); });
+ws.on('map.trap_added', d => { addLog('gm.map', `Trap added: ${d.name}`); });
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 refreshChars();
@@ -6994,4 +7632,6 @@ loadAnnouncements();
 loadSessionTimer();
 loadGmAbilities();
 loadWizardPending();
+loadBuilder();
+loadMapState();
 ws.connect();

@@ -22,6 +22,7 @@ from app.routers.combat import router as combat_router
 from app.routers.websocket import router as websocket_router
 from app.routers.initiative import router as initiative_router
 from app.routers.map import router as map_router
+from app.routers.map_builder import router as map_builder_router
 from app.routers.inventory import router as inventory_router
 from app.routers.ai import router as ai_router
 from app.routers.economy import router as economy_router
@@ -90,6 +91,7 @@ app.include_router(memory_router)
 app.include_router(professions_router)
 app.include_router(poisons_router)
 app.include_router(wizard_router)
+app.include_router(map_builder_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
