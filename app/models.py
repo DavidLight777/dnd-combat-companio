@@ -363,6 +363,9 @@ class MapFloor(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     # Optional background tint when no image is loaded
     background_color: Mapped[str] = mapped_column(Text, default="#2a2a2a")
+    # Map boundary in tile cells (GM-defined play area)
+    map_cols: Mapped[int] = mapped_column(Integer, default=40)
+    map_rows: Mapped[int] = mapped_column(Integer, default=30)
 
 
 # ══════════════════════════════════════════════════════════════

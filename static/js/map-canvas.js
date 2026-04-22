@@ -625,10 +625,24 @@ class MapCanvas {
     // Map image
     if (this.mapImage) {
       ctx.drawImage(this.mapImage, 0, 0, this.mapWidth, this.mapHeight);
+    } else if (this.mapWidth > 0 && this.mapHeight > 0) {
+      // No image: paint the bounded play area as a dark canvas
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, this.mapWidth, this.mapHeight);
     }
 
     // Map Builder: render tiles
     this._renderTiles(ctx);
+
+    // Boundary outline when no image (GM-defined play area)
+    if (!this.mapImage && this.mapWidth > 0 && this.mapHeight > 0) {
+      ctx.save();
+      ctx.strokeStyle = '#ffd56a';
+      ctx.setLineDash([8 / this.scale, 6 / this.scale]);
+      ctx.lineWidth = 2 / this.scale;
+      ctx.strokeRect(0, 0, this.mapWidth, this.mapHeight);
+      ctx.restore();
+    }
 
     // Grid
     //
@@ -688,6 +702,9 @@ class MapCanvas {
     // markers so walkable highlights / selection rings sit on top.
     for (const o of this.mapObjects) {
       if (!o.visible_to_players && this.role !== 'gm') continue;
+      // builder_wall mirrors a Builder tile already rendered by
+      // _renderTiles — skip to avoid double-drawing.
+      if (o.kind === 'builder_wall') continue;
       this._renderMapObject(ctx, o);
     }
 
@@ -934,6 +951,17 @@ class MapCanvas {
     this.scale = Math.min(scaleX, scaleY) * 0.95;
     this.offsetX = (this.canvas.width - this.mapWidth * this.scale) / 2;
     this.offsetY = (this.canvas.height - this.mapHeight * this.scale) / 2;
+    this._lastFitKey = `${this.mapWidth}x${this.mapHeight}x${this._currentImageUrl || ''}`;
+  }
+
+  // Fit only if the map dimensions or loaded image actually changed
+  // since the last fit (or if we've never fitted). Prevents camera
+  // jumps on every state refresh triggered by token moves.
+  _autoFitIfChanged() {
+    if (!this.mapWidth) return;
+    const key = `${this.mapWidth}x${this.mapHeight}x${this._currentImageUrl || ''}`;
+    if (this._lastFitKey === key && this.scale > 0) return;
+    this._fitToView();
   }
 
   centerView() { this._fitToView(); this.render(); }
@@ -1286,6 +1314,26 @@ class MapCanvas {
         ctx.fillStyle = colors[type] || colors.floor;
         _hexPath(c.x, c.y, size - 1);
         ctx.fill();
+        // Walls: bold outline + diagonal hatch so they read as solid
+        // barriers (matches the square-grid wall style).
+        if (type === 'wall') {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+          ctx.lineWidth = 2 / this.scale;
+          _hexPath(c.x, c.y, size - 1);
+          ctx.stroke();
+          _hexPath(c.x, c.y, size - 2);
+          ctx.clip();
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+          ctx.lineWidth = 1 / this.scale;
+          ctx.beginPath();
+          for (let off = -size * 2; off < size * 2; off += 6) {
+            ctx.moveTo(c.x + off - size, c.y - size);
+            ctx.lineTo(c.x + off + size, c.y + size);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
         if (icons[type]) {
           ctx.font = `${gs * 0.4}px sans-serif`;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1312,6 +1360,23 @@ class MapCanvas {
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
         ctx.fillStyle = colors[type] || colors.floor;
         ctx.fillRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
+        // Walls get a solid outline + diagonal hatch so they're
+        // unmistakably solid barriers (matches Map wall tool style).
+        if (type === 'wall') {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+          ctx.lineWidth = 2 / this.scale;
+          ctx.strokeRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+          ctx.lineWidth = 1 / this.scale;
+          for (let off = -gs; off < gs; off += 8) {
+            ctx.moveTo(px + off,       py);
+            ctx.lineTo(px + off + gs,  py + gs);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
         if (icons[type]) {
           ctx.font = `${gs * 0.55}px sans-serif`;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

@@ -1607,14 +1607,16 @@ async function _applyMapStateTo(canvas, state) {
     canvas.setFog(state.fog_enabled, state.revealed_cells);
   } else {
     // No map yet — still render an empty grid so the player sees the
-    // spatial surface. Use floor tile_size if available.
+    // spatial surface. Use floor tile_size / bounds if available.
     const tsz = state.active_floor_tile_size || 50;
+    const cols = state.active_floor_cols || 40;
+    const rows = state.active_floor_rows || 30;
     canvas.mapImage = null;
-    canvas.mapWidth = 2000;
-    canvas.mapHeight = 2000;
+    canvas.mapWidth  = cols * tsz;
+    canvas.mapHeight = rows * tsz;
     canvas.setGrid(tsz, true, state.active_floor_grid_type || 'square');
     canvas.setFog(false, []);
-    canvas._fitToView();
+    canvas._autoFitIfChanged();
   }
   canvas.setTokens(state.tokens || []);
   canvas.setDrawings(state._drawings || canvas.drawings || []);
@@ -1628,10 +1630,6 @@ async function _applyMapStateTo(canvas, state) {
   // Map Builder: tiles + traps from state (if loaded via /api/map/{code})
   canvas.setTiles(state.active_floor_tiles || {}, state.active_floor_grid_type || 'square');
   canvas.setTraps((state._traps || []).filter(t => !t.is_hidden));
-  // Auto-fit to tiles if no uploaded map image
-  if (!state.has_map && state.active_floor_tiles && Object.keys(state.active_floor_tiles).length) {
-    _fitPlayerCanvasToTiles(canvas);
-  }
   canvas.render();
 }
 

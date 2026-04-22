@@ -106,6 +106,41 @@ async def upload_map(session_code: str, file: UploadFile = File(...), db: AsyncS
     return {"image_url": image_url, "width": w, "height": h}
 
 
+# ── Delete uploaded map ──────────────────────────────────────
+@router.delete("/{session_code}/upload")
+async def delete_map(session_code: str, db: AsyncSession = Depends(get_session)):
+    """Remove the uploaded map image for a session.
+
+    Keeps Map Builder floors, tokens, and overlays intact so the GM
+    can swap a background image out without losing any layout work.
+    """
+    result = await db.execute(select(Session).where(Session.code == session_code))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    md = (await db.execute(
+        select(MapData).where(MapData.session_id == session.id)
+    )).scalar_one_or_none()
+    if not md:
+        return {"ok": True, "removed": False}
+
+    # Best-effort file removal (missing file is not an error).
+    try:
+        if md.image_path and os.path.exists(md.image_path):
+            os.remove(md.image_path)
+    except Exception:
+        pass
+
+    await db.delete(md)
+    await db.commit()
+    try:
+        await manager.broadcast_to_session(session_code, "map.updated", {"image_url": None})
+    except Exception:
+        pass
+    return {"ok": True, "removed": True}
+
+
 def _seed_row(chars: list, y_norm: float) -> None:
     """Spread `chars` evenly along a row at y=`y_norm` (normalised 0..1)."""
     n = len(chars)
@@ -212,38 +247,38 @@ async def _path_is_blocked(
     db: AsyncSession,
 ) -> bool:
     """Return True if the straight line (x0,y0)->(x1,y1) crosses any
-    `blocks_movement=True` MapObject for this session.
+    `blocks_movement=True` MapObject rectangle.
 
-    We sample the line with ~12 steps per cell-distance (enough density
-    that a 1-cell move still gets at least one mid-point sample) and
-    declare "blocked" on the first point-in-rect hit. Errors short-
-    circuit to `False` so a busted overlay query never freezes the
-    player — the budget check above is still doing useful work.
+    Coordinates are normalised (0..1) over the play area. Builder wall
+    / pit tiles (for both square and hex grids) are automatically
+    synced into MapObject rectangles by
+    `map_builder._sync_builder_walls_to_objects`, so this single check
+    covers both wall tools.
     """
     try:
+        # 1) Classic MapObject rectangles
         rows = (await db.execute(
             select(MapObject)
             .where(MapObject.session_id == session_id)
             .where(MapObject.blocks_movement == True)  # noqa: E712
         )).scalars().all()
-        if not rows:
-            return False
-        # Reject the destination outright, then sample the segment.
-        def _in_any_rect(nx: float, ny: float) -> bool:
+
+        def _blocked(nx: float, ny: float) -> bool:
             for o in rows:
                 if nx >= o.x1 and nx <= o.x2 and ny >= o.y1 and ny <= o.y2:
                     return True
             return False
-        if _in_any_rect(x1, y1):
+
+        if not rows:
+            return False
+        if _blocked(x1, y1):
             return True
-        # Segment sampling — density proportional to raw normalised
-        # distance, capped at 64 so a huge teleport doesn't chew CPU.
         import math
         dx, dy = x1 - x0, y1 - y0
         steps = max(4, min(64, int(math.hypot(dx, dy) * 200)))
         for i in range(1, steps):
             t = i / steps
-            if _in_any_rect(x0 + dx * t, y0 + dy * t):
+            if _blocked(x0 + dx * t, y0 + dy * t):
                 return True
         return False
     except Exception:
@@ -350,6 +385,8 @@ async def get_map_state(session_code: str, db: AsyncSession = Depends(get_sessio
             out["active_floor_tiles"] = json.loads(active_floor.tiles_json or "{}")
             out["active_floor_grid_type"] = active_floor.grid_type or "square"
             out["active_floor_tile_size"] = active_floor.tile_size or 50
+            out["active_floor_cols"] = getattr(active_floor, "map_cols", 40) or 40
+            out["active_floor_rows"] = getattr(active_floor, "map_rows", 30) or 30
     except Exception:
         pass
     return out
@@ -383,6 +420,10 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
         # Phase 3: combat-turn gating.
         if not await _is_players_turn_or_no_combat(c, db):
             raise HTTPException(403, "Not your turn in combat")
+        # Walls ALWAYS block players, in or out of combat.
+        if await _path_is_blocked(c.session_id, c.map_x or 0.0, c.map_y or 0.0,
+                                  new_x or 0.0, new_y or 0.0, db):
+            raise HTTPException(403, "Path is blocked by a wall")
         # Phase 4: speed budget — only while combat is active. Outside
         # combat we let the player roam freely. The check runs BEFORE
         # persisting the new position so a rejected move has zero side
@@ -412,15 +453,7 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
                         403,
                         f"Out of movement: {remaining:.0f}/{budget} cells left this turn",
                     )
-                # Phase 5: wall collision. Walk the straight line from
-                # (x0,y0) to (x1,y1) in one-cell steps; if any step
-                # lands inside a blocking MapObject rectangle, reject.
-                # We also check the destination explicitly — cheap and
-                # covers the degenerate case where the step count rounds
-                # down to zero.
-                if await _path_is_blocked(c.session_id, c.map_x or 0.0, c.map_y or 0.0,
-                                          new_x or 0.0, new_y or 0.0, db):
-                    raise HTTPException(403, "Path is blocked by a wall")
+                # (Wall collision is enforced unconditionally above.)
     c.map_x = new_x
     c.map_y = new_y
     if caller_token and move_distance_cells > 0:

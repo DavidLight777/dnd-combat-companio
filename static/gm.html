@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p13">
-  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p13">
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p18">
+  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p18">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -358,6 +358,7 @@
           <label class="btn btn-primary btn-sm" style="cursor:pointer">
             📁 Upload Map <input type="file" id="map-upload" accept="image/*" style="display:none">
           </label>
+          <button class="btn btn-danger btn-sm" id="btn-remove-map" title="Remove uploaded map image">🗑 Remove Map</button>
           <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
           <button class="btn btn-ghost btn-xs" id="btn-grid-style" title="Switch between square and hex grid">Style: ▢ Square</button>
           <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
@@ -413,6 +414,11 @@
           <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
           <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:80px">
           <span id="builder-tile-size-val" style="font-size:0.72rem;min-width:28px">50</span>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <label style="font-size:0.72rem;color:var(--text-muted)">Bounds:</label>
+          <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:2px 4px;border-radius:var(--r-xs);font-size:0.75rem">
+          <span style="font-size:0.72rem;color:var(--text-muted)">×</span>
+          <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:2px 4px;border-radius:var(--r-xs);font-size:0.75rem">
           <span style="width:1px;height:18px;background:var(--border)"></span>
           <button class="btn btn-ghost btn-xs builder-brush active" data-brush="floor" title="Floor">⬜</button>
           <button class="btn btn-ghost btn-xs builder-brush" data-brush="wall" title="Wall">🧱</button>
@@ -627,9 +633,9 @@
     </div>
   </div>
 
-  <script src="/static/js/websocket-client.js?v=reworkv3p13"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv3p13"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv3p13"></script>
-  <script src="/static/js/gm-app.js?v=reworkv3p13"></script>
+  <script src="/static/js/websocket-client.js?v=reworkv3p18"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p18"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p18"></script>
+  <script src="/static/js/gm-app.js?v=reworkv3p18"></script>
 </body>
 </html>

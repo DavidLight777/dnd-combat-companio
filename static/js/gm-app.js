@@ -2509,13 +2509,20 @@ async function loadMapState() {
       mapCanvas.setGrid(state.grid_size, state.grid_enabled, state.grid_type || 'square');
       mapCanvas.setFog(state.fog_enabled, state.revealed_cells);
     } else {
-      // No uploaded image — initialise a blank surface so Builder tiles still render.
-      mapCanvas.mapImage = null;
-      mapCanvas.mapWidth = 2000;
-      mapCanvas.mapHeight = 2000;
-      mapCanvas.setGrid(50, true, 'square');
+      // No uploaded image — compute the play-area dimensions from the
+      // active floor (if any) in a SINGLE assignment so `_autoFitIfChanged`
+      // only fires once per refresh. Setting mapWidth/Height twice in one
+      // refresh caused the camera to jump and broke mid-drag selections.
+      const tsz  = state.active_floor_tile_size || state.grid_size || 50;
+      const cols = state.active_floor_cols || 40;
+      const rows = state.active_floor_rows || 30;
+      mapCanvas.mapImage  = null;
+      mapCanvas.gridSize  = tsz;
+      mapCanvas.mapWidth  = cols * tsz;
+      mapCanvas.mapHeight = rows * tsz;
+      mapCanvas.setGrid(tsz, true, state.active_floor_grid_type || state.grid_type || 'square');
       mapCanvas.setFog(false, []);
-      mapCanvas._fitToView();
+      mapCanvas._autoFitIfChanged();
     }
     mapCanvas.setTokens(state.tokens || []);
     // Load overlays
@@ -2529,14 +2536,7 @@ async function loadMapState() {
       if (overlays.traps) mapCanvas.setTraps(overlays.traps);
     } catch {}
     if (state.active_floor_tiles) {
-      // Floor tile size wins if no image was uploaded — tiles align to the grid
-      const tsz = state.active_floor_tile_size || state.grid_size || 50;
-      if (!state.has_map) {
-        mapCanvas.gridSize = tsz;
-      }
       mapCanvas.setTiles(state.active_floor_tiles, state.active_floor_grid_type || 'square');
-      // Fit view to tile bounding box so GM sees what they drew
-      if (!state.has_map && typeof _fitMapToTiles === 'function') _fitMapToTiles(mapCanvas);
     }
     mapGridEnabled = state.grid_enabled;
     mapFogEnabled = state.fog_enabled;
@@ -2576,6 +2576,32 @@ document.addEventListener('change', async e => {
 // (TDZ), which silently disabled every later handler (buttons, tabs,
 // table rendering, etc.). The listener is now registered alongside
 // all the other `ws.on(...)` calls.
+
+// Remove uploaded map
+$('#btn-remove-map')?.addEventListener('click', async () => {
+  if (!confirm('Remove the uploaded map image? (Builder floors, tokens and overlays will be kept.)')) return;
+  try {
+    const res = await fetch(`/api/map/${SESSION_CODE}/upload`, { method: 'DELETE' });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j && j.detail) msg = j.detail; } catch {}
+      showToast('Remove failed: ' + msg);
+      console.error('Remove map failed', res.status, msg);
+      return;
+    }
+    const data = await res.json();
+    if (mapCanvas) {
+      mapCanvas.mapImage = null;
+      mapCanvas._currentImageUrl = null;
+    }
+    await loadMapState();
+    showToast(data.removed ? '🗑 Map removed' : 'No map to remove');
+    addLog('map', 'Map image removed');
+  } catch (e) {
+    showToast('Remove failed: ' + (e.message || 'unknown'));
+    console.error('Remove map exception', e);
+  }
+});
 
 // Grid toggle
 $('#btn-toggle-grid').addEventListener('click', async () => {
@@ -7147,7 +7173,28 @@ class BuilderCanvas {
     this.brush = 'floor'; this.isPainting = false; this.isDragging = false;
     this.dragStart = {x:0,y:0};
     this.gridType = 'square'; // 'square' | 'hex'
+    this.mapCols = 40;
+    this.mapRows = 30;
     this._bindEvents(); this._resize();
+  }
+  setBounds(cols, rows) {
+    this.mapCols = Math.max(1, parseInt(cols) || 40);
+    this.mapRows = Math.max(1, parseInt(rows) || 30);
+    this.render();
+  }
+  _inBounds(key) {
+    if (this.gridType === 'hex') {
+      // Treat the play area as the same pixel rectangle as square bounds
+      // so hex walls paint inside a finite area. A hex is "in-bounds" if
+      // its center falls inside (0,0)–(cols*gs, rows*gs).
+      const [q, r] = key.split(',').map(Number);
+      const p = this._axialToPixel(q, r);
+      const mw = this.mapCols * this.tileSize;
+      const mh = this.mapRows * this.tileSize;
+      return p.x >= 0 && p.x < mw && p.y >= 0 && p.y < mh;
+    }
+    const [c, r] = key.split(',').map(Number);
+    return c >= 0 && r >= 0 && c < this.mapCols && r < this.mapRows;
   }
   _resize() {
     const p = this.canvas.parentElement;
@@ -7236,6 +7283,27 @@ class BuilderCanvas {
           ctx.fillStyle = colors[t] || '#333';
           this._hexPath(ctx, c.x, c.y, size - 1);
           ctx.fill();
+          // Walls get bold outline + hatch so they read as solid barriers
+          // (feature parity with the square-grid wall look).
+          if (t === 'wall') {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            ctx.lineWidth = 2 / this.scale;
+            this._hexPath(ctx, c.x, c.y, size - 1);
+            ctx.stroke();
+            ctx.beginPath();
+            this._hexPath(ctx, c.x, c.y, size - 2);
+            ctx.clip();
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.lineWidth = 1 / this.scale;
+            ctx.beginPath();
+            for (let off = -size * 2; off < size * 2; off += 6) {
+              ctx.moveTo(c.x + off - size,        c.y - size);
+              ctx.lineTo(c.x + off + size,        c.y + size);
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
           if (icons[t]) {
             ctx.font = `${this.tileSize * 0.45}px sans-serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -7251,6 +7319,22 @@ class BuilderCanvas {
           this._hexPath(ctx, c.x, c.y, size);
           ctx.stroke();
         }
+      }
+      // Play-area boundary + outside dim (feature parity with square grid).
+      {
+        const bw = this.mapCols * this.tileSize;
+        const bh = this.mapRows * this.tileSize;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(-10000, -10000, 20000, 10000 - 0); // above
+        ctx.fillRect(-10000, bh,      20000, 10000);     // below
+        ctx.fillRect(-10000, 0,       10000, bh);        // left
+        ctx.fillRect(bw,     0,       10000, bh);        // right
+        ctx.strokeStyle = '#ffd56a';
+        ctx.setLineDash([8 / this.scale, 6 / this.scale]);
+        ctx.lineWidth = 2 / this.scale;
+        ctx.strokeRect(0, 0, bw, bh);
+        ctx.restore();
       }
     } else {
       // Square grid
@@ -7285,11 +7369,28 @@ class BuilderCanvas {
           ctx.fillText(icons[t], (c + 0.5) * this.tileSize, (r + 0.5) * this.tileSize);
         }
       }
+      // Boundary rectangle (play area)
+      const bw = this.mapCols * this.tileSize;
+      const bh = this.mapRows * this.tileSize;
+      ctx.save();
+      // Dim area outside bounds
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(-10000, -10000, 20000, 10000 - 0);            // above
+      ctx.fillRect(-10000, bh,      20000, 10000);                // below
+      ctx.fillRect(-10000, 0,       10000, bh);                   // left
+      ctx.fillRect(bw,     0,       10000, bh);                   // right
+      // Boundary stroke
+      ctx.strokeStyle = '#ffd56a';
+      ctx.setLineDash([8 / this.scale, 6 / this.scale]);
+      ctx.lineWidth = 2 / this.scale;
+      ctx.strokeRect(0, 0, bw, bh);
+      ctx.restore();
     }
     ctx.restore();
   }
   _paintAt(sx, sy) {
     const tile = this._screenToTile(sx, sy);
+    if (!this._inBounds(tile.key)) return;
     if (this.brush === 'erase') delete this.tiles[tile.key];
     else this.tiles[tile.key] = this.brush;
     this.render();
@@ -7343,6 +7444,7 @@ async function loadBuilderFloor(floorId) {
     try { builderCanvas.setTiles(JSON.parse(f.tiles_json || '{}')); } catch { builderCanvas.setTiles({}); }
     builderCanvas.setGridType(f.grid_type || 'square');
     builderCanvas.tileSize = f.tile_size || 50;
+    builderCanvas.setBounds(f.map_cols || 40, f.map_rows || 30);
     builderCanvas.render();
     builderCanvas._resize();
   }
@@ -7354,6 +7456,10 @@ async function loadBuilderFloor(floorId) {
   const szLbl = document.getElementById('builder-tile-size-val');
   if (szInp) szInp.value = f.tile_size || 50;
   if (szLbl) szLbl.textContent = f.tile_size || 50;
+  const colsInp = document.getElementById('builder-map-cols');
+  const rowsInp = document.getElementById('builder-map-rows');
+  if (colsInp) colsInp.value = f.map_cols || 40;
+  if (rowsInp) rowsInp.value = f.map_rows || 30;
   renderBuilderFloorSelect();
 }
 
@@ -7398,12 +7504,16 @@ async function activateBuilderFloor() {
       await api.patch(`/api/map-builder/floors/${currentFloorId}`, {
         grid_type: builderCanvas.gridType,
         tile_size: builderCanvas.tileSize,
+        map_cols: builderCanvas.mapCols,
+        map_rows: builderCanvas.mapRows,
       }).catch(() => {});
       const ff = builderFloors.find(x => x.id === currentFloorId);
       if (ff) {
         ff.tiles_json = JSON.stringify(builderCanvas.getTiles());
         ff.tile_size = builderCanvas.tileSize;
         ff.grid_type = builderCanvas.gridType;
+        ff.map_cols = builderCanvas.mapCols;
+        ff.map_rows = builderCanvas.mapRows;
       }
     }
     await api.post(`/api/map-builder/floors/${currentFloorId}/activate`);
@@ -7413,7 +7523,7 @@ async function activateBuilderFloor() {
     // Refresh the GM's Map tab immediately and auto-fit
     if (typeof loadMapState === 'function') {
       await loadMapState();
-      if (mapCanvas) _fitMapToTiles(mapCanvas);
+      if (mapCanvas) mapCanvas._fitToView();
     }
   } catch (e) {
     showToast('Activate failed: ' + (e.message || 'unknown error'));
@@ -7463,18 +7573,26 @@ async function saveBuilderTiles() {
     if (!f) return;
   }
   try {
-    await api.patch(`/api/map-builder/floors/${currentFloorId}/tiles`, { tiles: builderCanvas.getTiles() });
-    const f = builderFloors.find(x => x.id === currentFloorId);
-    if (f) {
-      f.tiles_json = JSON.stringify(builderCanvas.getTiles());
-      f.grid_type = builderCanvas.gridType;
-      f.tile_size = builderCanvas.tileSize;
-    }
-    // Also persist grid_type + tile_size
+    // Persist metadata (bounds + tile_size + grid_type) FIRST so that
+    // the subsequent `map.tiles_updated` broadcast sees a fresh local
+    // cache — otherwise the WS handler can "reset" the bounds we just
+    // typed in with the stale floor record.
     await api.patch(`/api/map-builder/floors/${currentFloorId}`, {
       grid_type: builderCanvas.gridType,
       tile_size: builderCanvas.tileSize,
-    }).catch(() => {});
+      map_cols: builderCanvas.mapCols,
+      map_rows: builderCanvas.mapRows,
+    });
+    // Update local cache immediately (don't wait for WS echo).
+    const f = builderFloors.find(x => x.id === currentFloorId);
+    if (f) {
+      f.grid_type = builderCanvas.gridType;
+      f.tile_size = builderCanvas.tileSize;
+      f.map_cols  = builderCanvas.mapCols;
+      f.map_rows  = builderCanvas.mapRows;
+    }
+    await api.patch(`/api/map-builder/floors/${currentFloorId}/tiles`, { tiles: builderCanvas.getTiles() });
+    if (f) f.tiles_json = JSON.stringify(builderCanvas.getTiles());
     showToast('💾 Saved. Click ▶ Activate to show on Map');
   } catch (e) {
     showToast('Save failed: ' + (e.message || 'unknown error'));
@@ -7576,6 +7694,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (szLbl) szLbl.textContent = v;
     if (builderCanvas) { builderCanvas.tileSize = v; builderCanvas.render(); }
   });
+  // Map bounds inputs — live preview + debounced auto-save
+  const colsInp = document.getElementById('builder-map-cols');
+  const rowsInp = document.getElementById('builder-map-rows');
+  let _boundsSaveTimer = null;
+  const applyBounds = () => {
+    if (!builderCanvas) return;
+    const c = Math.max(1, parseInt(colsInp?.value) || 40);
+    const r = Math.max(1, parseInt(rowsInp?.value) || 30);
+    builderCanvas.setBounds(c, r);
+    // Debounce-save to server so bounds persist without pressing Save.
+    if (!currentFloorId) return;
+    clearTimeout(_boundsSaveTimer);
+    _boundsSaveTimer = setTimeout(async () => {
+      try {
+        await api.patch(`/api/map-builder/floors/${currentFloorId}`, {
+          map_cols: c, map_rows: r,
+        });
+        const f = builderFloors.find(x => x.id === currentFloorId);
+        if (f) { f.map_cols = c; f.map_rows = r; }
+      } catch (e) { console.warn('auto-save bounds failed', e); }
+    }, 400);
+  };
+  if (colsInp) colsInp.addEventListener('input', applyBounds);
+  if (rowsInp) rowsInp.addEventListener('input', applyBounds);
   // Grid type toggle
   const gtBtn = document.getElementById('btn-builder-grid-type');
   if (gtBtn) gtBtn.addEventListener('click', () => {
@@ -7614,7 +7756,16 @@ ws.on('map.floor_activated', d => {
   // Refresh GM Map tab and players so the new floor tiles appear
   if (typeof loadMapState === 'function') loadMapState();
 });
-ws.on('map.tiles_updated', d => { const f = builderFloors.find(x => x.id === d.floor_id); if (f && currentFloorId === d.floor_id) loadBuilderFloor(d.floor_id); });
+ws.on('map.tiles_updated', d => {
+  // Only refresh tiles, DON'T reload the whole floor — a reload would
+  // pull stale `map_cols` / `map_rows` / `tile_size` from the local
+  // `builderFloors` cache (which hasn't seen the newer floor PATCH
+  // response yet) and visually "reset" the bounds the user just set.
+  if (!d || currentFloorId !== d.floor_id || !builderCanvas) return;
+  const f = builderFloors.find(x => x.id === d.floor_id);
+  if (!f) return;
+  try { builderCanvas.setTiles(JSON.parse(f.tiles_json || '{}')); } catch {}
+});
 ws.on('map.trap_added', d => { addLog('gm.map', `Trap added: ${d.name}`); });
 
 // ══════════════════════════════════════════════════════════════
