@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Combat Companion — Game Master</title>
+  <style>
+/* inlined from base.css */
+/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
+   COMBAT COMPANION вЂ” Base Theme
+   в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300..600&display=swap');
+
+:root {
+  --bg-base:        #0a0908;
+  --bg-surface:     #131110;
+  --bg-surface-2:   #1a1815;
+  --bg-surface-3:   #221f1b;
+  --bg-input:       #1e1b17;
+
+  --border:         rgba(220, 180, 100, 0.10);
+  --border-active:  rgba(220, 180, 100, 0.30);
+
+  --text-primary:   #e2d5c0;
+  --text-muted:     #8a7d6e;
+  --text-faint:     #4a4338;
+
+  --accent:         #c08a2a;
+  --accent-hover:   #d4a040;
+  --accent-glow:    rgba(192, 138, 42, 0.20);
+  --accent-red:     #b84040;
+  --accent-green:   #4a9c5d;
+  --accent-blue:    #4a7fc0;
+  --accent-purple:  #8a4abf;
+
+  --hp-high:   #4a9c5d;
+  --hp-mid:    #c09a2a;
+  --hp-low:    #b84040;
+
+  --rarity-common:    #9ca3af;
+  --rarity-uncommon:  #4a9c5d;
+  --rarity-rare:      #4a7fc0;
+  --rarity-epic:      #8a4abf;
+  --rarity-legendary: #c08a2a;
+  --rarity-mythic:    #e04080;
+  --rarity-divine:    #f0e060;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --t-fast: 120ms ease;
+  --t-normal: 200ms ease;
+
+  --font-display: 'Cinzel', serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+h1 { font-size: 1.8rem; letter-spacing: 0.04em; }
+h2 { font-size: 1rem; letter-spacing: 0.03em; text-transform: uppercase; }
+h3 { font-size: 0.9rem; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+/* в”Ђв”Ђ Scrollbar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
+/* в”Ђв”Ђ Buttons в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  border: none; border-radius: var(--r-md); cursor: pointer;
+  padding: 10px 20px; transition: all var(--t-normal);
+}
+.btn-primary {
+  background: var(--accent); color: #0a0908;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary {
+  background: var(--bg-surface-3); color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { border-color: var(--border-active); }
+.btn-danger { background: var(--accent-red); color: white; }
+.btn-danger:hover { opacity: 0.85; }
+.btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+.btn-ghost {
+  background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+}
+.btn-ghost:hover { color: var(--text-primary); border-color: var(--border-active); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* в”Ђв”Ђ Inputs в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+input, textarea, select {
+  color: var(--text-primary) !important;
+}
+input[type="text"], input[type="number"], input[type="password"],
+input[type="email"], input[type="search"], input:not([type]),
+textarea, select {
+  font-family: var(--font-body) !important;
+  font-size: 0.85rem;
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid #3a3d4a !important;
+  border-radius: var(--r-sm);
+  -webkit-text-fill-color: var(--text-primary);
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color var(--t-fast);
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint) !important; }
+select option { background-color: var(--bg-surface) !important; color: var(--text-primary) !important; }
+input[type="number"] { width: 70px; font-variant-numeric: tabular-nums; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { filter: invert(0.7); }
+textarea { resize: vertical; width: 100%; }
+/* Modal inputs вЂ” slightly darker to distinguish against modal surface */
+.modal-content input, .modal-content textarea, .modal-content select,
+.modal input, .modal textarea, .modal select {
+  background-color: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid #3a3d4a !important;
+}
+/* Checkbox/radio вЂ” keep native but tint accent */
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--accent);
+  border: none !important;
+  background: initial !important;
+  padding: 0 !important;
+}
+
+/* в”Ђв”Ђ Cards / Panels в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px;
+}
+
+/* в”Ђв”Ђ Status dot в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.status-dot {
+  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+}
+.status-dot.connected { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+.status-dot.disconnected { background: var(--accent-red); }
+
+/* в”Ђв”Ђ HP Bar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.hp-bar-container {
+  width: 100%; height: 8px; background: var(--bg-surface-3);
+  border-radius: 4px; overflow: hidden;
+}
+.hp-bar {
+  height: 100%; border-radius: 4px;
+  transition: width 300ms ease, background 300ms ease;
+}
+
+/* в”Ђв”Ђ FIX 7: Universal Modal Header & Dismiss Button в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header .modal-title {
+  margin: 0; font-size: 1rem; color: var(--accent);
+  font-family: var(--font-display); font-weight: 600;
+}
+.modal-close-btn {
+  margin-left: auto; font-size: 1rem; line-height: 1;
+  padding: 4px 8px; opacity: 0.7; cursor: pointer;
+  transition: all var(--t-fast);
+}
+.modal-close-btn:hover { opacity: 1; color: var(--accent-red); }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* в”Ђв”Ђ Toast в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--bg-surface-2); border: 1px solid var(--border-active);
+  color: var(--text-primary); padding: 12px 20px;
+  border-radius: var(--r-md); font-size: 0.85rem;
+  animation: slideUp 0.3s ease-out;
+  z-index: 9999;
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* в”Ђв”Ђ WS Status в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.ws-status {
+  display: flex; align-items: center; gap: 6px; font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* в”Ђв”Ђ Event Log в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.event-log {
+  max-height: 300px; overflow-y: auto;
+  font-size: 0.8rem; font-family: var(--font-body);
+}
+.event-log .entry {
+  padding: 4px 8px; border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.event-log .entry .time { color: var(--text-faint); margin-right: 6px; }
+.event-log .entry .event-name { color: var(--accent); font-weight: 500; }
+
+/* в”Ђв”Ђ Layout Helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.gap-sm { gap: 8px; }
+.gap-md { gap: 16px; }
+.gap-lg { gap: 24px; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.text-accent { color: var(--accent); }
+.mt-sm { margin-top: 8px; }
+.mt-md { margin-top: 16px; }
+.mb-md { margin-bottom: 16px; }
+.hidden { display: none !important; }
+
+/* в”Ђв”Ђ Visual Polish вЂ” Animations в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.hp-bar { transition: width 0.6s ease, background 0.4s ease; }
+
+@keyframes damageFlash {
+  0% { box-shadow: inset 0 0 0 2px var(--accent-red); }
+  50% { box-shadow: inset 0 0 20px 2px rgba(184,64,64,0.4); }
+  100% { box-shadow: none; }
+}
+.damage-flash { animation: damageFlash 0.5s ease; }
+
+@keyframes healFlash {
+  0% { box-shadow: inset 0 0 0 2px var(--accent-green); }
+  50% { box-shadow: inset 0 0 20px 2px rgba(74,156,93,0.4); }
+  100% { box-shadow: none; }
+}
+.heal-flash { animation: healFlash 0.5s ease; }
+
+@keyframes dicePopIn {
+  0% { transform: scale(0.5) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.dice-pop { animation: dicePopIn 0.35s ease-out; }
+
+@keyframes skeletonShimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-surface-2) 25%, var(--bg-surface-3) 50%, var(--bg-surface-2) 75%);
+  background-size: 400px 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: var(--r-sm);
+}
+
+/* в”Ђв”Ђ Dead indicator в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.char-dead { opacity: 0.5; filter: grayscale(0.5); }
+.skull-icon::before { content: "рџ’Ђ "; }
+
+/* в”Ђв”Ђ Settings link in lobby в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.settings-link { color: var(--text-muted); text-decoration: none; font-size: 0.8rem; }
+.settings-link:hover { color: var(--accent); }
+
+/* в”Ђв”Ђ Rarity Badges & Colors в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.rarity-common    { color: var(--rarity-common); }
+.rarity-uncommon  { color: var(--rarity-uncommon); }
+.rarity-rare      { color: var(--rarity-rare); }
+.rarity-epic      { color: var(--rarity-epic); }
+.rarity-legendary { color: var(--rarity-legendary); }
+.rarity-mythic    { color: var(--rarity-mythic); }
+.rarity-divine    { color: var(--rarity-divine); }
+
+.rarity-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 3px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rarity-badge.common    { background: rgba(156,163,175,0.15); color: var(--rarity-common); }
+.rarity-badge.uncommon  { background: rgba(74,156,93,0.15); color: var(--rarity-uncommon); }
+.rarity-badge.rare      { background: rgba(74,127,192,0.15); color: var(--rarity-rare); }
+.rarity-badge.epic      { background: rgba(138,74,191,0.15); color: var(--rarity-epic); }
+
+/* Rework v2: shared rarity chip (lobby / player / GM) */
+.rarity-chip {
+  display: inline-block; padding: 1px 6px; border-radius: 8px;
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.rarity-chip.rarity-common    { background: rgba(170,170,170,0.2); color: #bbb; }
+.rarity-chip.rarity-uncommon  { background: rgba(30,200,80,0.2);  color: #5fe080; }
+.rarity-chip.rarity-rare      { background: rgba(50,130,240,0.2); color: #73a8ff; }
+.rarity-chip.rarity-epic      { background: rgba(170,90,220,0.25);color: #d088ff; }
+.rarity-chip.rarity-legendary { background: rgba(230,170,30,0.25);color: #ffc94a; }
+.rarity-badge.legendary { background: rgba(192,138,42,0.15); color: var(--rarity-legendary); }
+.rarity-badge.mythic    { background: rgba(224,64,128,0.15); color: var(--rarity-mythic); }
+.rarity-badge.divine    {
+  background: linear-gradient(135deg, rgba(240,224,96,0.20), rgba(255,200,60,0.30));
+  color: var(--rarity-divine);
+  animation: divineShimmer 2s ease-in-out infinite;
+}
+
+@keyframes divineShimmer {
+  0%, 100% { box-shadow: 0 0 4px rgba(240,224,96,0.3); }
+  50% { box-shadow: 0 0 12px rgba(240,224,96,0.6), 0 0 24px rgba(255,200,60,0.2); }
+}
+
+.item-card-divine {
+  animation: divineShimmer 2s ease-in-out infinite;
+  border-color: rgba(240,224,96,0.3);
+}
+
+/* в”Ђв”Ђ Advantage / Disadvantage Toggle в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.adv-toggle {
+  display: inline-flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); font-size: 0.68rem; height: 26px;
+}
+.adv-toggle button {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 8px; cursor: pointer; font-size: 0.68rem; font-family: var(--font-body);
+  transition: all .15s ease;
+}
+.adv-toggle button:hover { background: var(--bg-surface-3); }
+.adv-toggle button.active { font-weight: 600; }
+.adv-toggle button[data-mode="normal"].active { background: var(--bg-surface-3); color: var(--text-primary); }
+.adv-toggle button[data-mode="advantage"].active { background: rgba(80,200,120,0.20); color: #50c878; }
+.adv-toggle button[data-mode="disadvantage"].active { background: rgba(220,80,80,0.20); color: #dc5050; }
+.adv-badge { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.adv-badge.advantage { background: rgba(80,200,120,0.15); color: #50c878; }
+.adv-badge.disadvantage { background: rgba(220,80,80,0.15); color: #dc5050; }
+
+/* --------------------------------------------------------------
+   Combat FX — screen-shake keyframes used by MapCanvas.playFx()
+   when a critical hit or impact lands. Applied by playFx() to the
+   closest positioned ancestor of the canvas (usually .battle-panel)
+   so the rest of the UI stays calm.
+   -------------------------------------------------------------- */
+@keyframes fxShakeSoft {
+  0%   { transform: translate3d(0, 0, 0); }
+  20%  { transform: translate3d(-3px, 2px, 0); }
+  40%  { transform: translate3d(4px, -2px, 0); }
+  60%  { transform: translate3d(-2px, 3px, 0); }
+  80%  { transform: translate3d(2px, -1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes fxShakeHard {
+  0%   { transform: translate3d(0, 0, 0); }
+  10%  { transform: translate3d(-6px, 4px, 0); }
+  25%  { transform: translate3d(7px, -5px, 0); }
+  40%  { transform: translate3d(-5px, 6px, 0); }
+  55%  { transform: translate3d(6px, -3px, 0); }
+  70%  { transform: translate3d(-4px, 4px, 0); }
+  85%  { transform: translate3d(3px, -2px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+.fx-shake-soft { animation: fxShakeSoft 0.32s cubic-bezier(.36,.07,.19,.97) both; }
+.fx-shake-hard { animation: fxShakeHard 0.52s cubic-bezier(.36,.07,.19,.97) both; }
+
+
+</style>
+  <style>
+/* inlined from gm.css */
+/* ══════════════════════════════════════════════════════════════
+   GM INTERFACE — Layout & Components
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Top Bar ───────────────────────────────────────────────── */
+.gm-topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: var(--bg-surface);
+  border-bottom: 1px solid var(--border); min-height: 44px;
+}
+.gm-topbar .logo { font-family: var(--font-display); font-size: 1rem; color: var(--accent); flex-shrink: 0; }
+.gm-topbar .spacer { flex: 1; }
+
+.session-code-badge {
+  font-family: var(--font-body); font-size: 1rem; font-weight: 700;
+  color: var(--accent); background: var(--bg-surface-3);
+  padding: 4px 12px; border-radius: var(--r-md); letter-spacing: 0.08em;
+  cursor: pointer; user-select: all; transition: background var(--t-fast);
+}
+.session-code-badge:hover { background: var(--bg-input); }
+
+/* ── Main Layout ───────────────────────────────────────────── */
+.gm-body { display: flex; height: calc(100vh - 44px); overflow: hidden; }
+
+.gm-sidebar {
+  width: 320px; min-width: 280px; background: var(--bg-surface);
+  border-right: 1px solid var(--border); overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.gm-sidebar-header {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  display: flex; align-items: center; gap: 8px;
+}
+.gm-sidebar-header h2 { font-size: 0.8rem; flex: 1; }
+.gm-sidebar-body { flex: 1; overflow-y: auto; padding: 8px; }
+
+.gm-main { flex: 1; overflow-y: auto; padding: 16px; }
+
+@media (max-width: 900px) {
+  .gm-body { flex-direction: column; }
+  .gm-sidebar { width: 100%; min-width: 0; max-height: 45vh; border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* ── Info Grid ─────────────────────────────────────────────── */
+.info-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.info-card {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 12px;
+}
+.info-card .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.info-card .value { font-size: 1.3rem; font-weight: 700; color: var(--accent); margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* ── Character Card (sidebar) ──────────────────────────────── */
+.char-card {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px; margin-bottom: 6px;
+  cursor: pointer; transition: all var(--t-fast);
+}
+.char-card:hover { border-color: var(--border-active); }
+.char-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 8px var(--accent-glow); }
+.char-card.dead { opacity: 0.5; }
+.char-card .cc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.char-card .cc-name { font-weight: 600; font-size: 0.88rem; flex: 1; }
+.char-card .cc-badge {
+  font-size: 0.6rem; padding: 1px 6px; border-radius: 3px;
+  font-weight: 600; text-transform: uppercase;
+}
+.badge-npc { background: var(--accent-purple); color: #fff; }
+.badge-player { background: var(--accent-blue); color: #fff; }
+.badge-dead { background: var(--accent-red); color: #fff; }
+.char-card .cc-info { font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 12px; }
+.char-card .hp-bar-container { margin-top: 6px; }
+
+/* ── Detail Panel (main area) ──────────────────────────────── */
+.detail-panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px;
+}
+.detail-header {
+  padding: 12px 16px; background: var(--bg-surface-2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.detail-header h2 { font-size: 1rem; flex: 1; }
+.detail-body { padding: 14px 16px; }
+
+/* ── Action Buttons Row ────────────────────────────────────── */
+.action-row {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;
+}
+
+/* ── Quick HP Buttons ──────────────────────────────────────── */
+.hp-quick-btns { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.hp-quick-btns button { min-width: 36px; }
+
+/* ── Inline Stat Grid ──────────────────────────────────────── */
+.stats-inline {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px; margin: 12px 0;
+}
+.stat-inline {
+  background: var(--bg-surface-3); border-radius: var(--r-sm);
+  padding: 6px 8px; text-align: center;
+}
+.stat-inline .sl { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; }
+.stat-inline .sv { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ── NPC Create Form ───────────────────────────────────────── */
+.npc-form {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 12px; margin-top: 8px;
+}
+.npc-form .form-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+.npc-form label { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.npc-form input { flex: 1; min-width: 60px; }
+
+/* ── Event Log ─────────────────────────────────────────────── */
+.event-log { max-height: 400px; overflow-y: auto; font-size: 0.78rem; }
+.event-log .entry { padding: 3px 6px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.event-log .entry .time { color: var(--text-faint); margin-right: 4px; font-size: 0.7rem; }
+.event-log .entry .event-name { color: var(--accent); font-weight: 500; }
+
+/* ── Tabs ──────────────────────────────────────────────────── */
+.gm-tabs { display: flex; gap: 2px; padding: 0 16px; background: var(--bg-surface); }
+.gm-tab {
+  padding: 8px 16px; font-size: 0.78rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer; border: none; background: none;
+  border-bottom: 2px solid transparent; transition: all var(--t-fast);
+}
+.gm-tab:hover { color: var(--text-primary); }
+.gm-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+/* Map & Builder tabs are flex columns; override the generic block rule */
+#tab-map.active,
+#tab-builder.active { display: flex !important; }
+
+/* ── Toggle + mod rows (reuse from player.css) ─────────────── */
+.toggle-switch { position: relative; display: inline-block; width: 32px; height: 18px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-switch .slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: var(--bg-surface-3); border-radius: 18px;
+  transition: background var(--t-fast);
+}
+.toggle-switch .slider::before {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  left: 2px; bottom: 2px; background: var(--text-muted);
+  border-radius: 50%; transition: transform var(--t-fast), background var(--t-fast);
+}
+.toggle-switch input:checked + .slider { background: var(--accent); }
+.toggle-switch input:checked + .slider::before { transform: translateX(14px); background: #fff; }
+
+.mod-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.82rem; transition: opacity var(--t-normal);
+}
+.mod-row.inactive { opacity: 0.4; }
+
+.btn-xs { padding: 3px 8px; font-size: 0.72rem; }
+.btn-icon { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.9rem; padding: 2px; }
+.btn-icon:hover { color: var(--text-primary); }
+.btn-icon.danger:hover { color: var(--accent-red); }
+
+.section-divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+/* ── AI Sidebar ────────────────────────────────────────────── */
+.gm-ai-sidebar {
+  width: 300px; min-width: 260px; background: var(--bg-surface);
+  border-left: 1px solid var(--border); display: flex; flex-direction: column;
+  transition: width var(--t-normal), min-width var(--t-normal);
+  overflow: hidden;
+}
+.gm-ai-sidebar.collapsed { width: 40px; min-width: 40px; }
+.gm-ai-sidebar.collapsed #ai-sidebar-content { display: none; }
+.gm-ai-sidebar.collapsed .gm-sidebar-header h2 { display: none; }
+.gm-ai-sidebar.collapsed #btn-ai-collapse { transform: rotate(180deg); }
+
+#ai-messages {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.ai-msg {
+  padding: 6px 8px; border-radius: var(--r-md);
+  line-height: 1.4; word-wrap: break-word;
+  max-width: 95%;
+}
+.ai-msg.user { background: var(--bg-surface-3); align-self: flex-end; color: var(--text-primary); }
+.ai-msg.assistant { background: var(--bg-surface-2); align-self: flex-start; color: var(--text-secondary); border: 1px solid var(--border); }
+.ai-msg.assistant .ai-item-preview { background: var(--bg-surface-3); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px; margin-top: 6px; font-size: 0.75rem; }
+.ai-msg .ai-add-item-btn { margin-top: 4px; }
+
+@media (max-width: 1100px) {
+  .gm-ai-sidebar { width: 240px; min-width: 200px; }
+}
+@media (max-width: 900px) {
+  .gm-ai-sidebar { display: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ITEM DATABASE — Grid, Cards, Modal, Forms
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Item Grid ────────────────────────────────────────────── */
+.item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.item-card {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  position: relative;
+}
+.item-card:hover {
+  border-color: var(--border-active);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.item-card .ic-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.item-card .ic-icon { font-size: 1.2rem; }
+.item-card .ic-name {
+  font-weight: 600; font-size: 0.88rem; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.item-card .ic-desc {
+  font-size: 0.72rem; color: var(--text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; margin-bottom: 6px; line-height: 1.4;
+}
+.item-card .ic-meta {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  font-size: 0.7rem; color: var(--text-muted);
+}
+.item-card .ic-meta .ic-price { color: var(--accent); font-weight: 600; }
+.item-card .ic-weapon {
+  font-size: 0.7rem; color: var(--text-muted);
+  margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border);
+}
+.item-card .ic-bonuses {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;
+}
+.item-card .ic-bonus-tag {
+  font-size: 0.6rem; padding: 1px 5px; border-radius: 3px;
+  background: var(--bg-surface-3); color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* Rarity left border */
+.item-card.rarity-border-common    { border-left: 3px solid var(--rarity-common); }
+.item-card.rarity-border-uncommon  { border-left: 3px solid var(--rarity-uncommon); }
+.item-card.rarity-border-rare      { border-left: 3px solid var(--rarity-rare); }
+.item-card.rarity-border-epic      { border-left: 3px solid var(--rarity-epic); }
+.item-card.rarity-border-legendary { border-left: 3px solid var(--rarity-legendary); }
+.item-card.rarity-border-mythic    { border-left: 3px solid var(--rarity-mythic); }
+.item-card.rarity-border-divine    { border-left: 3px solid var(--rarity-divine); animation: divineShimmer 2s ease-in-out infinite; }
+
+/* ── Modal ────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-active);
+  border-radius: var(--r-lg);
+  width: 90%; max-width: 560px;
+  display: flex; flex-direction: column;
+  max-height: 90vh;
+}
+.modal-header {
+  padding: 12px 16px;
+  background: var(--bg-surface-2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.modal-header h2 { font-size: 1rem; flex: 1; }
+.modal-body { padding: 16px; overflow-y: auto; flex: 1; }
+.modal-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+
+/* ── Form ─────────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label {
+  font-size: 0.72rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%;
+}
+
+/* ── Bonus editor row ─────────────────────────────────────── */
+.bonus-row {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+.bonus-row select, .bonus-row input { font-size: 0.78rem; padding: 4px 6px; }
+.bonus-row .bonus-type-select { min-width: 140px; }
+.bonus-row .bonus-stat-select { min-width: 90px; }
+.bonus-row .bonus-value-input { width: 60px; }
+
+/* ── No items message ─────────────────────────────────────── */
+.item-grid-empty {
+  text-align: center; padding: 40px;
+  color: var(--text-muted); font-size: 0.85rem;
+}
+
+/* ── Copper price display ─────────────────────────────────── */
+.price-display { white-space: nowrap; }
+.price-gold { color: var(--accent); }
+.price-silver { color: #b0b0b0; }
+.price-copper { color: #cd7f32; }
+
+/* ── Map Drawing Toolbar (Stage 9) ───────────────────────── */
+.map-mode-btn.active {
+  background: var(--accent) !important;
+  color: #0a0908 !important;
+  border-color: var(--accent) !important;
+}
+
+/* ── Event Log Filters (Stage 10) ─────────────────────────── */
+.log-filter-btn.active {
+  background: var(--accent) !important;
+  color: #0a0908 !important;
+  border-color: var(--accent) !important;
+}
+.log-entry {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 0.8rem;
+}
+.log-entry .time {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.log-entry .event-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Ability icon picker */
+.ab-icon-pick.active {
+  background: var(--accent) !important;
+  color: #fff;
+  border-radius: var(--r-sm);
+}
+
+/* Phase 7: NPC Tab Bar */
+.npc-tab {
+  padding: 6px 12px; font-size: 0.75rem; font-weight: 600;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-muted); cursor: pointer; white-space: nowrap;
+  transition: all var(--t-fast);
+}
+.npc-tab:hover { color: var(--text); }
+.npc-tab.active {
+  color: var(--accent); border-bottom-color: var(--accent);
+}
+
+/* ── FIX 3: Universal Dice Roll Widget (same as player.css) ──── */
+.dice-roll-widget {
+  display: flex; flex-direction: column; gap: 6px;
+  font-family: var(--font-body);
+}
+.dice-roll-widget .widget-label {
+  font-size: 0.72rem; color: var(--text-muted); font-weight: 600;
+}
+.dice-roll-widget .dice-selector {
+  display: flex; align-items: center; gap: 6px;
+}
+.dice-roll-widget .dice-count {
+  width: 54px !important; text-align: center;
+}
+.dice-roll-widget .dice-type { min-width: 60px; }
+.dice-roll-widget .adv-toggle {
+  display: flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); height: 26px;
+}
+.dice-roll-widget .adv-toggle .adv-btn {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 10px; cursor: pointer; font-size: 0.7rem;
+  transition: all .15s ease; font-weight: 500;
+}
+.dice-roll-widget .adv-btn:hover { background: var(--bg-surface-3); }
+.dice-roll-widget .adv-btn.active { font-weight: 700; }
+.dice-roll-widget .adv-btn.active[data-mode="normal"] {
+  background: var(--bg-surface-3); color: var(--text-primary);
+}
+.dice-roll-widget .adv-btn.active[data-mode="advantage"] {
+  background: rgba(74,156,93,0.20); color: var(--accent-green);
+}
+.dice-roll-widget .adv-btn.active[data-mode="disadvantage"] {
+  background: rgba(184,64,64,0.20); color: var(--accent-red);
+}
+.dice-roll-widget .roll-btn { align-self: flex-start; margin-top: 2px; }
+.dice-roll-widget .roll-result {
+  background: var(--bg-surface-2); border-radius: var(--r-sm);
+  padding: 6px 10px; border-left: 3px solid var(--accent); margin-top: 4px;
+}
+.dice-roll-widget .roll-result.hidden { display: none; }
+.dice-roll-widget .result-total {
+  font-size: 1.1rem; font-weight: 700; color: var(--accent);
+}
+.dice-roll-widget .result-breakdown {
+  font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;
+}
+
+</style>
+</head>
+<body>
+  <!-- ── TOP BAR ──────────────────────────────────────────── -->
+  <div class="gm-topbar">
+    <span class="logo">⚔️ Game Master</span>
+    <span class="spacer"></span>
+    <div class="ws-status">
+      <span class="status-dot" id="ws-dot"></span>
+      <span id="ws-label">connecting...</span>
+    </div>
+    <span style="font-size:0.82rem">Players: <strong id="player-count">0</strong></span>
+    <span style="font-size:0.82rem;display:flex;align-items:center;gap:4px" id="session-timer-area">
+      <span>⏱</span><span id="session-timer-display">0:00:00</span>
+      <button class="btn btn-ghost btn-xs" id="btn-timer-toggle" title="Start/Pause Timer">▶</button>
+    </span>
+    <span class="session-code-badge" id="session-code" title="Click to copy code">----</span>
+    <!-- Rework v2: pending wizard-item approvals badge -->
+    <button class="btn btn-ghost btn-sm" id="btn-wizard-pending" title="Pending starting-item approvals" style="display:none;gap:4px">
+      <span>🎁</span><span>Approvals</span>
+      <span id="wizard-pending-count" style="background:var(--accent);color:#000;padding:0 6px;border-radius:8px;font-weight:700;font-size:0.72rem">0</span>
+    </button>
+    <!-- Rework v3: Full Rest button (restores HP, mana, cooldowns, uses for all living players) -->
+    <button class="btn btn-ghost btn-sm" id="btn-full-rest" title="Full Rest — restore HP, mana, cooldowns, and uses for all living players" style="gap:4px">
+      <span>🌙</span><span>Full Rest</span>
+    </button>
+    <button class="btn btn-ghost btn-sm" id="btn-end-session">End Session</button>
+  </div>
+
+  <div class="gm-body">
+    <!-- ── SIDEBAR: Party List ────────────────────────────── -->
+    <div class="gm-sidebar">
+      <div class="gm-sidebar-header">
+        <h2>Party & NPCs</h2>
+        <button class="btn btn-ghost btn-xs" id="btn-show-npc-form">+ NPC</button>
+      </div>
+      <div class="gm-sidebar-body">
+        <div id="npc-form-area" class="hidden"></div>
+        <div id="party-list"></div>
+      </div>
+
+      <!-- FIX: GM At The Table Control Panel -->
+      <div class="gm-sidebar-header" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <h2>🗺️ At The Table</h2>
+      </div>
+      <div class="gm-sidebar-body" id="gm-table-controls" style="font-size:0.78rem">
+        <div style="color:var(--text-muted);padding:6px">Loading NPCs...</div>
+      </div>
+    </div>
+
+    <!-- ── MAIN AREA ──────────────────────────────────────── -->
+    <div class="gm-main">
+      <!-- Info cards -->
+      <div class="info-grid">
+        <div class="info-card"><div class="label">Session</div><div class="value" id="session-name">—</div></div>
+        <div class="info-card"><div class="label">Status</div><div class="value" id="session-status">waiting</div></div>
+        <div class="info-card"><div class="label">Turn</div><div class="value" id="session-turn">0</div></div>
+        <div class="info-card"><div class="label">Connected</div><div class="value" id="connected-count">0</div></div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="gm-tabs">
+        <button class="gm-tab active" data-tab="detail">Character Detail</button>
+        <button class="gm-tab" data-tab="items">Item Database</button>
+        <button class="gm-tab" data-tab="combat">⚔️ Combat</button>
+        <button class="gm-tab" data-tab="initiative">Initiative</button>
+        <button class="gm-tab" data-tab="map">Map</button>
+        <button class="gm-tab" data-tab="builder">🏗️ Builder</button>
+        <button class="gm-tab" data-tab="actions">Quick Actions</button>
+        <button class="gm-tab" data-tab="log">Event Log</button>
+        <button class="gm-tab" data-tab="races-classes">Races & Professions</button>
+        <button class="gm-tab" data-tab="npc-library">NPC Library</button>
+        <button class="gm-tab" data-tab="quests">📜 Quests</button>
+        <button class="gm-tab" data-tab="announcements">📢 Board</button>
+        <button class="gm-tab" data-tab="abilities">✨ Abilities</button>
+      </div>
+
+      <!-- TAB: Abilities (Phase 6 + Rework v2 starting-pool filters) -->
+      <div class="tab-content" id="tab-abilities" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>✨ Ability Manager</h2>
+            <button class="btn btn-primary btn-sm" id="btn-new-ability">+ New Ability</button>
+          </div>
+          <div class="detail-body">
+            <!-- Rework v2 filter bar -->
+            <div id="ab-filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0 10px;border-bottom:1px dashed var(--border);margin-bottom:10px">
+              <span style="font-size:0.72rem;color:var(--text-muted)">Filter:</span>
+              <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+                <input type="checkbox" id="ab-filter-pool"> 🎁 Starting Pool only
+              </label>
+              <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+                Rarity:
+                <select id="ab-filter-rarity" style="font-size:0.75rem">
+                  <option value="">any</option>
+                  <option value="common">common</option>
+                  <option value="uncommon">uncommon</option>
+                  <option value="rare">rare</option>
+                  <option value="epic">epic</option>
+                  <option value="legendary">legendary</option>
+                </select>
+              </label>
+              <span id="ab-pool-summary" style="font-size:0.7rem;color:var(--text-muted);margin-left:auto"></span>
+            </div>
+            <div id="gm-abilities-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Character Detail -->
+      <div class="tab-content active" id="tab-detail">
+        <div id="char-detail" style="padding:16px">
+          <p class="text-muted">Select a character from the sidebar to view details.</p>
+        </div>
+      </div>
+
+      <!-- TAB: Item Database -->
+      <div class="tab-content" id="tab-items" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>🗄️ Item Database</h2>
+            <button class="btn btn-primary btn-sm" id="btn-new-item">+ New Item</button>
+            <button class="btn btn-ghost btn-sm" id="btn-new-category">+ Category</button>
+          </div>
+          <div class="detail-body">
+            <!-- Filters -->
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+              <input type="text" id="item-search" placeholder="Search items..." style="flex:1;min-width:150px">
+              <select id="item-filter-category" style="min-width:100px"><option value="">All Categories</option></select>
+              <select id="item-filter-rarity" style="min-width:100px">
+                <option value="">All Rarities</option>
+                <option value="common">Common</option>
+                <option value="uncommon">Uncommon</option>
+                <option value="rare">Rare</option>
+                <option value="epic">Epic</option>
+                <option value="legendary">Legendary</option>
+                <option value="mythic">Mythic</option>
+                <option value="divine">Divine</option>
+              </select>
+            </div>
+            <!-- Item Grid -->
+            <div id="item-grid" class="item-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item Editor Modal -->
+      <div id="item-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="item-modal-title">New Item</h2>
+            <button class="btn-icon" id="btn-close-item-modal">✕</button>
+          </div>
+          <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="item-ed-name" placeholder="Item name">
+              </div>
+              <div class="form-group">
+                <label>Category</label>
+                <select id="item-ed-category"></select>
+              </div>
+              <div class="form-group">
+                <label>Rarity</label>
+                <select id="item-ed-rarity">
+                  <option value="common">Common</option>
+                  <option value="uncommon">Uncommon</option>
+                  <option value="rare">Rare</option>
+                  <option value="epic">Epic</option>
+                  <option value="legendary">Legendary</option>
+                  <option value="mythic">Mythic</option>
+                  <option value="divine">Divine</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Price</label>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <span style="font-size:0.75rem;color:#e0c97f">P</span><input type="number" id="item-ed-price-p" value="0" min="0" style="width:52px">
+                  <span style="font-size:0.75rem;color:#fbbf24">G</span><input type="number" id="item-ed-price-g" value="0" min="0" style="width:52px">
+                  <span style="font-size:0.75rem;color:#94a3b8">S</span><input type="number" id="item-ed-price-s" value="0" min="0" style="width:52px">
+                  <span style="font-size:0.75rem;color:#b87333">B</span><input type="number" id="item-ed-price-b" value="0" min="0" style="width:52px">
+                </div>
+                <input type="hidden" id="item-ed-price" value="0">
+              </div>
+              <div class="form-group" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <label><input type="checkbox" id="item-ed-equippable"> Equippable</label>
+                <label><input type="checkbox" id="item-ed-consumable"> Consumable</label>
+                <!-- FIX 6: Potion toggle -->
+                <label><input type="checkbox" id="item-ed-is-potion"> 🧪 This is a potion</label>
+              </div>
+              <div class="form-group">
+                <label>Mana Cost to use (0 = free)</label>
+                <input type="number" id="item-ed-mana-cost" value="0" min="0" style="width:80px">
+              </div>
+            </div>
+
+            <!-- FIX 6: Potion Identity (toggled) -->
+            <div id="potion-identity-section" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg-surface-3);border-radius:var(--r-md);border-left:3px solid #a855f7">
+              <h3 style="font-size:0.85rem;margin-bottom:8px;display:flex;align-items:center;gap:6px">🧪 Potion Identity</h3>
+              <div class="form-group" style="margin-bottom:6px">
+                <label style="font-size:0.78rem">Icon</label>
+                <div id="potion-icon-picker" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+                  <!-- icons injected by JS -->
+                </div>
+                <input type="hidden" id="item-ed-potion-icon" value="🧪">
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:8px">
+              <label>Description</label>
+              <textarea id="item-ed-desc" rows="2" placeholder="Item description..."></textarea>
+            </div>
+            <div class="form-group" style="margin-top:8px">
+              <label>Tags (comma-separated)</label>
+              <input type="text" id="item-ed-tags" placeholder="magic, cursed, two-handed" style="width:100%">
+            </div>
+
+            <!-- Weapon Stats (toggled) -->
+            <div style="margin-top:12px">
+              <label><input type="checkbox" id="item-ed-is-weapon"> This is a weapon</label>
+            </div>
+            <div id="weapon-stats-section" class="hidden" style="margin-top:8px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-md)">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <label style="font-size:0.78rem">Dice:</label>
+                <input type="number" id="item-ed-wdice-count" value="1" min="1" style="width:48px">
+                <span>d</span>
+                <input type="number" id="item-ed-wdice-type" value="6" min="1" style="width:48px">
+                <label style="font-size:0.78rem">Type:</label>
+                <select id="item-ed-wdmg-type">
+                  <option value="physical">Physical</option>
+                  <option value="fire">Fire</option>
+                  <option value="ice">Ice</option>
+                  <option value="lightning">Lightning</option>
+                  <option value="poison">Poison</option>
+                  <option value="magic">Magic</option>
+                  <option value="necrotic">Necrotic</option>
+                  <option value="radiant">Radiant</option>
+                </select>
+                <label style="font-size:0.78rem">Range:</label>
+                <input type="text" id="item-ed-wrange" placeholder="melee" style="width:70px">
+                <!-- Rework v3 Phase 7: grid-cell range. Enforced server-side:
+                     attackers beyond this many cells from the target on the
+                     battle map get a 403 OUT_OF_RANGE toast. -->
+                <label style="font-size:0.78rem" title="Max distance in battle-grid cells">📏 Cells:</label>
+                <input type="number" id="item-ed-wrange-cells" value="1" min="1" max="40" style="width:56px" title="Range in cells (1 = melee adjacent)">
+              </div>
+              <!-- Rework: stat that contributes bonus to hit & damage rolls -->
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+                <label style="font-size:0.78rem">Hit stat:</label>
+                <select id="item-ed-whitstat">
+                  <option value="strength">Strength</option>
+                  <option value="dexterity">Dexterity</option>
+                  <option value="constitution">Constitution</option>
+                  <option value="intelligence">Intelligence</option>
+                  <option value="wisdom">Wisdom</option>
+                  <option value="charisma">Charisma</option>
+                </select>
+                <label style="font-size:0.78rem">Damage stat:</label>
+                <select id="item-ed-wdmgstat">
+                  <option value="strength">Strength</option>
+                  <option value="dexterity">Dexterity</option>
+                  <option value="constitution">Constitution</option>
+                  <option value="intelligence">Intelligence</option>
+                  <option value="wisdom">Wisdom</option>
+                  <option value="charisma">Charisma</option>
+                  <option value="">None</option>
+                </select>
+                <span style="font-size:0.68rem;color:var(--text-muted)">Bonus = stat value directly (e.g. STR 3 → +3).</span>
+              </div>
+              <!-- Rework v3: optional preset damage modes (1h/2h, elemental, etc.). -->
+              <div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                  <label style="font-size:0.78rem;font-weight:600">Damage Modes <span style="font-weight:400;color:var(--text-muted)">(optional presets — players pick one)</span></label>
+                  <button type="button" class="btn btn-ghost btn-xs" id="item-ed-add-dmode">+ Add mode</button>
+                </div>
+                <div id="item-ed-dmodes" style="display:flex;flex-direction:column;gap:4px"></div>
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px">Leave empty to use the fixed Dice above. Otherwise the first mode is the default.</div>
+              </div>
+            </div>
+
+            <!-- Use Effects (for consumables/potions) -->
+            <div id="use-effects-section" class="hidden" style="margin-top:12px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-md)">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <h3 style="font-size:0.85rem;flex:1">🧪 Use Effects</h3>
+                <button class="btn btn-ghost btn-xs" id="btn-add-use-effect">+ Add Effect</button>
+              </div>
+              <div id="use-effect-editor-list"></div>
+            </div>
+
+            <!-- Bonuses -->
+            <div style="margin-top:12px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <h3 style="font-size:0.85rem;flex:1">Bonuses</h3>
+                <button class="btn btn-ghost btn-xs" id="btn-add-bonus">+ Add Bonus</button>
+              </div>
+              <div id="bonus-editor-list"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" id="btn-cancel-item">Cancel</button>
+            <button class="btn btn-danger btn-sm hidden" id="btn-delete-item">Delete Item</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-item">Save Item</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category Modal -->
+      <div id="category-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width:360px">
+          <div class="modal-header">
+            <h2>New Category</h2>
+            <button class="btn-icon" id="btn-close-cat-modal">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group"><label>Name</label><input type="text" id="cat-ed-name" placeholder="Category name"></div>
+            <div class="form-group"><label>Icon (emoji)</label><input type="text" id="cat-ed-icon" value="📦" style="width:60px"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" id="btn-cancel-cat">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-cat">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Combat (Stage 5) -->
+      <div class="tab-content" id="tab-combat" style="padding:16px">
+        <div id="combat-panel"></div>
+      </div>
+
+      <!-- TAB: Initiative -->
+      <div class="tab-content" id="tab-initiative" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>⚔️ Initiative Tracker</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-sm" id="btn-roll-initiative">🎲 Roll All</button>
+              <button class="btn btn-ghost btn-sm" id="btn-start-combat">▶ Start Combat</button>
+              <button class="btn btn-ghost btn-sm" id="btn-next-turn">⏭ Next Turn</button>
+              <button class="btn btn-danger btn-sm" id="btn-end-combat">⏹ End Combat</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div id="initiative-order"><p class="text-muted">Roll initiative to begin.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Map -->
+      <div class="tab-content" id="tab-map" style="padding:0;display:none;flex-direction:column;height:calc(100vh - 160px)">
+        <div style="display:flex;gap:6px;padding:8px 12px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+          <label class="btn btn-primary btn-sm" style="cursor:pointer">
+            📁 Upload Map <input type="file" id="map-upload" accept="image/*" style="display:none">
+          </label>
+          <button class="btn btn-danger btn-sm" id="btn-remove-map" title="Remove uploaded map image">🗑 Remove Map</button>
+          <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
+          <button class="btn btn-ghost btn-xs" id="btn-grid-style" title="Switch between square and hex grid">Style: ▢ Square</button>
+          <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
+          <input type="range" id="grid-size-slider" min="20" max="100" value="50" style="width:80px">
+          <span id="grid-size-label" style="font-size:0.72rem;min-width:28px">50</span>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button class="btn btn-ghost btn-xs" id="btn-toggle-fog">Fog: OFF</button>
+          <button class="btn btn-ghost btn-xs" id="btn-fog-paint">🖌️ Reveal</button>
+          <button class="btn btn-ghost btn-xs" id="btn-fog-reveal-all">Reveal All</button>
+          <button class="btn btn-ghost btn-xs" id="btn-fog-reset">Reset Fog</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button class="btn btn-ghost btn-xs" id="btn-center-map">🎯 Center</button>
+        </div>
+        <!-- Drawing Toolbar (Stage 9) -->
+        <div id="map-draw-toolbar" style="display:flex;gap:4px;padding:4px 12px;background:var(--bg-surface);border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-xs map-mode-btn active" data-mode="" title="Select/Pan">🖱️</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="freehand" title="Freehand Draw">✏️</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="rectangle" title="Rectangle">▭</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="circle" title="Circle">○</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="line" title="Line">╱</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="arrow" title="Arrow">→</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="marker" title="Place Marker">📌</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="erase" title="Erase">🗑️</button>
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="measure" title="Measure Distance">📏</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <!-- Rework v3 Phase 5: map-objects / walls toolbar. `obj-wall`
+               enters a drag-to-place rectangle mode handled in
+               gm-app.js (see the Phase 5 `initMapObjectsTool` IIFE). -->
+          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="obj-wall" title="Draw Wall (blocks movement)">🧱</button>
+          <button class="btn btn-ghost btn-xs" id="btn-clear-objects" title="Clear All Walls/Objects">🧨 Clear Walls</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <input type="color" id="draw-color" value="#ff0000" style="width:28px;height:22px;border:none;background:none;cursor:pointer" title="Draw Color">
+          <input type="range" id="draw-width" min="1" max="8" value="2" style="width:60px" title="Line Width">
+          <label style="font-size:0.68rem;color:var(--text-muted);display:flex;align-items:center;gap:3px">
+            <input type="checkbox" id="draw-visible" checked> Visible
+          </label>
+          <button class="btn btn-ghost btn-xs" id="btn-clear-drawings" title="Clear All Drawings">🧹 Clear</button>
+        </div>
+        <div style="flex:1;position:relative;overflow:hidden;background:#111">
+          <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
+        </div>
+      </div>
+
+      <!-- TAB: Builder -->
+      <div class="tab-content" id="tab-builder" style="padding:0;display:none;flex-direction:column;height:calc(100vh - 160px)">
+        <div id="builder-toolbar" style="display:flex;gap:6px;padding:8px 12px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+          <select id="builder-floor-select" class="btn btn-ghost btn-sm" style="min-width:120px"></select>
+          <button id="btn-new-floor" class="btn btn-primary btn-sm">+ Floor</button>
+          <button id="btn-delete-floor" class="btn btn-danger btn-sm">🗑</button>
+          <button id="btn-activate-floor" class="btn btn-ghost btn-sm">▶ Activate</button>
+          <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs">▢ Square</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
+          <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:80px">
+          <span id="builder-tile-size-val" style="font-size:0.72rem;min-width:28px">50</span>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <label style="font-size:0.72rem;color:var(--text-muted)">Bounds:</label>
+          <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:2px 4px;border-radius:var(--r-xs);font-size:0.75rem">
+          <span style="font-size:0.72rem;color:var(--text-muted)">×</span>
+          <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:2px 4px;border-radius:var(--r-xs);font-size:0.75rem">
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button class="btn btn-ghost btn-xs builder-brush active" data-brush="floor" title="Floor">⬜</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="wall" title="Wall">🧱</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="door" title="Door">🚪</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="water" title="Water">💧</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="pit" title="Pit">🕳️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_up" title="Stairs Up">⬆️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_down" title="Stairs Down">⬇️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="trap" title="Trap Tile">⚠️</button>
+          <button class="btn btn-ghost btn-xs builder-brush" data-brush="erase" title="Erase">🧹</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button id="btn-clear-tiles" class="btn btn-ghost btn-xs">Clear</button>
+          <button id="btn-save-tiles" class="btn btn-primary btn-xs">💾 Save</button>
+          <span style="width:1px;height:18px;background:var(--border)"></span>
+          <button id="btn-place-trap" class="btn btn-danger btn-xs" title="Place Interactive Trap">⚠️ Trap</button>
+        </div>
+        <div style="flex:1;position:relative;overflow:hidden;background:#111">
+          <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
+        </div>
+      </div>
+
+      <!-- TAB: Quick Actions -->
+      <div class="tab-content" id="tab-actions" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header"><h2>⚔️ Damage All Players</h2></div>
+          <div class="detail-body">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <label style="font-size:0.8rem;color:var(--text-muted)">Enemy Roll:</label>
+              <input type="number" id="aoe-enemy-roll" style="width:60px">
+              <label style="font-size:0.8rem;color:var(--text-muted)">Damage:</label>
+              <input type="number" id="aoe-damage" style="width:60px">
+              <button class="btn btn-danger btn-sm" id="btn-aoe-damage">Apply to All</button>
+            </div>
+            <div class="result-box" id="aoe-result" style="margin-top:8px"><span class="text-muted">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Event Log (enhanced Stage 10) -->
+      <div class="tab-content" id="tab-log" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📜 Event Log</h2>
+            <button class="btn btn-ghost btn-xs" id="btn-export-log" title="Export as .txt">📥 Export</button>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-xs log-filter-btn active" data-log-filter="all">All</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="combat">⚔️ Combat</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="economy">💰 Economy</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="inventory">🎒 Inventory</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="quest">📜 Quests</button>
+              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="map">🗺️ Map</button>
+              <span style="flex:1"></span>
+              <input type="text" id="log-search" placeholder="Search log..." style="width:140px;font-size:0.75rem;padding:3px 6px">
+            </div>
+            <div class="event-log" id="event-log"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Quests (Stage 8) -->
+      <div class="tab-content" id="tab-quests" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📜 Quests</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-xs" id="btn-quest-assign-quick">📤 Assign Quest</button>
+              <button class="btn btn-primary btn-xs" id="btn-quest-create">+ Quest Template</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <!-- Sub-tabs -->
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn-sm quest-sub active" data-qsub="active" style="font-size:0.78rem">Active Quests</button>
+              <button class="btn btn-sm btn-ghost quest-sub" data-qsub="templates" style="font-size:0.78rem">Quest Templates</button>
+            </div>
+            <div id="quest-active-panel"></div>
+            <div id="quest-templates-panel" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: NPC Library (Stage 7) -->
+      <div class="tab-content" id="tab-npc-library" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📚 NPC Library</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-xs" id="btn-npc-create-folder">+ Folder</button>
+              <button class="btn btn-primary btn-xs" id="btn-npc-create-template">+ NPC Template</button>
+              <button class="btn btn-secondary btn-xs" id="btn-npc-create-event">+ Event</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <!-- Folders + Templates -->
+              <div style="flex:2;min-width:320px">
+                <h3 style="font-size:0.85rem;margin-bottom:8px">Folders & Templates</h3>
+                <div id="npc-folder-tree"></div>
+                <hr style="border-color:var(--border);margin:12px 0">
+                <h3 style="font-size:0.85rem;margin-bottom:8px">All Templates</h3>
+                <div id="npc-template-list"></div>
+              </div>
+              <!-- Event Templates -->
+              <div style="flex:1;min-width:240px">
+                <h3 style="font-size:0.85rem;margin-bottom:8px">Event Templates</h3>
+                <div id="npc-event-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Races & Professions (Rework v2 — classes renamed to professions in UI) -->
+      <div class="tab-content" id="tab-races-classes" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>🧬 Races & Professions</h2>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-xs" id="btn-seed-rc">Seed Defaults</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <!-- Races column -->
+              <div style="flex:1;min-width:280px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <h3 style="font-size:0.85rem;flex:1">Races</h3>
+                  <button class="btn btn-primary btn-xs" id="btn-create-race">+ Create Race</button>
+                </div>
+                <div id="rc-races-list"></div>
+              </div>
+              <!-- Professions column (internal ORM is still `CharacterClass` — UI-only rename) -->
+              <div style="flex:1;min-width:280px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <h3 style="font-size:0.85rem;flex:1">Professions</h3>
+                  <button class="btn btn-primary btn-xs" id="btn-create-class">+ Create Profession</button>
+                </div>
+                <div id="rc-classes-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- TAB: Announcements (Stage 10) -->
+      <div class="tab-content" id="tab-announcements" style="padding:16px">
+        <div class="detail-panel">
+          <div class="detail-header">
+            <h2>📢 Announcement Board</h2>
+          </div>
+          <div class="detail-body">
+            <div style="display:flex;gap:6px;margin-bottom:12px">
+              <textarea id="announce-input" rows="2" placeholder="Write an announcement..." style="flex:1;font-size:0.82rem;resize:vertical"></textarea>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <button class="btn btn-primary btn-sm" id="btn-post-announce">📤 Post</button>
+                <label style="font-size:0.7rem;display:flex;align-items:center;gap:3px"><input type="checkbox" id="announce-pin"> 📌 Pin</label>
+              </div>
+            </div>
+            <div id="announcements-list"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── AI SIDEBAR ─────────────────────────────────────── -->
+    <div class="gm-ai-sidebar" id="ai-sidebar">
+      <div class="gm-sidebar-header" style="cursor:pointer" id="ai-sidebar-toggle">
+        <h2>🤖 ARIA AI</h2>
+        <button class="btn btn-ghost btn-xs" id="btn-ai-collapse">◀</button>
+      </div>
+      <div id="ai-sidebar-content">
+        <div class="ai-quick-actions" style="padding:6px 8px;display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+          <button class="btn btn-ghost btn-xs" data-ai-quick="narrate">🎭 Narrate</button>
+          <button class="btn btn-ghost btn-xs" data-ai-quick="npc">⚔️ NPC Action</button>
+          <button class="btn btn-ghost btn-xs" data-ai-quick="item">🗡️ Gen Item</button>
+          <button class="btn btn-ghost btn-xs" data-ai-quick="summary">📜 Summary</button>
+        </div>
+        <div id="ai-messages" style="flex:1;overflow-y:auto;padding:8px;font-size:0.8rem"></div>
+        <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:4px">
+          <input type="text" id="ai-input" placeholder="Ask ARIA..." style="flex:1;font-size:0.8rem">
+          <button class="btn btn-primary btn-sm" id="btn-ai-send">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FLOATING DICE ROLL LOG ─────────────────────────────── -->
+  <div id="roll-log-panel" style="
+    position:fixed; bottom:12px; right:12px; width:340px; max-height:320px;
+    background:var(--bg-surface); border:1px solid var(--border);
+    border-radius:var(--r-lg); box-shadow:0 4px 24px rgba(0,0,0,.35);
+    z-index:900; display:flex; flex-direction:column; overflow:hidden;
+  ">
+    <div id="roll-log-header" style="
+      padding:8px 12px; background:var(--bg-surface-2); border-bottom:1px solid var(--border);
+      display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+    ">
+      <span style="font-size:1rem">🎲</span>
+      <span style="font-weight:700; font-size:0.82rem; flex:1">Dice Roll Log</span>
+      <span id="roll-log-count" style="
+        font-size:0.65rem; padding:1px 6px; border-radius:10px;
+        background:var(--accent); color:#fff; font-weight:700; display:none;
+      ">0</span>
+      <button class="btn btn-ghost btn-xs" id="roll-log-toggle" style="font-size:0.7rem">▼</button>
+    </div>
+    <div id="roll-log-body" style="flex:1; overflow-y:auto; padding:6px 10px; font-size:0.78rem; max-height:260px">
+      <div style="color:var(--text-muted); font-size:0.75rem; text-align:center; padding:12px 0">
+        Rolls from players will appear here...
+      </div>
+    </div>
+  </div>
+
+  <!-- stripped real script: /static/js/websocket-client.js -->
+  <!-- stripped real script: /static/js/character-sheet-core.js -->
+  <!-- stripped real script: /static/js/map-canvas.js -->
+  <!-- stripped real script: /static/js/gm-app.js -->
+<!-- MOCKUP for Claude.ai/design - generated from gm.html --><div style="position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99999;background:#c08a2a;color:#0a0908;padding:4px 12px;border-radius:4px;font:600 0.75rem Inter,sans-serif;pointer-events:none;">MOCK &mdash; GM interface</div>
+<script>
+/* =======================================================================
+ * Claude-Design mockup runtime - no network, all data is hard-coded.
+ * The real app reads dozens of endpoints; we stub the most common ones
+ * and populate DOM sections that the real JS would fill via fetches.
+ * ======================================================================= */
+(() => {
+  const MOCK = {
+    character: {
+      id: 1, name: 'Nimus', race: 'Human', class: 'Rogue', level: 3,
+      current_hp: 18, max_hp: 24, current_mana: 4, max_mana: 10,
+      ac: 15, speed: 30,
+      stats: { str: 10, dex: 16, con: 12, int: 13, wis: 10, cha: 14 },
+      gold: 42, silver: 17, copper: 5,
+    },
+    tokens: [
+      { character_id: 1, name: 'Nimus',  x: 0.30, y: 0.40, color: '#c08a2a', is_npc: false, is_alive: true },
+      { character_id: 2, name: 'Kael',   x: 0.35, y: 0.42, color: '#4a7fc0', is_npc: false, is_alive: true },
+      { character_id: 3, name: 'Goblin', x: 0.55, y: 0.50, color: '#b84040', is_npc: true,  is_alive: true },
+      { character_id: 4, name: 'Goblin', x: 0.60, y: 0.47, color: '#b84040', is_npc: true,  is_alive: true },
+      { character_id: 5, name: 'Shaman', x: 0.70, y: 0.52, color: '#8a4abf', is_npc: true,  is_alive: true },
+    ],
+    inventory: [
+      { id: 1, name: 'Shortsword',    rarity: 'uncommon',  icon: '\ud83d\udde1', quantity: 1, equipped: true  },
+      { id: 2, name: 'Leather Armor', rarity: 'common',    icon: '\ud83d\udee1', quantity: 1, equipped: true  },
+      { id: 3, name: 'Health Potion', rarity: 'common',    icon: '\ud83e\uddea', quantity: 3, equipped: false },
+      { id: 4, name: 'Rope (50ft)',   rarity: 'common',    icon: '\ud83e\ude22', quantity: 1, equipped: false },
+      { id: 5, name: 'Mystic Amulet', rarity: 'rare',      icon: '\ud83d\udcff', quantity: 1, equipped: false },
+    ],
+    abilities: [
+      { id: 1, name: 'Sneak Attack', school: 'martial',   cost: 0, description: '+1d6 flanking' },
+      { id: 2, name: 'Dash',         school: 'movement',  cost: 1, description: 'Double move this turn' },
+      { id: 3, name: 'Fireball',     school: 'evocation', cost: 4, description: '8d6 fire 20ft radius' },
+    ],
+    combat: {
+      active: true, round: 3,
+      order: [
+        { character_id: 1, name: 'Nimus',  init: 18, current: true  },
+        { character_id: 3, name: 'Goblin', init: 14, current: false },
+        { character_id: 2, name: 'Kael',   init: 12, current: false },
+        { character_id: 5, name: 'Shaman', init: 10, current: false },
+      ],
+    },
+  };
+
+  /* Fake fetch ---------------------------------------------------- */
+  const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
+    status, headers: { 'Content-Type': 'application/json' },
+  });
+  window.fetch = async (url) => {
+    url = String(url);
+    if (url.includes('/api/map/') && url.endsWith('/overlays'))
+      return json({ drawings: [], markers: [], objects: [], traps: [] });
+    if (url.includes('/api/map/'))
+      return json({
+        has_map: false, image_url: null, grid_size: 50, grid_enabled: true,
+        grid_type: 'square', fog_enabled: false, revealed_cells: [],
+        tokens: MOCK.tokens,
+        active_floor_tiles: {},
+        active_floor_tile_size: 50, active_floor_cols: 20, active_floor_rows: 15,
+        active_floor_grid_type: 'square',
+      });
+    if (url.includes('/characters/') && url.endsWith('/inventory')) return json(MOCK.inventory);
+    if (url.includes('/characters/') && url.endsWith('/abilities')) return json(MOCK.abilities);
+    if (url.includes('/characters/'))                                return json(MOCK.character);
+    if (url.includes('/combat/') && url.includes('active'))          return json(MOCK.combat);
+    if (url.includes('/sessions/') && url.endsWith('/characters'))
+      return json([
+        MOCK.character,
+        { id: 2, name: 'Kael', race: 'Elf', class: 'Mage', current_hp: 12, max_hp: 16 },
+      ]);
+    return json({});
+  };
+
+  /* Fake WebSocket ------------------------------------------------ */
+  class MockWS {
+    constructor() { setTimeout(() => this.onopen && this.onopen(), 10); }
+    send() {} close() {}
+  }
+  window.WebSocket = MockWS;
+
+  /* Globals the real app reads ----------------------------------- */
+  window.SESSION_CODE = 'DEMO-0000';
+  window.CHAR_ID      = 1;
+  window.PLAYER_TOKEN = 'demo-token';
+
+  /* Fill known placeholder nodes + draw a demo map --------------- */
+  window.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.status-dot').forEach(d => d.classList.add('connected'));
+    document.querySelectorAll('[id$="ws-label"]').forEach(el => el.textContent = 'connected (mock)');
+
+    const fill = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
+    fill('#char-name',       MOCK.character.name);
+    fill('#session-name',    'Demo Session');
+    fill('#session-status',  'active');
+    fill('#session-turn',    '3');
+    fill('#connected-count', '2');
+
+    const paintDemo = (c) => {
+      if (!c || c.tagName !== 'CANVAS') return;
+      const parent = c.parentElement;
+      if (parent) { c.width = parent.clientWidth || 600; c.height = parent.clientHeight || 400; }
+      const ctx = c.getContext('2d');
+      const gs = 40, cols = Math.floor(c.width / gs), rows = Math.floor(c.height / gs);
+      ctx.fillStyle = '#131110'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.strokeStyle = 'rgba(192,138,42,0.15)'; ctx.lineWidth = 1;
+      for (let x = 0; x <= cols; x++) { ctx.beginPath(); ctx.moveTo(x*gs, 0); ctx.lineTo(x*gs, rows*gs); ctx.stroke(); }
+      for (let y = 0; y <= rows; y++) { ctx.beginPath(); ctx.moveTo(0, y*gs); ctx.lineTo(cols*gs, y*gs); ctx.stroke(); }
+      ctx.fillStyle = '#666';
+      [[5,3],[6,3],[7,3],[7,4],[7,5]].forEach(([cx,ry]) => { ctx.fillRect(cx*gs+1, ry*gs+1, gs-2, gs-2); });
+      MOCK.tokens.forEach(t => {
+        const tx = t.x * c.width, ty = t.y * c.height;
+        ctx.fillStyle = t.color;
+        ctx.beginPath(); ctx.arc(tx, ty, gs*0.35, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#0a0908'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#e2d5c0'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(t.name, tx, ty - gs*0.5);
+      });
+    };
+    ['player-grid-canvas','player-map-canvas','map-canvas','gm-map-canvas','builder-canvas']
+      .forEach(id => {
+        const c = document.getElementById(id);
+        if (c) requestAnimationFrame(() => paintDemo(c));
+      });
+
+    /* Drop a placeholder card into obviously-empty list containers */
+    const placeholder = (label) => {
+      const div = document.createElement('div');
+      div.style.cssText = 'margin:6px 0;padding:10px;font-size:0.8rem;color:var(--text-muted);text-align:center;border:1px dashed rgba(220,180,100,0.15);border-radius:6px';
+      div.textContent = `(${label} - mock placeholder)`;
+      return div;
+    };
+    document.querySelectorAll('[id$="-list"], [id$="-grid"], [id$="-body"]').forEach(el => {
+      if (el.children.length === 0 && !el.textContent.trim()) {
+        el.appendChild(placeholder(el.id));
+      }
+    });
+  });
+
+  /* Silence noise from any code we couldn't fully stub ----------- */
+  window.addEventListener('error',            e => e.preventDefault());
+  window.addEventListener('unhandledrejection', e => e.preventDefault());
+})();
+</script>
+
+</body>
+</html>

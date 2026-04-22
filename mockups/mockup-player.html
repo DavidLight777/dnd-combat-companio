@@ -1,0 +1,1718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Combat Companion — Player</title>
+  <style>
+/* inlined from base.css */
+/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
+   COMBAT COMPANION вЂ” Base Theme
+   в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300..600&display=swap');
+
+:root {
+  --bg-base:        #0a0908;
+  --bg-surface:     #131110;
+  --bg-surface-2:   #1a1815;
+  --bg-surface-3:   #221f1b;
+  --bg-input:       #1e1b17;
+
+  --border:         rgba(220, 180, 100, 0.10);
+  --border-active:  rgba(220, 180, 100, 0.30);
+
+  --text-primary:   #e2d5c0;
+  --text-muted:     #8a7d6e;
+  --text-faint:     #4a4338;
+
+  --accent:         #c08a2a;
+  --accent-hover:   #d4a040;
+  --accent-glow:    rgba(192, 138, 42, 0.20);
+  --accent-red:     #b84040;
+  --accent-green:   #4a9c5d;
+  --accent-blue:    #4a7fc0;
+  --accent-purple:  #8a4abf;
+
+  --hp-high:   #4a9c5d;
+  --hp-mid:    #c09a2a;
+  --hp-low:    #b84040;
+
+  --rarity-common:    #9ca3af;
+  --rarity-uncommon:  #4a9c5d;
+  --rarity-rare:      #4a7fc0;
+  --rarity-epic:      #8a4abf;
+  --rarity-legendary: #c08a2a;
+  --rarity-mythic:    #e04080;
+  --rarity-divine:    #f0e060;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --t-fast: 120ms ease;
+  --t-normal: 200ms ease;
+
+  --font-display: 'Cinzel', serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+h1 { font-size: 1.8rem; letter-spacing: 0.04em; }
+h2 { font-size: 1rem; letter-spacing: 0.03em; text-transform: uppercase; }
+h3 { font-size: 0.9rem; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+/* в”Ђв”Ђ Scrollbar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
+/* в”Ђв”Ђ Buttons в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  border: none; border-radius: var(--r-md); cursor: pointer;
+  padding: 10px 20px; transition: all var(--t-normal);
+}
+.btn-primary {
+  background: var(--accent); color: #0a0908;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary {
+  background: var(--bg-surface-3); color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { border-color: var(--border-active); }
+.btn-danger { background: var(--accent-red); color: white; }
+.btn-danger:hover { opacity: 0.85; }
+.btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+.btn-ghost {
+  background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+}
+.btn-ghost:hover { color: var(--text-primary); border-color: var(--border-active); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* в”Ђв”Ђ Inputs в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+input, textarea, select {
+  color: var(--text-primary) !important;
+}
+input[type="text"], input[type="number"], input[type="password"],
+input[type="email"], input[type="search"], input:not([type]),
+textarea, select {
+  font-family: var(--font-body) !important;
+  font-size: 0.85rem;
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid #3a3d4a !important;
+  border-radius: var(--r-sm);
+  -webkit-text-fill-color: var(--text-primary);
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color var(--t-fast);
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint) !important; }
+select option { background-color: var(--bg-surface) !important; color: var(--text-primary) !important; }
+input[type="number"] { width: 70px; font-variant-numeric: tabular-nums; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { filter: invert(0.7); }
+textarea { resize: vertical; width: 100%; }
+/* Modal inputs вЂ” slightly darker to distinguish against modal surface */
+.modal-content input, .modal-content textarea, .modal-content select,
+.modal input, .modal textarea, .modal select {
+  background-color: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid #3a3d4a !important;
+}
+/* Checkbox/radio вЂ” keep native but tint accent */
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--accent);
+  border: none !important;
+  background: initial !important;
+  padding: 0 !important;
+}
+
+/* в”Ђв”Ђ Cards / Panels в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px;
+}
+
+/* в”Ђв”Ђ Status dot в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.status-dot {
+  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+}
+.status-dot.connected { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+.status-dot.disconnected { background: var(--accent-red); }
+
+/* в”Ђв”Ђ HP Bar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.hp-bar-container {
+  width: 100%; height: 8px; background: var(--bg-surface-3);
+  border-radius: 4px; overflow: hidden;
+}
+.hp-bar {
+  height: 100%; border-radius: 4px;
+  transition: width 300ms ease, background 300ms ease;
+}
+
+/* в”Ђв”Ђ FIX 7: Universal Modal Header & Dismiss Button в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header .modal-title {
+  margin: 0; font-size: 1rem; color: var(--accent);
+  font-family: var(--font-display); font-weight: 600;
+}
+.modal-close-btn {
+  margin-left: auto; font-size: 1rem; line-height: 1;
+  padding: 4px 8px; opacity: 0.7; cursor: pointer;
+  transition: all var(--t-fast);
+}
+.modal-close-btn:hover { opacity: 1; color: var(--accent-red); }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* в”Ђв”Ђ Toast в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--bg-surface-2); border: 1px solid var(--border-active);
+  color: var(--text-primary); padding: 12px 20px;
+  border-radius: var(--r-md); font-size: 0.85rem;
+  animation: slideUp 0.3s ease-out;
+  z-index: 9999;
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* в”Ђв”Ђ WS Status в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.ws-status {
+  display: flex; align-items: center; gap: 6px; font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* в”Ђв”Ђ Event Log в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.event-log {
+  max-height: 300px; overflow-y: auto;
+  font-size: 0.8rem; font-family: var(--font-body);
+}
+.event-log .entry {
+  padding: 4px 8px; border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.event-log .entry .time { color: var(--text-faint); margin-right: 6px; }
+.event-log .entry .event-name { color: var(--accent); font-weight: 500; }
+
+/* в”Ђв”Ђ Layout Helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.gap-sm { gap: 8px; }
+.gap-md { gap: 16px; }
+.gap-lg { gap: 24px; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.text-accent { color: var(--accent); }
+.mt-sm { margin-top: 8px; }
+.mt-md { margin-top: 16px; }
+.mb-md { margin-bottom: 16px; }
+.hidden { display: none !important; }
+
+/* в”Ђв”Ђ Visual Polish вЂ” Animations в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.hp-bar { transition: width 0.6s ease, background 0.4s ease; }
+
+@keyframes damageFlash {
+  0% { box-shadow: inset 0 0 0 2px var(--accent-red); }
+  50% { box-shadow: inset 0 0 20px 2px rgba(184,64,64,0.4); }
+  100% { box-shadow: none; }
+}
+.damage-flash { animation: damageFlash 0.5s ease; }
+
+@keyframes healFlash {
+  0% { box-shadow: inset 0 0 0 2px var(--accent-green); }
+  50% { box-shadow: inset 0 0 20px 2px rgba(74,156,93,0.4); }
+  100% { box-shadow: none; }
+}
+.heal-flash { animation: healFlash 0.5s ease; }
+
+@keyframes dicePopIn {
+  0% { transform: scale(0.5) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.dice-pop { animation: dicePopIn 0.35s ease-out; }
+
+@keyframes skeletonShimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-surface-2) 25%, var(--bg-surface-3) 50%, var(--bg-surface-2) 75%);
+  background-size: 400px 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: var(--r-sm);
+}
+
+/* в”Ђв”Ђ Dead indicator в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.char-dead { opacity: 0.5; filter: grayscale(0.5); }
+.skull-icon::before { content: "рџ’Ђ "; }
+
+/* в”Ђв”Ђ Settings link in lobby в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.settings-link { color: var(--text-muted); text-decoration: none; font-size: 0.8rem; }
+.settings-link:hover { color: var(--accent); }
+
+/* в”Ђв”Ђ Rarity Badges & Colors в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.rarity-common    { color: var(--rarity-common); }
+.rarity-uncommon  { color: var(--rarity-uncommon); }
+.rarity-rare      { color: var(--rarity-rare); }
+.rarity-epic      { color: var(--rarity-epic); }
+.rarity-legendary { color: var(--rarity-legendary); }
+.rarity-mythic    { color: var(--rarity-mythic); }
+.rarity-divine    { color: var(--rarity-divine); }
+
+.rarity-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 3px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rarity-badge.common    { background: rgba(156,163,175,0.15); color: var(--rarity-common); }
+.rarity-badge.uncommon  { background: rgba(74,156,93,0.15); color: var(--rarity-uncommon); }
+.rarity-badge.rare      { background: rgba(74,127,192,0.15); color: var(--rarity-rare); }
+.rarity-badge.epic      { background: rgba(138,74,191,0.15); color: var(--rarity-epic); }
+
+/* Rework v2: shared rarity chip (lobby / player / GM) */
+.rarity-chip {
+  display: inline-block; padding: 1px 6px; border-radius: 8px;
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.rarity-chip.rarity-common    { background: rgba(170,170,170,0.2); color: #bbb; }
+.rarity-chip.rarity-uncommon  { background: rgba(30,200,80,0.2);  color: #5fe080; }
+.rarity-chip.rarity-rare      { background: rgba(50,130,240,0.2); color: #73a8ff; }
+.rarity-chip.rarity-epic      { background: rgba(170,90,220,0.25);color: #d088ff; }
+.rarity-chip.rarity-legendary { background: rgba(230,170,30,0.25);color: #ffc94a; }
+.rarity-badge.legendary { background: rgba(192,138,42,0.15); color: var(--rarity-legendary); }
+.rarity-badge.mythic    { background: rgba(224,64,128,0.15); color: var(--rarity-mythic); }
+.rarity-badge.divine    {
+  background: linear-gradient(135deg, rgba(240,224,96,0.20), rgba(255,200,60,0.30));
+  color: var(--rarity-divine);
+  animation: divineShimmer 2s ease-in-out infinite;
+}
+
+@keyframes divineShimmer {
+  0%, 100% { box-shadow: 0 0 4px rgba(240,224,96,0.3); }
+  50% { box-shadow: 0 0 12px rgba(240,224,96,0.6), 0 0 24px rgba(255,200,60,0.2); }
+}
+
+.item-card-divine {
+  animation: divineShimmer 2s ease-in-out infinite;
+  border-color: rgba(240,224,96,0.3);
+}
+
+/* в”Ђв”Ђ Advantage / Disadvantage Toggle в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.adv-toggle {
+  display: inline-flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); font-size: 0.68rem; height: 26px;
+}
+.adv-toggle button {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 8px; cursor: pointer; font-size: 0.68rem; font-family: var(--font-body);
+  transition: all .15s ease;
+}
+.adv-toggle button:hover { background: var(--bg-surface-3); }
+.adv-toggle button.active { font-weight: 600; }
+.adv-toggle button[data-mode="normal"].active { background: var(--bg-surface-3); color: var(--text-primary); }
+.adv-toggle button[data-mode="advantage"].active { background: rgba(80,200,120,0.20); color: #50c878; }
+.adv-toggle button[data-mode="disadvantage"].active { background: rgba(220,80,80,0.20); color: #dc5050; }
+.adv-badge { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.adv-badge.advantage { background: rgba(80,200,120,0.15); color: #50c878; }
+.adv-badge.disadvantage { background: rgba(220,80,80,0.15); color: #dc5050; }
+
+/* --------------------------------------------------------------
+   Combat FX — screen-shake keyframes used by MapCanvas.playFx()
+   when a critical hit or impact lands. Applied by playFx() to the
+   closest positioned ancestor of the canvas (usually .battle-panel)
+   so the rest of the UI stays calm.
+   -------------------------------------------------------------- */
+@keyframes fxShakeSoft {
+  0%   { transform: translate3d(0, 0, 0); }
+  20%  { transform: translate3d(-3px, 2px, 0); }
+  40%  { transform: translate3d(4px, -2px, 0); }
+  60%  { transform: translate3d(-2px, 3px, 0); }
+  80%  { transform: translate3d(2px, -1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes fxShakeHard {
+  0%   { transform: translate3d(0, 0, 0); }
+  10%  { transform: translate3d(-6px, 4px, 0); }
+  25%  { transform: translate3d(7px, -5px, 0); }
+  40%  { transform: translate3d(-5px, 6px, 0); }
+  55%  { transform: translate3d(6px, -3px, 0); }
+  70%  { transform: translate3d(-4px, 4px, 0); }
+  85%  { transform: translate3d(3px, -2px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+.fx-shake-soft { animation: fxShakeSoft 0.32s cubic-bezier(.36,.07,.19,.97) both; }
+.fx-shake-hard { animation: fxShakeHard 0.52s cubic-bezier(.36,.07,.19,.97) both; }
+
+
+</style>
+  <style>
+/* inlined from player.css */
+/* ══════════════════════════════════════════════════════════════
+   PLAYER INTERFACE — Layout & Components
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Top Bar ───────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: var(--bg-surface);
+  border-bottom: 1px solid var(--border); min-height: 44px;
+}
+.topbar .logo { font-family: var(--font-display); font-size: 1rem; color: var(--accent); }
+.topbar .spacer { flex: 1; }
+.topbar .session-badge {
+  font-size: 0.75rem; color: var(--text-muted);
+  background: var(--bg-surface-3); padding: 2px 8px;
+  border-radius: var(--r-sm);
+}
+
+/* ── Main Layout — Rework v3 Phase 7: 3-column grid ──────────
+   left = char sidebar (avatar, stats, roll)
+   center = battle field (stretches to fill)
+   right = actions + bonuses + penalties + advanced + quests + announcements
+   Each column scrolls independently so the map never disappears. */
+.main-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr 300px;
+  height: calc(100vh - 44px - 52px);
+  overflow: hidden;
+}
+.main-center {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  padding: 12px;
+  overflow: hidden;                 /* the battle panel eats the remainder */
+  gap: 8px;
+}
+.main-center > .battle-panel {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.right-sidebar {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0;
+}
+/* Legacy name kept in case any JS / tests still reference it. */
+.main-area { display: none; }
+.sidebar-right { display: none; }
+
+/* ── FIX 2: LEFT CHARACTER SIDEBAR (per diagram) ─────────── */
+.char-sidebar {
+  width: 240px; min-width: 240px; flex: 0 0 240px;
+  background: var(--bg-surface); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cs-avatar {
+  width: 96px; height: 96px; margin: 0 auto; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--bg-surface-3) 100%);
+  border: 3px solid var(--border-active);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.4rem; font-weight: 700; color: var(--text-primary);
+  box-shadow: 0 0 12px rgba(192,138,42,0.25);
+}
+.cs-identity { text-align: center; }
+.cs-name { font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+.cs-rc { font-size: 0.72rem; color: var(--text-muted); }
+.cs-bar-block { font-size: 0.72rem; }
+.cs-bar-head { display: flex; justify-content: space-between; margin-bottom: 2px; }
+.cs-bar-lbl { color: var(--text-muted); font-weight: 600; }
+.cs-bar-val { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+.cs-bar {
+  height: 8px; background: var(--bg-surface-3); border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.cs-bar-fill { height: 100%; border-radius: 4px; transition: width .35s ease, background .2s; width: 100%; }
+.cs-kd { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; text-align: right; }
+.cs-currency {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  font-size: 0.75rem; padding: 6px 8px;
+  background: var(--bg-surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.cs-curr-row { display: flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+.cs-curr-row .curr-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+  text-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+.cs-char-roll {
+  padding: 8px; background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); margin-top: 4px;
+}
+.cs-section-lbl { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Rework v3 Phase 7: stack the 3 columns vertically below ~980 px.
+   Lose the fixed viewport height so the whole layout scrolls naturally
+   on phones / tablets. The map keeps its 60vh fallback height. */
+@media (max-width: 980px) {
+  .main-layout {
+    display: flex; flex-direction: column;
+    height: auto; overflow: visible;
+  }
+  .char-sidebar,
+  .right-sidebar {
+    width: 100%; min-width: 0;
+    max-height: none;
+    border-right: none; border-left: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .char-sidebar { flex: 0 0 auto; }
+  .main-center { overflow: visible; min-height: 0; }
+  .main-center > .battle-panel { flex: 0 0 auto; height: 60vh; }
+  .cs-avatar { width: 72px; height: 72px; font-size: 1.8rem; }
+  /* Hide the expand-height button on small screens since the map
+     already takes a reasonable chunk — the toggle becomes confusing
+     when the layout no longer uses a locked viewport height. */
+  #btn-grid-expand { display: none; }
+}
+
+/* Desktop-only: the map canvas wrapper stretches to fill whatever
+   vertical space the center column offers. Override the inline
+   `height:420px` fallback from the markup. */
+@media (min-width: 981px) {
+  #player-grid-wrap { height: auto !important; }
+  /* The expand-height JS toggles inline height — disable it on
+     desktop since the map already fills the column. */
+  #btn-grid-expand { display: none; }
+}
+
+/* Panels nested inside the right-sidebar must shrink under the
+   global `min-width:300px` baseline — the column itself is 300 px
+   (minus padding), so we override both min-width and the base
+   flex-basis to let them collapse cleanly. */
+.right-sidebar .panel,
+.right-sidebar .panel.panel-full {
+  flex: 1 1 auto; min-width: 0; max-width: 100%;
+}
+.right-sidebar .panel-header h2 { font-size: 0.85rem; }
+.right-sidebar .panel-body { padding: 8px 10px; }
+
+/* ── Panels Grid ───────────────────────────────────────────── */
+.panels-row {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.panel {
+  flex: 1 1 320px; min-width: 300px; max-width: 100%;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+  animation: fadeSlideIn 0.25s ease-out;
+}
+.panel-full { flex: 1 1 100%; }
+.panel-header {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-2);
+}
+.panel-header h2 { font-size: 0.8rem; }
+.panel-body { padding: 12px 14px; }
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── HP Card ───────────────────────────────────────────────── */
+.hp-card {
+  text-align: center; padding: 16px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); margin-bottom: 12px;
+  transition: background 200ms ease;
+}
+.hp-card.flash-damage { animation: dmgFlash 200ms; }
+.hp-card.flash-heal { animation: healFlash 200ms; }
+@keyframes dmgFlash { 0%,100%{background:var(--bg-surface)} 50%{background:rgba(184,64,64,0.3)} }
+@keyframes healFlash { 0%,100%{background:var(--bg-surface)} 50%{background:rgba(74,156,93,0.3)} }
+
+.hp-big {
+  font-size: 2.4rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: color 300ms ease;
+}
+.hp-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+.hp-bar-lg { height: 10px; margin-top: 10px; border-radius: 5px; }
+.hp-bar-lg .hp-bar { border-radius: 5px; }
+
+/* ── Stats Grid ────────────────────────────────────────────── */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 6px; margin-bottom: 12px;
+}
+@media (max-width: 700px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+.stat-cell {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 8px 4px; text-align: center;
+}
+.stat-cell .stat-name {
+  font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.stat-cell .stat-val {
+  font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.stat-cell input[type="number"] {
+  width: 52px; text-align: center; font-size: 1rem; font-weight: 700;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 4px;
+}
+
+/* ── Field Groups ──────────────────────────────────────────── */
+.field-group {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 8px;
+}
+.field-group label { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.field-group .value { font-weight: 600; color: var(--accent); }
+
+/* ── Modifier Rows ─────────────────────────────────────────── */
+.mod-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.82rem; transition: opacity var(--t-normal);
+}
+.mod-row.inactive { opacity: 0.4; }
+.mod-row input[type="text"] { flex: 1; min-width: 60px; padding: 3px 6px; font-size: 0.8rem; }
+.mod-row input[type="number"] { width: 52px; padding: 3px 6px; font-size: 0.8rem; }
+.mod-row select { padding: 3px 6px; font-size: 0.8rem; }
+
+/* ── Toggle Switch ─────────────────────────────────────────── */
+.toggle-switch {
+  position: relative; display: inline-block; width: 32px; height: 18px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-switch .slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: var(--bg-surface-3); border-radius: 18px;
+  transition: background var(--t-fast);
+}
+.toggle-switch .slider::before {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  left: 2px; bottom: 2px; background: var(--text-muted);
+  border-radius: 50%; transition: transform var(--t-fast), background var(--t-fast);
+}
+.toggle-switch input:checked + .slider { background: var(--accent); }
+.toggle-switch input:checked + .slider::before {
+  transform: translateX(14px); background: #fff;
+}
+
+/* ── Result Box ────────────────────────────────────────────── */
+.result-box {
+  background: var(--bg-surface-3); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px 12px;
+  font-size: 0.82rem; line-height: 1.6;
+  margin-top: 8px;
+}
+.damage-num { color: var(--accent-red); font-size: 1.1rem; }
+.heal-num { color: var(--accent-green); font-size: 1.1rem; }
+.miss-text { color: var(--text-muted); font-size: 1.2rem; font-weight: 700; }
+.tier-text { color: var(--accent); font-weight: 600; }
+
+/* ── Section Divider ───────────────────────────────────────── */
+.section-divider {
+  border: none; border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+/* ── Buttons: small ────────────────────────────────────────── */
+.btn-xs { padding: 3px 8px; font-size: 0.72rem; }
+.btn-icon {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 0.9rem; padding: 2px;
+  transition: color var(--t-fast);
+}
+.btn-icon:hover { color: var(--text-primary); }
+.btn-icon.danger:hover { color: var(--accent-red); }
+.btn-accent { background: var(--accent); color: #0a0908; font-weight: 600; }
+.btn-accent:hover { background: var(--accent-hover); }
+
+/* ── Turn Counter ──────────────────────────────────────────── */
+.turn-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.turn-count-display {
+  font-size: 1.6rem; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.turn-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+.timer-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.timer-row.inactive { opacity: 0.4; }
+.timer-value { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 20px; text-align: center; }
+.timer-value.active { color: var(--accent-green); }
+.timer-value.expired { color: var(--accent-red); }
+.timer-initial { font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── Calc Log ──────────────────────────────────────────────── */
+.calc-log {
+  font-size: 0.78rem; line-height: 1.7;
+  max-height: 300px; overflow-y: auto;
+}
+.calc-log .log-entry { padding: 2px 0; border-bottom: 1px solid var(--border); }
+.calc-log .log-time { color: var(--text-faint); font-size: 0.7rem; }
+
+/* ── Log Tab Buttons ───────────────────────────────────────── */
+.log-tab-btn { font-size: 0.72rem; }
+.log-tab-btn.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+
+/* ── Dice shake animation ──────────────────────────────────── */
+@keyframes diceShake {
+  0%,100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+.dice-shake { animation: diceShake 0.2s ease-in-out; }
+
+/* ── Confirm overlay ───────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.confirm-box {
+  background: var(--bg-surface-2); border: 1px solid var(--border-active);
+  border-radius: var(--r-lg); padding: 24px; max-width: 360px; text-align: center;
+}
+.confirm-box p { margin-bottom: 16px; }
+.confirm-box .btns { display: flex; gap: 8px; justify-content: center; }
+
+/* ── Inventory Grid ──────────────────────────────────────────── */
+.inventory-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+.inv-card {
+  background: var(--bg-surface-3); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px; cursor: pointer;
+  transition: all var(--t-fast); position: relative;
+}
+.inv-card:hover { border-color: var(--border-active); }
+.inv-card.equipped { border-color: var(--accent-green); box-shadow: 0 0 0 1px var(--accent-green); }
+.inv-card .inv-icon { font-size: 1.3rem; margin-right: 6px; }
+.inv-card .inv-name { font-weight: 600; font-size: 0.82rem; }
+.inv-card .inv-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; }
+.inv-card .inv-qty { position: absolute; top: 6px; right: 8px; font-size: 0.7rem; color: var(--text-muted); }
+.inv-card .inv-actions { display: none; margin-top: 6px; gap: 4px; }
+.inv-card.expanded .inv-actions { display: flex; flex-wrap: wrap; }
+.inv-card .inv-desc { display: none; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.inv-card.expanded .inv-desc { display: block; }
+
+.rarity-common { color: #aaa; }
+.rarity-uncommon { color: #4ec04e; }
+.rarity-rare { color: #4a8fd4; }
+.rarity-epic { color: #a94ec0; }
+.rarity-legendary { color: #d4a44a; }
+
+/* ── Shop Modal ──────────────────────────────────────────────── */
+.shop-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+}
+.shop-panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); width: 90%; max-width: 700px; max-height: 80vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.shop-header {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border); background: var(--bg-surface-2);
+}
+.shop-header h2 { flex: 1; font-size: 1rem; }
+.shop-body { flex: 1; overflow-y: auto; padding: 12px; }
+.shop-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.shop-item .si-name { flex: 1; font-weight: 600; font-size: 0.85rem; }
+.shop-item .si-price { font-size: 0.82rem; color: var(--accent); font-weight: 700; }
+
+/* ══════════════════════════════════════════════════════════════
+   STAGE 2 — Equipment Panel & Enhanced Inventory
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Currency Display ─────────────────────────────────────────── */
+.currency-display {
+  display: flex; gap: 8px; font-size: 0.78rem; color: var(--text-muted);
+}
+.currency-display strong { color: var(--accent); }
+
+/* ── Equipment Slots Grid ─────────────────────────────────────── */
+.equipment-panel { margin-bottom: 8px; }
+.equip-slots-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+@media (max-width: 600px) { .equip-slots-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.equip-slot {
+  background: var(--bg-surface-3); border: 1px dashed var(--border);
+  border-radius: var(--r-md); padding: 8px 6px; text-align: center;
+  cursor: pointer; transition: all var(--t-fast); min-height: 60px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.equip-slot:hover { border-color: var(--border-active); background: var(--bg-surface-2); }
+.equip-slot.filled {
+  border-style: solid; border-color: var(--accent);
+  background: rgba(192,138,42,0.08);
+}
+.equip-slot .slot-label {
+  font-size: 0.6rem; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 2px;
+}
+.equip-slot .slot-item-name {
+  font-size: 0.72rem; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+}
+.equip-slot .slot-empty {
+  font-size: 1.1rem; color: var(--text-faint); opacity: 0.4;
+}
+
+/* ── Inventory Filter Tabs ────────────────────────────────────── */
+.inv-filter-tabs {
+  display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.inv-filter.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+
+/* Rework Phase 4: Profession cards */
+.profession-card {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px;
+}
+.profession-card .prof-head {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 4px;
+}
+.profession-card .prof-name {
+  font-weight: 700; font-size: 0.95rem;
+}
+.profession-card .prof-level {
+  font-size: 0.72rem; color: var(--accent); font-weight: 600;
+  padding: 1px 6px; border: 1px solid var(--accent); border-radius: 10px;
+}
+.profession-card .prof-desc {
+  font-size: 0.8rem; color: var(--text-muted); margin: 3px 0;
+}
+.profession-card .prof-bonuses {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;
+}
+.profession-card .prof-abilities {
+  margin: 6px 0 0; padding-left: 18px; font-size: 0.76rem; color: var(--text);
+}
+.chip-muted {
+  display: inline-block; padding: 1px 6px; font-size: 0.7rem;
+  background: var(--bg-surface-3); border-radius: 10px; color: var(--text-muted);
+}
+
+/* Rework Phase 3: Bag / Equipped top tabs */
+.inv-tab-bar .inv-tab {
+  flex: 1; padding: 6px 10px; font-size: 0.88rem; font-weight: 600;
+  border-bottom: 2px solid transparent;
+}
+.inv-tab-bar .inv-tab.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+.inv-tab .tab-count {
+  display: inline-block; min-width: 18px; padding: 0 5px;
+  margin-left: 4px; font-size: 0.72rem;
+  background: rgba(0,0,0,0.25); border-radius: 10px;
+}
+
+/* ── Equipped badge on inv-card ───────────────────────────────── */
+.inv-card .equip-badge {
+  position: absolute; top: 4px; left: 4px; font-size: 0.65rem;
+  background: var(--accent); color: #0a0908; padding: 1px 5px;
+  border-radius: var(--r-sm); font-weight: 600;
+}
+
+/* ── Bonuses summary on inv-card ──────────────────────────────── */
+.inv-card .inv-bonuses {
+  font-size: 0.68rem; color: var(--accent-green); margin-top: 3px;
+}
+.inv-card .inv-weapon-stats {
+  font-size: 0.68rem; color: var(--accent); margin-top: 2px;
+}
+
+/* ── Slot Selector Modal ──────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); width: 90%; max-width: 500px;
+  max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-2);
+}
+.modal-header h3 { font-size: 0.9rem; }
+.modal-body { padding: 16px; overflow-y: auto; }
+
+.slot-selector-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
+.slot-selector-btn {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 8px; background: var(--bg-surface-3);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  cursor: pointer; transition: all var(--t-fast);
+  font-size: 0.8rem;
+}
+.slot-selector-btn:hover { border-color: var(--accent); background: var(--bg-surface-2); }
+.slot-selector-btn.occupied { opacity: 0.5; }
+.slot-selector-btn .slot-icon { font-size: 1.4rem; margin-bottom: 4px; }
+
+/* ── Bottom Tab Bar (Phase 6) ─────────────────────────────── */
+.player-tab-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: flex; height: 52px; z-index: 500;
+  background: var(--bg-surface); border-top: 1px solid var(--border);
+}
+.player-tab-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; border: none; background: none;
+  color: var(--text-muted); font-size: 1.1rem; cursor: pointer;
+  transition: color var(--t-fast);
+}
+.player-tab-btn span { font-size: 0.65rem; font-weight: 600; }
+.player-tab-btn.active { color: var(--accent); }
+.player-tab-btn:hover { color: var(--accent); }
+
+.player-tab { display: none; }
+.player-tab.active { display: block; }
+
+/* Tab-specific: Inventory tab scrolls */
+#tab-inventory, #tab-abilities, #tab-memory {
+  max-height: calc(100vh - 44px - 52px); overflow-y: auto;
+}
+
+/* Table view participant cards (FIX 1: circle-style per diagram) */
+.table-card { font-size: 0.78rem; text-align: center; }
+.table-card:hover { transform: translateY(-2px); }
+.table-card.selected > div:first-child { box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow) !important; }
+.table-row { min-height: 36px; }
+
+/* Action card buttons */
+.action-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12px 16px; min-width: 110px; min-height: 70px;
+  background: var(--bg-surface); border: 2px solid var(--border);
+  border-radius: var(--r-lg); cursor: pointer;
+  transition: all var(--t-fast); font-size: 0.82rem; font-weight: 700;
+}
+.action-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.action-card .ac-icon { font-size: 1.6rem; margin-bottom: 4px; }
+.action-card .ac-sub { font-size: 0.68rem; font-weight: 400; color: var(--text-muted); }
+
+/* Ability card */
+.ability-card {
+  display: flex; flex-direction: column; padding: 10px 14px;
+  min-width: 140px; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  cursor: pointer; transition: all var(--t-fast);
+}
+.ability-card:hover { border-color: var(--accent); }
+.ability-card.on-cooldown { opacity: 0.5; pointer-events: none; }
+.ability-card.passive { opacity: 0.85; cursor: default; }
+.ability-card.passive:hover { border-color: var(--border); }
+.ability-card .ab-name { font-weight: 700; font-size: 0.85rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.ability-card .ab-cost { font-size: 0.7rem; color: #60a5fa; }
+.ability-card .ab-cd   { font-size: 0.7rem; color: var(--accent-orange); }
+.ability-card .ab-desc { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.ability-card .ab-uses { font-size: 0.7rem; color: var(--accent-green); font-weight: 600; }
+.ability-card .ab-uses.depleted { color: var(--accent-red); text-decoration: line-through; }
+.ability-card .ab-cond { font-size: 0.7rem; color: var(--accent); font-style: italic; cursor: help; }
+.ability-card .ab-locked-note { font-size: 0.66rem; color: var(--accent-red); margin-top: 4px; font-style: italic; }
+.ability-card.depleted { opacity: 0.55; cursor: default; border-style: dashed; }
+.ability-card.depleted:hover { border-color: var(--border); }
+
+/* Rework v2: rarity chips moved to base.css (shared by lobby / player / GM) */
+
+/* Rework v2: Level-up CTA pulse + modal */
+@keyframes levelUpPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192,138,42,0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 8px rgba(192,138,42,0); transform: scale(1.03); }
+}
+.lvlup-choice {
+  padding: 12px; border: 2px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg-surface-2); cursor: pointer; transition: all .15s;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.lvlup-choice:hover { border-color: var(--accent); }
+.lvlup-choice.selected { border-color: var(--accent); background: rgba(192,138,42,0.12); }
+.lvlup-choice .lc-title { font-weight: 700; font-size: 0.9rem; }
+.lvlup-choice .lc-sub   { font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; }
+.lvlup-stat-pill {
+  padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-surface); font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; user-select: none; transition: all .12s;
+}
+.lvlup-stat-pill:hover { border-color: var(--accent); }
+.lvlup-stat-pill.picked { background: var(--accent); color: #000; border-color: var(--accent); }
+.lvlup-stat-pill.disabled { opacity: 0.35; cursor: not-allowed; }
+.lvlup-feature-row {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-surface); display: flex; align-items: center; gap: 8px;
+  cursor: pointer; transition: all .15s;
+}
+.lvlup-feature-row:hover { border-color: var(--accent); }
+.lvlup-feature-row.picked { border-color: var(--accent); background: rgba(192,138,42,0.12); }
+.lvlup-feature-row.legendary { opacity: 0.35; cursor: not-allowed; border-style: dashed; }
+
+/* Memory entry */
+.memory-entry {
+  padding: 8px 12px; margin-bottom: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); cursor: pointer;
+}
+.memory-entry:hover { border-color: var(--accent); }
+.memory-entry .me-title { font-weight: 700; font-size: 0.85rem; }
+.memory-entry .me-type { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; }
+.memory-entry .me-content { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; display: none; }
+.memory-entry.expanded .me-content { display: block; }
+
+/* ── FIX 1: Current-turn gold border on table card ───────── */
+.table-card.current-turn {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px var(--accent-glow);
+}
+
+/* ── FIX 2: Slide-in confirmation panel ──────────────────── */
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.action-confirm.slide-in { animation: slideInDown 0.2s ease-out; }
+.ip-item:hover, .ap-item:not(.disabled):hover {
+  background: var(--bg-surface-2) !important;
+  border-color: var(--accent) !important;
+}
+
+/* ── FIX 3: Universal Dice Roll Widget ───────────────────── */
+.dice-roll-widget {
+  display: flex; flex-direction: column; gap: 6px;
+  font-family: var(--font-body);
+}
+.dice-roll-widget .widget-label {
+  font-size: 0.72rem; color: var(--text-muted); font-weight: 600;
+}
+.dice-roll-widget .dice-selector {
+  display: flex; align-items: center; gap: 6px;
+}
+.dice-roll-widget .dice-count {
+  width: 54px !important; text-align: center;
+}
+.dice-roll-widget .dice-type {
+  min-width: 60px;
+}
+.dice-roll-widget .adv-toggle {
+  display: flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); height: 26px;
+}
+.dice-roll-widget .adv-toggle .adv-btn {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 10px; cursor: pointer; font-size: 0.7rem;
+  transition: all .15s ease; font-weight: 500;
+}
+.dice-roll-widget .adv-btn:hover { background: var(--bg-surface-3); }
+.dice-roll-widget .adv-btn.active { font-weight: 700; }
+.dice-roll-widget .adv-btn.active[data-mode="normal"] {
+  background: var(--bg-surface-3); color: var(--text-primary);
+}
+.dice-roll-widget .adv-btn.active[data-mode="advantage"] {
+  background: rgba(74,156,93,0.20); color: var(--accent-green);
+}
+.dice-roll-widget .adv-btn.active[data-mode="disadvantage"] {
+  background: rgba(184,64,64,0.20); color: var(--accent-red);
+}
+.dice-roll-widget .roll-btn { align-self: flex-start; margin-top: 2px; }
+.dice-roll-widget .roll-result {
+  background: var(--bg-surface-2); border-radius: var(--r-sm);
+  padding: 6px 10px; border-left: 3px solid var(--accent); margin-top: 4px;
+}
+.dice-roll-widget .roll-result.hidden { display: none; }
+.dice-roll-widget .result-total {
+  font-size: 1.1rem; font-weight: 700; color: var(--accent);
+}
+.dice-roll-widget .result-breakdown {
+  font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;
+}
+
+/* Combat FX shake keyframes live in base.css so GM + player share them. */
+
+</style>
+</head>
+<body>
+  <!-- ── TOP BAR ──────────────────────────────────────────── -->
+  <div class="topbar">
+    <span class="logo">⚔️ <span id="char-name">Player</span> <span id="char-rc-badges" style="font-size:0.65rem;font-weight:400;opacity:0.7"></span></span>
+    <span class="spacer"></span>
+    <div class="ws-status">
+      <span class="status-dot" id="ws-dot"></span>
+      <span id="ws-label">connecting...</span>
+    </div>
+    <span id="player-currency" class="session-badge" style="cursor:pointer;color:var(--accent)" title="Click to transfer">💰 —</span>
+    <span style="font-size:0.78rem;display:flex;align-items:center;gap:3px" id="player-timer-area">⏱ <span id="player-timer-display">0:00:00</span></span>
+    <span class="session-badge">Session: <strong id="session-code">—</strong></span>
+    <button class="btn btn-ghost btn-sm" id="btn-open-map">🗺️ Map</button>
+  </div>
+
+  <!-- Map Modal -->
+  <div id="map-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-surface);border-bottom:1px solid var(--border)">
+      <span style="font-weight:700;flex:1">🗺️ Map</span>
+      <button class="btn btn-ghost btn-sm" id="btn-close-map">✕ Close</button>
+    </div>
+    <div style="flex:1;position:relative;overflow:hidden">
+      <canvas id="player-map-canvas" style="display:block;width:100%;height:100%"></canvas>
+    </div>
+  </div>
+
+  <!-- ═══ TAB CONTENT AREA ═══ -->
+  <div class="tab-content-area" style="padding-bottom:56px">
+
+    <!-- ══ MAIN TAB ══════════════════════════════════════════ -->
+    <div class="player-tab active" id="tab-main">
+      <div class="main-layout">
+        <!-- FIX 2: LEFT CHARACTER SIDEBAR (per diagram) -->
+        <aside class="char-sidebar" id="char-sidebar">
+          <!-- Avatar -->
+          <div class="cs-avatar" id="cs-avatar" title="Character portrait">
+            <span id="cs-avatar-initial">?</span>
+          </div>
+          <!-- Identity -->
+          <div class="cs-identity">
+            <div class="cs-name" id="cs-name">Character</div>
+            <div class="cs-rc" id="cs-rc"></div>
+            <!-- Rework v2: age / gender cosmetic line -->
+            <div class="cs-bio" id="cs-bio" style="font-size:0.68rem;color:var(--text-muted);margin-top:2px"></div>
+          </div>
+          <!-- HP -->
+          <div class="cs-bar-block" id="cs-hp-block">
+            <div class="cs-bar-head"><span class="cs-bar-lbl">❤️ HP</span><span class="cs-bar-val" id="cs-hp-value">0 / 0</span></div>
+            <div class="cs-bar"><div class="cs-bar-fill" id="cs-hp-fill" style="background:var(--hp-high)"></div></div>
+            <div class="cs-kd">KD: <span id="cs-kd">10</span></div>
+          </div>
+          <!-- Mana -->
+          <div class="cs-bar-block" id="cs-mana-block" style="display:none">
+            <div class="cs-bar-head"><span class="cs-bar-lbl">🔮 Mana</span><span class="cs-bar-val" id="cs-mana-value">0 / 0</span></div>
+            <div class="cs-bar"><div class="cs-bar-fill" id="cs-mana-fill" style="background:#60a5fa"></div></div>
+          </div>
+          <!-- XP -->
+          <div class="cs-bar-block" id="cs-xp-block">
+            <div class="cs-bar-head"><span class="cs-bar-lbl">⭐ XP</span><span class="cs-bar-val" id="cs-xp-value">0</span></div>
+            <div class="cs-bar"><div class="cs-bar-fill" id="cs-xp-fill" style="background:#a78bfa"></div></div>
+            <!-- Rework v2: Level-up CTA, shown only when xp >= threshold -->
+            <button class="btn btn-primary btn-sm" id="btn-level-up"
+                    style="display:none;width:100%;margin-top:6px;background:linear-gradient(135deg,#a78bfa,#c08a2a);color:#000;font-weight:800;animation:levelUpPulse 1.6s ease-in-out infinite">
+              ⬆ LEVEL UP!
+            </button>
+          </div>
+          <!-- Currency (4-type: Platinum, Gold, Silver, Bronze) -->
+          <div class="cs-currency" id="cs-currency">
+            <span class="cs-curr-row" id="cs-curr-plat" title="Platinum">
+              <span class="curr-icon" style="color:#e0e0ff">◆</span>
+              <span id="cs-curr-plat-val">0</span>
+            </span>
+            <span class="cs-curr-row" title="Gold">
+              <span class="curr-icon" style="color:#ffd700">●</span>
+              <span id="cs-curr-gold">0</span>
+            </span>
+            <span class="cs-curr-row" title="Silver">
+              <span class="curr-icon" style="color:#c0c0c0">●</span>
+              <span id="cs-curr-silver">0</span>
+            </span>
+            <span class="cs-curr-row" title="Bronze">
+              <span class="curr-icon" style="color:#cd7f32">●</span>
+              <span id="cs-curr-bronze">0</span>
+            </span>
+          </div>
+
+          <!-- Characteristics (STR/DEX/CON/INT/WIS/CHA) — visible to player -->
+          <div class="cs-stats" id="cs-stats" style="margin-top:10px;padding:8px;background:var(--bg-surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
+            <div class="cs-section-lbl" style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px">📊 Characteristics</div>
+            <div id="cs-stats-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center;font-size:0.78rem">
+              <!-- Injected by JS -->
+            </div>
+          </div>
+
+          <!-- Characteristic Roll (per diagram) -->
+          <div class="cs-char-roll">
+            <div class="cs-section-lbl">🎲 Characteristic Roll</div>
+            <select id="cs-roll-stat" style="font-size:0.78rem;width:100%;margin-bottom:4px">
+              <option value="strength">Strength</option>
+              <option value="dexterity">Dexterity</option>
+              <option value="constitution">Constitution</option>
+              <option value="intelligence">Intelligence</option>
+              <option value="wisdom">Wisdom</option>
+              <option value="charisma">Charisma</option>
+            </select>
+            <select id="cs-roll-type" style="font-size:0.78rem;width:100%;margin-bottom:4px">
+              <option value="ability_check">Ability Check</option>
+              <option value="saving_throw">Saving Throw</option>
+              <option value="skill_check">Skill Check</option>
+            </select>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;font-size:0.72rem">
+              <span style="color:var(--text-muted)">Dice:</span>
+              <input type="number" id="cs-roll-dice-count" value="1" min="1" max="10" style="width:40px;font-size:0.72rem">
+              <span style="color:var(--text-muted)">d</span>
+              <select id="cs-roll-dice-type" style="font-size:0.72rem;flex:1">
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12">12</option>
+                <option value="20" selected>20</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="adv-toggle" id="cs-roll-adv" style="width:100%;margin-bottom:4px">
+              <button data-mode="normal" class="active" style="flex:1">Normal</button>
+              <button data-mode="advantage" style="flex:1">ADV</button>
+              <button data-mode="disadvantage" style="flex:1">DIS</button>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-cs-roll" style="width:100%">🎲 Roll</button>
+            <div id="cs-roll-result" style="font-size:0.72rem;margin-top:4px;min-height:14px"></div>
+          </div>
+        </aside>
+
+        <!-- ══ CENTER — Battle Field stretches to fill ══════════════
+             Rework v3 Phase 7: the Main tab is now a 3-column grid
+             (char-sidebar | center | right-sidebar). The center owns
+             the tactical map exclusively so it can dominate screen
+             real-estate. Banners / status badges sit above it; every-
+             thing else moved to the right sidebar or to the More tab.
+        ══════════════════════════════════════════════════════════════ -->
+        <div class="main-center">
+          <!-- GM TIMER -->
+          <div id="gm-timer-banner" style="display:none;text-align:center;padding:12px;margin-bottom:8px;border-radius:var(--r-lg);background:var(--surface-2);border:2px solid var(--accent-orange)">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">⏱ GM Timer</div>
+            <div id="gm-timer-display" style="font-size:2.2rem;font-weight:800;color:var(--accent-orange);font-variant-numeric:tabular-nums"></div>
+          </div>
+
+          <!-- COMBAT BANNER -->
+          <div id="combat-banner" style="display:none"></div>
+
+          <!-- Legacy HP/Mana cards — kept for JS compat, hidden visually -->
+          <div class="hp-card" id="hp-card" style="display:none">
+            <div class="hp-big" id="hp-display">20 / 20</div>
+            <div class="hp-label">Hit Points · KD: <span id="kd-display">10</span></div>
+            <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div></div>
+          </div>
+
+          <!-- STATUS EFFECTS -->
+          <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
+
+          <!-- BATTLE FIELD — fills remaining vertical space on desktop. -->
+          <section class="panel panel-full battle-panel" id="player-grid-panel">
+            <div class="panel-header" style="display:flex;align-items:center;gap:6px">
+              <h2 style="flex:1;margin:0">🗺️ Battle Field</h2>
+              <span id="player-grid-status" style="font-size:0.72rem;color:var(--text-muted)"></span>
+              <!-- Phase 6: players upload their own token portrait. -->
+              <button class="btn btn-ghost btn-xs" id="btn-player-portrait" title="Upload your token portrait">🖼️</button>
+              <button class="btn btn-ghost btn-xs" id="btn-grid-fit" title="Fit map to view">⛶</button>
+              <button class="btn btn-ghost btn-xs" id="btn-grid-expand" title="Expand / collapse grid height">⇕</button>
+            </div>
+            <div class="panel-body" style="padding:0;display:flex;flex-direction:column;flex:1;min-height:0">
+              <div id="player-grid-wrap" style="position:relative;width:100%;height:420px;background:#1a1814;border-top:1px solid var(--border);overflow:hidden;flex:1;min-height:0">
+                <canvas id="player-grid-canvas" style="display:block;width:100%;height:100%"></canvas>
+                <div id="player-grid-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.82rem;pointer-events:none;text-align:center;padding:16px">
+                  Waiting for the GM to set up the battlefield…
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Legacy chip lists, hidden. renderTableView() still writes to
+               these nodes; removing the nodes would throw on every update. -->
+          <div style="display:none" aria-hidden="true">
+            <div id="table-view-teammates"></div>
+            <div id="table-view-npcs"></div>
+            <div id="table-view-grid"></div>
+          </div>
+        </div>
+
+        <!-- ══ RIGHT SIDEBAR — Actions + bonuses + advanced ══════════
+             Everything the player interacts with mid-battle sits here
+             so the map stays unobstructed. Scrolls independently.
+        ══════════════════════════════════════════════════════════════ -->
+        <aside class="right-sidebar" id="right-sidebar">
+          <!-- Selected target info moved to top of the action column.
+               Visible only when a token is selected on the battlefield. -->
+          <div id="selected-target-info" style="display:none;padding:6px 10px;border-radius:var(--r-md);background:var(--bg-surface-2);border:1px solid var(--accent);font-size:0.82rem">
+            🎯 Target: <strong id="selected-target-name">—</strong>
+            <button class="btn btn-ghost btn-xs" id="btn-clear-target" style="margin-left:8px">✕ Clear</button>
+          </div>
+
+          <!-- ACTION MENU -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>⚡ Actions</h2></div>
+            <div class="panel-body" id="action-menu-body" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          </section>
+
+          <!-- REACTIONS PANEL (combat-only, collapsible) -->
+          <section id="reactions-panel" class="panel panel-full" style="display:none;border-color:var(--accent-orange);border-width:2px">
+            <div class="panel-header" style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1)">
+              <h2 style="flex:1;color:var(--accent-orange);margin:0">⚡ Reactions</h2>
+              <button class="btn btn-ghost btn-xs" id="reactions-toggle" title="Collapse/Expand">▼</button>
+            </div>
+            <div class="panel-body" id="reactions-content">
+              <div id="reactions-list" style="display:flex;flex-direction:column;gap:6px"></div>
+              <div class="reactions-note" style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);font-style:italic">
+                Reactions can be used once per round
+              </div>
+            </div>
+          </section>
+
+          <!-- BONUSES -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>✅ Active Bonuses</h2></div>
+            <div class="panel-body" id="active-bonuses-list" style="font-size:0.8rem">
+              <span class="text-muted">No active bonuses</span>
+            </div>
+          </section>
+
+          <!-- PENALTIES -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>❌ Active Penalties</h2></div>
+            <div class="panel-body" id="active-penalties-list" style="font-size:0.8rem">
+              <span class="text-muted">No active penalties</span>
+            </div>
+          </section>
+
+          <!-- ADVANCED / MANUAL ROLL TOOLS -->
+          <details class="legacy-panels">
+            <summary style="cursor:pointer;font-size:0.78rem;color:var(--text-muted);padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+              ⚙️ Advanced / manual roll tools
+            </summary>
+            <div style="padding-top:8px;display:flex;flex-direction:column;gap:8px">
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>🎲 Free Roll</h2></div>
+                <div class="panel-body">
+                  <div id="free-roll-widget-host"></div>
+                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--text-muted);margin-top:6px">
+                    <input type="checkbox" id="free-roll-private"> Private roll (GM won't see)
+                  </label>
+                </div>
+              </section>
+
+              <div class="stats-grid" id="stats-grid"></div>
+
+              <div style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <span style="font-size:0.82rem;font-weight:700">🎲</span>
+                  <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
+                    <option value="strength">Strength</option>
+                    <option value="dexterity">Dexterity</option>
+                    <option value="constitution">Constitution</option>
+                    <option value="intelligence">Intelligence</option>
+                    <option value="wisdom">Wisdom</option>
+                    <option value="charisma">Charisma</option>
+                  </select>
+                  <select id="player-roll-type" style="font-size:0.78rem;width:115px">
+                    <option value="ability_check">Ability Check</option>
+                    <option value="saving_throw">Saving Throw</option>
+                    <option value="skill_check">Skill Check</option>
+                  </select>
+                  <div class="adv-toggle" id="char-roll-adv-toggle">
+                    <button data-mode="normal" class="active">Normal</button>
+                    <button data-mode="advantage">ADV</button>
+                    <button data-mode="disadvantage">DISADV</button>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+                </div>
+                <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
+              </div>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>⚔️ Attack &amp; Damage Roll</h2></div>
+                <div class="panel-body" id="attack-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>🛡️ Incoming Damage</h2></div>
+                <div class="panel-body" id="defense-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>💚 HP Recovery</h2></div>
+                <div class="panel-body" id="heal-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>⏱️ Turn Counter</h2></div>
+                <div class="panel-body" id="turns-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>✨ Effects &amp; Passive Bonuses</h2></div>
+                <div class="panel-body" id="effects-body"></div>
+              </section>
+            </div>
+          </details>
+
+          <!-- QUESTS -->
+          <details>
+            <summary style="cursor:pointer;font-weight:700;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">📜 Quests</summary>
+            <div style="padding:8px">
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <button class="btn btn-ghost btn-xs player-quest-tab active" data-pqtab="active">Active</button>
+                <button class="btn btn-ghost btn-xs player-quest-tab" data-pqtab="completed">Completed</button>
+              </div>
+              <div id="player-quests-active"></div>
+              <div id="player-quests-completed" style="display:none"></div>
+            </div>
+          </details>
+
+          <!-- ANNOUNCEMENTS -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>📢 Announcements</h2></div>
+            <div class="panel-body" id="player-announcements">
+              <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
+            </div>
+          </section>
+
+          <!-- Kept so legacy JS (#enemy-calc-body) can still write to it. -->
+          <div id="enemy-calc-body" style="display:none"></div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ══ MORE TAB — Activity log (Rework v3 Phase 7) ═══════════
+         Calc Log + Roll History used to sit at the bottom of the
+         Main tab, pushing the battlefield upward. They're quiet
+         reference material, so they moved here. Switching the
+         sub-tabs below preserves every prior writer (`calc-log`,
+         `roll-history-log` DOM ids remain unchanged).
+    ══════════════════════════════════════════════════════════════ -->
+    <div class="player-tab" id="tab-more" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+            <h2 style="flex:1">📜 Activity Log</h2>
+            <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
+            <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
+          </div>
+          <div class="panel-body">
+            <div id="calc-log" class="calc-log"></div>
+            <div id="roll-history-log" class="calc-log" style="display:none"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ INVENTORY TAB ═════════════════════════════════════ -->
+    <div class="player-tab" id="tab-inventory" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+            <h2 style="flex:1">🎒 Inventory</h2>
+            <span class="currency-display" id="inv-currency-display">
+              <span class="inv-curr-plat" style="display:none">💎 <strong>0</strong>P</span>
+              <span class="inv-curr-gold">🪙 <strong>0</strong>G</span>
+              <span class="inv-curr-silver">🥈 <strong>0</strong>S</span>
+              <span class="inv-curr-copper">🟤 <strong>0</strong>B</span>
+            </span>
+            <span class="slot-meter" id="slot-meter" title="Inventory slot usage" style="font-size:0.78rem;padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border);color:var(--text-muted)">🎒 <strong id="slot-meter-val">0 / 12</strong></span>
+            <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>
+          </div>
+          <div class="panel-body">
+            <!-- Rework Phase 3: Bag / Equipped top tabs -->
+            <div class="inv-tab-bar" id="inv-tab-bar" style="display:flex;gap:6px;margin-bottom:10px">
+              <button class="btn btn-ghost btn-sm inv-tab active" data-inv-tab="bag">🎒 Bag <span class="tab-count" id="tab-count-bag">0</span></button>
+              <button class="btn btn-ghost btn-sm inv-tab" data-inv-tab="equipped">⚔️ Equipped <span class="tab-count" id="tab-count-equipped">0</span></button>
+            </div>
+            <div class="equipment-panel" id="equipment-panel" style="display:none">
+              <h3 style="font-size:0.82rem;margin-bottom:8px">⚔️ Equipment Slots</h3>
+              <div class="equip-slots-grid" id="equip-slots-grid"></div>
+              <hr class="section-divider">
+            </div>
+            <div class="inv-filter-tabs" id="inv-filter-tabs">
+              <button class="btn btn-ghost btn-xs inv-filter active" data-inv-filter="all">All</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="weapon">Weapons</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="armor">Armor</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="potion">Potions</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="misc">Misc</button>
+            </div>
+            <div id="inventory-grid" class="inventory-grid"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Slot selector modal -->
+      <div id="slot-selector-modal" class="modal-overlay" style="display:none">
+        <div class="modal-panel" style="max-width:340px">
+          <div class="modal-header"><h3>Select Equipment Slot</h3><button class="btn-icon" id="slot-modal-close">✕</button></div>
+          <div class="modal-body">
+            <div class="slot-selector-grid" id="slot-selector-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Notes -->
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:8px">
+            <h2 style="flex:1">📝 My Notes</h2>
+            <button class="btn btn-primary btn-xs" id="btn-player-add-note">+ New Note</button>
+          </div>
+          <div class="panel-body" id="player-notes-list"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ ABILITIES TAB ═════════════════════════════════════ -->
+    <div class="player-tab" id="tab-abilities" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header"><h2>✨ Abilities</h2></div>
+          <div class="panel-body">
+            <div id="abilities-grid" style="display:flex;flex-wrap:wrap;gap:10px;min-height:40px">
+              <span class="text-muted" style="font-size:0.8rem">No abilities learned yet</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ PROFESSIONS TAB (Rework Phase 4) ══════════════════ -->
+    <div class="player-tab" id="tab-professions" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header"><h2>🛡️ Professions</h2></div>
+          <div class="panel-body">
+            <div id="professions-list" style="display:flex;flex-direction:column;gap:10px;min-height:40px">
+              <span class="text-muted" style="font-size:0.82rem">Loading…</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ MEMORY TAB ════════════════════════════════════════ -->
+    <div class="player-tab" id="tab-memory" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:8px">
+            <h2 style="flex:1">📖 Journal</h2>
+            <input type="text" id="memory-search" placeholder="Search..." style="font-size:0.78rem;width:140px">
+            <button class="btn btn-primary btn-xs" id="btn-add-memory">+ Add Note</button>
+          </div>
+          <div class="panel-body">
+            <div id="memory-list" style="min-height:40px">
+              <span class="text-muted" style="font-size:0.8rem">No journal entries yet</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ BOTTOM TAB BAR ═══ -->
+  <nav class="player-tab-bar">
+    <button class="player-tab-btn active" data-tab="tab-main">⚔️<span>Main</span></button>
+    <button class="player-tab-btn" data-tab="tab-inventory">🎒<span>Inventory</span></button>
+    <button class="player-tab-btn" data-tab="tab-abilities">✨<span>Skills</span></button>
+    <button class="player-tab-btn" data-tab="tab-professions">🛡️<span>Professions</span></button>
+    <button class="player-tab-btn" data-tab="tab-memory">📖<span>Memory</span></button>
+    <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
+  </nav>
+
+  <!-- stripped real script: /static/js/websocket-client.js -->
+  <!-- stripped real script: /static/js/character-sheet-core.js -->
+  <!-- stripped real script: /static/js/map-canvas.js -->
+  <!-- stripped real script: /static/js/player-app.js -->
+<!-- MOCKUP for Claude.ai/design - generated from player.html --><div style="position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99999;background:#c08a2a;color:#0a0908;padding:4px 12px;border-radius:4px;font:600 0.75rem Inter,sans-serif;pointer-events:none;">MOCK &mdash; Player interface</div>
+<script>
+/* =======================================================================
+ * Claude-Design mockup runtime - no network, all data is hard-coded.
+ * The real app reads dozens of endpoints; we stub the most common ones
+ * and populate DOM sections that the real JS would fill via fetches.
+ * ======================================================================= */
+(() => {
+  const MOCK = {
+    character: {
+      id: 1, name: 'Nimus', race: 'Human', class: 'Rogue', level: 3,
+      current_hp: 18, max_hp: 24, current_mana: 4, max_mana: 10,
+      ac: 15, speed: 30,
+      stats: { str: 10, dex: 16, con: 12, int: 13, wis: 10, cha: 14 },
+      gold: 42, silver: 17, copper: 5,
+    },
+    tokens: [
+      { character_id: 1, name: 'Nimus',  x: 0.30, y: 0.40, color: '#c08a2a', is_npc: false, is_alive: true },
+      { character_id: 2, name: 'Kael',   x: 0.35, y: 0.42, color: '#4a7fc0', is_npc: false, is_alive: true },
+      { character_id: 3, name: 'Goblin', x: 0.55, y: 0.50, color: '#b84040', is_npc: true,  is_alive: true },
+      { character_id: 4, name: 'Goblin', x: 0.60, y: 0.47, color: '#b84040', is_npc: true,  is_alive: true },
+      { character_id: 5, name: 'Shaman', x: 0.70, y: 0.52, color: '#8a4abf', is_npc: true,  is_alive: true },
+    ],
+    inventory: [
+      { id: 1, name: 'Shortsword',    rarity: 'uncommon',  icon: '\ud83d\udde1', quantity: 1, equipped: true  },
+      { id: 2, name: 'Leather Armor', rarity: 'common',    icon: '\ud83d\udee1', quantity: 1, equipped: true  },
+      { id: 3, name: 'Health Potion', rarity: 'common',    icon: '\ud83e\uddea', quantity: 3, equipped: false },
+      { id: 4, name: 'Rope (50ft)',   rarity: 'common',    icon: '\ud83e\ude22', quantity: 1, equipped: false },
+      { id: 5, name: 'Mystic Amulet', rarity: 'rare',      icon: '\ud83d\udcff', quantity: 1, equipped: false },
+    ],
+    abilities: [
+      { id: 1, name: 'Sneak Attack', school: 'martial',   cost: 0, description: '+1d6 flanking' },
+      { id: 2, name: 'Dash',         school: 'movement',  cost: 1, description: 'Double move this turn' },
+      { id: 3, name: 'Fireball',     school: 'evocation', cost: 4, description: '8d6 fire 20ft radius' },
+    ],
+    combat: {
+      active: true, round: 3,
+      order: [
+        { character_id: 1, name: 'Nimus',  init: 18, current: true  },
+        { character_id: 3, name: 'Goblin', init: 14, current: false },
+        { character_id: 2, name: 'Kael',   init: 12, current: false },
+        { character_id: 5, name: 'Shaman', init: 10, current: false },
+      ],
+    },
+  };
+
+  /* Fake fetch ---------------------------------------------------- */
+  const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
+    status, headers: { 'Content-Type': 'application/json' },
+  });
+  window.fetch = async (url) => {
+    url = String(url);
+    if (url.includes('/api/map/') && url.endsWith('/overlays'))
+      return json({ drawings: [], markers: [], objects: [], traps: [] });
+    if (url.includes('/api/map/'))
+      return json({
+        has_map: false, image_url: null, grid_size: 50, grid_enabled: true,
+        grid_type: 'square', fog_enabled: false, revealed_cells: [],
+        tokens: MOCK.tokens,
+        active_floor_tiles: {},
+        active_floor_tile_size: 50, active_floor_cols: 20, active_floor_rows: 15,
+        active_floor_grid_type: 'square',
+      });
+    if (url.includes('/characters/') && url.endsWith('/inventory')) return json(MOCK.inventory);
+    if (url.includes('/characters/') && url.endsWith('/abilities')) return json(MOCK.abilities);
+    if (url.includes('/characters/'))                                return json(MOCK.character);
+    if (url.includes('/combat/') && url.includes('active'))          return json(MOCK.combat);
+    if (url.includes('/sessions/') && url.endsWith('/characters'))
+      return json([
+        MOCK.character,
+        { id: 2, name: 'Kael', race: 'Elf', class: 'Mage', current_hp: 12, max_hp: 16 },
+      ]);
+    return json({});
+  };
+
+  /* Fake WebSocket ------------------------------------------------ */
+  class MockWS {
+    constructor() { setTimeout(() => this.onopen && this.onopen(), 10); }
+    send() {} close() {}
+  }
+  window.WebSocket = MockWS;
+
+  /* Globals the real app reads ----------------------------------- */
+  window.SESSION_CODE = 'DEMO-0000';
+  window.CHAR_ID      = 1;
+  window.PLAYER_TOKEN = 'demo-token';
+
+  /* Fill known placeholder nodes + draw a demo map --------------- */
+  window.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.status-dot').forEach(d => d.classList.add('connected'));
+    document.querySelectorAll('[id$="ws-label"]').forEach(el => el.textContent = 'connected (mock)');
+
+    const fill = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
+    fill('#char-name',       MOCK.character.name);
+    fill('#session-name',    'Demo Session');
+    fill('#session-status',  'active');
+    fill('#session-turn',    '3');
+    fill('#connected-count', '2');
+
+    const paintDemo = (c) => {
+      if (!c || c.tagName !== 'CANVAS') return;
+      const parent = c.parentElement;
+      if (parent) { c.width = parent.clientWidth || 600; c.height = parent.clientHeight || 400; }
+      const ctx = c.getContext('2d');
+      const gs = 40, cols = Math.floor(c.width / gs), rows = Math.floor(c.height / gs);
+      ctx.fillStyle = '#131110'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.strokeStyle = 'rgba(192,138,42,0.15)'; ctx.lineWidth = 1;
+      for (let x = 0; x <= cols; x++) { ctx.beginPath(); ctx.moveTo(x*gs, 0); ctx.lineTo(x*gs, rows*gs); ctx.stroke(); }
+      for (let y = 0; y <= rows; y++) { ctx.beginPath(); ctx.moveTo(0, y*gs); ctx.lineTo(cols*gs, y*gs); ctx.stroke(); }
+      ctx.fillStyle = '#666';
+      [[5,3],[6,3],[7,3],[7,4],[7,5]].forEach(([cx,ry]) => { ctx.fillRect(cx*gs+1, ry*gs+1, gs-2, gs-2); });
+      MOCK.tokens.forEach(t => {
+        const tx = t.x * c.width, ty = t.y * c.height;
+        ctx.fillStyle = t.color;
+        ctx.beginPath(); ctx.arc(tx, ty, gs*0.35, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#0a0908'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#e2d5c0'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(t.name, tx, ty - gs*0.5);
+      });
+    };
+    ['player-grid-canvas','player-map-canvas','map-canvas','gm-map-canvas','builder-canvas']
+      .forEach(id => {
+        const c = document.getElementById(id);
+        if (c) requestAnimationFrame(() => paintDemo(c));
+      });
+
+    /* Drop a placeholder card into obviously-empty list containers */
+    const placeholder = (label) => {
+      const div = document.createElement('div');
+      div.style.cssText = 'margin:6px 0;padding:10px;font-size:0.8rem;color:var(--text-muted);text-align:center;border:1px dashed rgba(220,180,100,0.15);border-radius:6px';
+      div.textContent = `(${label} - mock placeholder)`;
+      return div;
+    };
+    document.querySelectorAll('[id$="-list"], [id$="-grid"], [id$="-body"]').forEach(el => {
+      if (el.children.length === 0 && !el.textContent.trim()) {
+        el.appendChild(placeholder(el.id));
+      }
+    });
+  });
+
+  /* Silence noise from any code we couldn't fully stub ----------- */
+  window.addEventListener('error',            e => e.preventDefault());
+  window.addEventListener('unhandledrejection', e => e.preventDefault());
+})();
+</script>
+
+</body>
+</html>
