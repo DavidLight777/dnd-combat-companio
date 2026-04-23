@@ -1296,8 +1296,9 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
 
     # Rework v3: damage dice are fixed by the weapon. If the weapon exposes
     # alternate `damage_modes`, the player picks a preset via
-    # ``body.damage_mode_index``. Free-form `dice_count` / `dice_type` from
-    # the client are IGNORED for attacks.
+    # ``body.damage_mode_index``. GM-side panel may override `dice_count` /
+    # `dice_type` (e.g. to roll extra dice on a power attack); when set on
+    # the body they take precedence over weapon defaults.
     damage_modes = (weapon or {}).get("damage_modes") or []
     chosen_mode = None
     if weapon:
@@ -1314,6 +1315,13 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
     else:
         dc = attacker.attack_dice_count or 1
         dt = attacker.attack_dice_type or 6
+
+    # GM/Power-attack override: if caller passes explicit dice_count/dice_type,
+    # honor them (clamped to a sane range).
+    if body.dice_count is not None and int(body.dice_count) > 0:
+        dc = max(1, min(20, int(body.dice_count)))
+    if body.dice_type is not None and int(body.dice_type) > 0:
+        dt = max(2, min(100, int(body.dice_type)))
 
     # Crit doubles dice count
     actual_dc = dc * 2 if body.critical else dc
@@ -1483,6 +1491,21 @@ async def _apply_weapon_poison_on_hit(attacker: Character, target: Character, db
             "character_id": target.id,
         })
         await manager.broadcast(attacker.session_id, {
+            "event": "inventory.update",
+            "character_id": attacker.id,
+        })
+    except Exception:
+        pass
+    return {
+        "template_id": tpl.id,
+        "name": tpl.name,
+        "icon": tpl.icon,
+        "dice_expr": f"{tpl.damage_dice_count}d{tpl.damage_dice_type}",
+        "per_tick_damage": dot_damage,
+        "turns": coat.turns_per_hit,
+        "charges_remaining": max(0, coat.charges_remaining),
+    }
+_id, {
             "event": "inventory.update",
             "character_id": attacker.id,
         })

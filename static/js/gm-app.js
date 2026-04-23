@@ -138,32 +138,41 @@ function renderPartyList() {
   list.innerHTML = party.map(c => {
     const pct = c.max_hp > 0 ? (c.current_hp / c.max_hp * 100) : 0;
     const color = pct > 50 ? 'var(--hp-high)' : pct > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
-    const deadBadge = !c.is_alive ? ' <span class="cc-badge badge-dead">💀</span>' : '';
+const deadBadge = !c.is_alive ? ' <span class="cc-badge badge-dead">💀</span>' : '';
     const sel = c.id === selectedCharId ? ' selected' : '';
     const dead = !c.is_alive ? ' dead' : '';
+    const isPlaced = c.place_at_table || c.is_at_table;
     const timerRow = `
-        <div class="cc-timer-row" style="display:flex;gap:3px;align-items:center;margin-top:3px" data-timer-char="${c.id}">
-          <input type="number" value="2" min="1" max="30" step="1" style="width:36px;font-size:0.65rem;padding:1px 3px;text-align:center" data-timer-min="${c.id}">
-          <span style="font-size:0.6rem;color:var(--text-muted)">min</span>
-          <button class="btn btn-ghost" style="font-size:0.6rem;padding:1px 5px;line-height:1.2" data-send-timer="${c.id}">⏱</button>
-        </div>`;
+    <div class="cc-timer-row" style="display:flex;gap:3px;align-items:center;margin-top:3px" data-timer-char="${c.id}">
+      <input type="number" value="2" min="1" max="30" step="1" style="width:36px;font-size:0.65rem;padding:1px 3px;text-align:center" data-timer-min="${c.id}">
+      <span style="font-size:0.6rem;color:var(--text-muted)">min</span>
+      <button class="btn btn-ghost" style="font-size:0.6rem;padding:1px 5px;line-height:1.2" data-send-timer="${c.id}">⏱</button>
+    </div>`;
     return `
-      <div class="char-card${sel}${dead}" data-char-id="${c.id}">
-        <div class="cc-top">
-          <span class="cc-name">${c.name}</span>${deadBadge}
+    <div class="char-card${sel}${dead}" data-char-id="${c.id}">
+      <div class="cc-top">
+        <span class="cc-name">${c.name}</span>${deadBadge}
+      </div>
+      <div class="cc-info">
+        <div class="cc-line">
+          <span class="hp-text">HP ${c.current_hp}/${c.max_hp}</span>
+          <span class="hp-text">KD ${c.armor_class}</span>
         </div>
-        <div class="cc-info">
-          <div class="cc-line">
-            <span class="hp-text">HP ${c.current_hp}/${c.max_hp}</span>
-            <span class="hp-text">KD ${c.armor_class}</span>
-          </div>
-          <div class="cc-line" style="flex:1;min-width:0">
-            <div class="hp-bar-container"><div class="hp-bar" style="width:${pct}%;background:${color}"></div></div>
-          </div>
+        <div class="cc-line" style="flex:1;min-width:0">
+          <div class="hp-bar-container"><div class="hp-bar" style="width:${pct}%;background:${color}"></div></div>
         </div>
-        <div class="cc-status-badges" data-sidebar-status="${c.id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px"></div>
-        ${timerRow}
-      </div>`;
+      </div>
+      <div class="cc-status-badges" data-sidebar-status="${c.id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px"></div>
+      <div class="cc-actions" style="display:flex;gap:4px;align-items:center;margin-top:3px">
+        <button class="btn btn-ghost btn-xs player-map-toggle" data-player="${c.id}" data-field="place_at_table" style="font-size:0.6rem;padding:1px 6px;${isPlaced?'background:var(--accent-green20);color:var(--accent-green);border-color:var(--accent-green)':''}" title="Toggle on map">
+          ${isPlaced?'📍 Map':'📍 Place'}
+        </button>
+        <button class="btn btn-ghost btn-xs player-hp-toggle" data-player="${c.id}" data-field="show_hp_to_players" style="font-size:0.6rem;padding:1px 6px;${c.show_hp_to_players?'background:var(--accent20);color:var(--accent);border-color:var(--accent)':''}" title="Show HP to players">
+          ${c.show_hp_to_players?'👁':'🔒'}
+        </button>
+      </div>
+      ${timerRow}
+    </div>`;
   }).join('');
 
   // Load sidebar status badges
@@ -208,6 +217,38 @@ function renderPartyList() {
   });
   list.querySelectorAll('[data-timer-min]').forEach(inp => {
     inp.addEventListener('click', e => e.stopPropagation());
+  });
+
+  // Wire player map-toggle and HP-toggle buttons
+  list.querySelectorAll('.player-map-toggle, .player-hp-toggle').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const charId = parseInt(btn.dataset.player);
+      const field = btn.dataset.field;
+      const ch = characters.find(c => c.id === charId);
+      if (!ch) return;
+      const newValue = !(ch[field]);
+      try {
+        await api.patch(`/api/characters/${charId}/table-visibility`, { [field]: newValue });
+        ch[field] = newValue;
+        if (field === 'place_at_table' && newValue) {
+          const tokenOnMap = mapCanvas?.tokens?.find(t => t.character_id === charId);
+          const hasCoords = tokenOnMap && tokenOnMap.x != null && tokenOnMap.y != null;
+          if (!hasCoords) {
+            try {
+              await api.patch(`/api/map/token/${charId}`, { x: 0.5, y: 0.5 });
+              if (mapCanvas) mapCanvas.setTokens(mapCanvas.tokens.map(t => t.character_id === charId ? { ...t, x: 0.5, y: 0.5 } : t));
+            } catch (mapErr) {
+              console.warn('Auto-place token failed (no map uploaded yet?)', mapErr);
+            }
+          }
+        }
+        renderPartyList();
+        showToast(`${ch.name}: ${field === 'place_at_table' ? (newValue ? 'placed on map' : 'removed from map') : (newValue ? 'HP visible' : 'HP hidden')}`);
+      } catch (err) {
+        showToast('Failed to update: ' + (err.message || ''));
+      }
+    });
   });
 }
 
@@ -713,9 +754,13 @@ async function renderCharDetail() {
     // ── Player: original single-view layout ──
     area.innerHTML = `
       <div class="detail-panel">
-        <div class="detail-header">
-          <h2>${c.name} <span class="cc-badge badge-player">Player</span> ${!c.is_alive?'<span class="cc-badge badge-dead">💀 DEAD</span>':''}</h2>
-        </div>
+<div class="detail-header" style="flex-wrap:wrap;gap:6px">
+      <h2 style="flex:1">${c.name} <span class="cc-badge badge-player">Player</span> ${!c.is_alive?'<span class="cc-badge badge-dead">💀 DEAD</span>':''}</h2>
+      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.72rem;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="player-place-table" ${c.place_at_table?'checked':''}> Table</label>
+        <label style="font-size:0.72rem;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="player-show-hp" ${c.show_hp_to_players?'checked':''}> HP</label>
+      </div>
+    </div>
         <div class="detail-body">
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:0.78rem">
             <span id="gm-char-race" style="padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border)">Race: <strong>${c.race_id ? '...' : 'None'}</strong></span>
@@ -1274,13 +1319,46 @@ async function renderCharDetail() {
       } catch (e) { showToast('Failed to update table visibility'); }
     });
   }
-  const showHpChk = area.querySelector('#npc-show-hp');
-  if (showHpChk) {
+const showHpChk = area.querySelector('#npc-show-hp');
+if (showHpChk) {
     showHpChk.addEventListener('change', async () => {
       try {
-        await api.patch(`/api/characters/${c.id}/table-visibility`,
-                        { show_hp_to_players: showHpChk.checked });
+        await api.patch(`/api/characters/${c.id}/table-visibility`, { show_hp_to_players: showHpChk.checked });
         addLog('gm.npc', `${c.name}: Show HP = ${showHpChk.checked}`);
+      } catch (e) { showToast('Failed to update HP visibility'); }
+    });
+  }
+
+  // Player character: Place at Table / Show HP toggles
+  const playerPlaceChk = area.querySelector('#player-place-table');
+  if (playerPlaceChk) {
+    playerPlaceChk.addEventListener('change', async () => {
+      try {
+        await api.patch(`/api/characters/${c.id}/table-visibility`, { place_at_table: playerPlaceChk.checked });
+        c.place_at_table = playerPlaceChk.checked;
+        if (playerPlaceChk.checked) {
+          const tokenOnMap = mapCanvas?.tokens?.find(t => t.character_id === c.id);
+          const hasCoords = tokenOnMap && tokenOnMap.x != null && tokenOnMap.y != null;
+          if (!hasCoords) {
+            try {
+              await api.patch(`/api/map/token/${c.id}`, { x: 0.5, y: 0.5 });
+              if (mapCanvas) mapCanvas.setTokens(mapCanvas.tokens.map(t => t.character_id === c.id ? { ...t, x: 0.5, y: 0.5 } : t));
+            } catch (mapErr) { console.warn('Auto-place token failed', mapErr); }
+          }
+        }
+        renderPartyList();
+        showToast(`${c.name}: ${playerPlaceChk.checked ? 'placed on map' : 'removed from map'}`);
+      } catch (e) { showToast('Failed to update table visibility'); }
+    });
+  }
+  const playerShowHpChk = area.querySelector('#player-show-hp');
+  if (playerShowHpChk) {
+    playerShowHpChk.addEventListener('change', async () => {
+      try {
+        await api.patch(`/api/characters/${c.id}/table-visibility`, { show_hp_to_players: playerShowHpChk.checked });
+        c.show_hp_to_players = playerShowHpChk.checked;
+        renderPartyList();
+        showToast(`${c.name}: HP ${playerShowHpChk.checked ? 'visible' : 'hidden'}`);
       } catch (e) { showToast('Failed to update HP visibility'); }
     });
   }
@@ -5121,8 +5199,18 @@ ws.on('combat.attack_result', () => _updateAllNpcPanels());
 ws.on('combat.hit_result', () => _updateAllNpcPanels());
 ws.on('combat.ability_result', () => _updateAllNpcPanels());
 ws.on('combat.defend', () => _updateAllNpcPanels());
+ws.on('combat.defense_resolved', () => _updateAllNpcPanels());
 ws.on('character.updated', () => _updateAllNpcPanels());
 ws.on('map.updated', () => _updateAllNpcPanels());
+ws.on('status.update', d => {
+  if (d && d.character_id && npcPanels[d.character_id]) _loadNpcPanelStatuses(d.character_id);
+});
+ws.on('inventory.update', d => {
+  if (d && d.character_id && npcPanels[d.character_id]) {
+    _loadNpcPanelWeapon(d.character_id);
+    _loadNpcPanelItems(d.character_id);
+  }
+});
 
 // ══════════════════════════════════════════════════════════════
 // DEFENSE REACTION SYSTEM (GM side)
@@ -5244,6 +5332,24 @@ ws.on('combat.defense_resolved', d => {
   } else {
     showToast(`💥 ${d.target_name} failed defense vs ${d.attacker_name}. ${d.defense_breakdown}`);
     addLog('gm.combat', `💥 Defense failed: ${d.target_name} — ${d.defense_breakdown} vs ${d.attack_total}`);
+  }
+
+  // Resume NPC floating-panel attack flow (this NPC was the attacker)
+  const ctx = npcPanels[d.attacker_id];
+  if (ctx && ctx.hitData && ctx.hitData.pending_defense_id === d.id) {
+    if (d.success) {
+      // Defense succeeded → no damage step; reset panel UI
+      const panelEl = ctx.el;
+      const hitWrap = panelEl.querySelector(`[data-npc-panel-hit="${d.attacker_id}"]`);
+      const dmgWrap = panelEl.querySelector(`[data-npc-panel-damage="${d.attacker_id}"]`);
+      if (hitWrap) hitWrap.style.display = 'flex';
+      if (dmgWrap) dmgWrap.style.display = 'none';
+      _showNpcPanelResult(d.attacker_id, `<div style="color:var(--accent)">🛡️ ${d.target_name} defended (${d.defense_breakdown||''})</div>`);
+      ctx.hitData = null;
+    } else {
+      // Defense failed → reveal damage step
+      _revealDmgStep(ctx.el, d.attacker_id, ctx.hitData);
+    }
   }
 });
 
@@ -7284,14 +7390,19 @@ function _makeNpcPanelHtml(npc) {
           <button class="adv-btn" data-mode="disadvantage" style="border:none;background:var(--bg-surface-2);color:var(--text-muted);padding:0 8px;cursor:pointer;font-size:0.6rem">Dis</button>
         </div>
 
-        <!-- STEP 1: HIT ROLL -->
-        <div data-npc-panel-hit="${npc.id}">
-          <button class="btn btn-primary btn-xs" data-npc-panel-roll-hit="${npc.id}" style="width:100%">⚔ Roll Hit</button>
+        <!-- STEP 1: HIT ROLL (with d20 dice count, e.g. multi-attack) -->
+        <div data-npc-panel-hit="${npc.id}" style="display:flex;gap:4px;align-items:center">
+          <label style="font-size:0.62rem;color:var(--text-muted)" title="Number of d20 to roll (best counts)">×</label>
+          <input type="number" data-npc-panel-hit-count="${npc.id}" value="1" min="1" max="10" style="width:42px;font-size:0.72rem;text-align:center" title="d20 dice count">
+          <button class="btn btn-primary btn-xs" data-npc-panel-roll-hit="${npc.id}" style="flex:1">⚔ Roll Hit</button>
         </div>
 
-        <!-- STEP 2: DAMAGE (hidden until hit) -->
+        <!-- STEP 2: DAMAGE (hidden until hit). Dice shown only for unarmed; mode selector for multi-mode weapons. -->
         <div data-npc-panel-damage="${npc.id}" style="display:none;flex-direction:column;gap:4px">
-          <div style="display:flex;align-items:center;gap:4px">
+          <div data-npc-panel-dmg-modewrap="${npc.id}" style="display:none">
+            <select data-npc-panel-dmg-mode="${npc.id}" style="width:100%;font-size:0.65rem"></select>
+          </div>
+          <div data-npc-panel-dmg-dicewrap="${npc.id}" style="display:none;align-items:center;gap:4px">
             <input type="number" data-npc-panel-dmg-count="${npc.id}" value="1" min="1" style="width:36px;font-size:0.65rem;text-align:center" title="Dice count">
             <select data-npc-panel-dmg-die="${npc.id}" style="font-size:0.65rem;flex:1">
               <option value="4">d4</option>
@@ -7301,8 +7412,11 @@ function _makeNpcPanelHtml(npc) {
               <option value="12">d12</option>
               <option value="20">d20</option>
             </select>
-            <button class="btn btn-ghost btn-xs" data-npc-panel-roll-dmg="${npc.id}">💥 Damage</button>
-            <button class="btn btn-ghost btn-xs" data-npc-panel-cancel-dmg="${npc.id}" style="padding:2px 4px">✕</button>
+          </div>
+          <div data-npc-panel-dmg-readonly="${npc.id}" style="display:none;font-size:0.65rem;color:var(--text-muted);padding:2px 4px;background:var(--bg-surface-2);border-radius:3px"></div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-primary btn-xs" data-npc-panel-roll-dmg="${npc.id}" style="flex:1">💥 Roll Damage</button>
+            <button class="btn btn-ghost btn-xs" data-npc-panel-cancel-dmg="${npc.id}" style="padding:2px 6px">✕</button>
           </div>
         </div>
 
@@ -7414,86 +7528,132 @@ async function _loadNpcPanelStatuses(npcId) {
 }
 
 async function _loadNpcPanelWeapon(npcId) {
-  const el = document.querySelector(`[data-npc-panel-weapon="${npcId}"]`);
-  if (!el) return;
-  try {
-    const inv = await api.get(`/api/characters/${npcId}/inventory`);
-    const weapon = (inv.items || []).find(i => i.is_equipped);
-    if (weapon) {
-      const ws = (weapon.weapon_stats && weapon.weapon_stats[0]) || {};
-      const dmg = ws.dice_count && ws.dice_type ? `${ws.dice_count}d${ws.dice_type}` : '—';
-      const bonus = ws.damage_bonus ? `+${ws.damage_bonus}` : '';
-      el.innerHTML = `<span style="color:var(--accent)">⚔ ${weapon.name}</span> · ${dmg}${bonus} · ${ws.weapon_type || ''}`;
-    } else {
-      el.innerHTML = `<span style="color:var(--text-muted)">No weapon equipped</span>`;
-    }
-  } catch { el.innerHTML = ''; }
-}
+   const el = document.querySelector(`[data-npc-panel-weapon="${npcId}"]`);
+   if (!el) return;
+   try {
+     const inv = await api.get(`/api/characters/${npcId}/inventory`);
+     // Find equipped weapon (not just any equipped item)
+     const weapon = (inv.items || []).find(i => i.is_equipped && i.category === 'weapon');
+     if (weapon) {
+       const ws = weapon.weapon_stats || {};
+       const dmg = ws.dice_count && ws.dice_type ? `${ws.dice_count}d${ws.dice_type}` : '—';
+       // Calculate damage bonus from item bonuses
+       const dmgBonus = (weapon.bonuses || []).reduce((sum, b) => {
+         return sum + (b.bonus_type === 'damage_bonus' ? b.value : 0);
+       }, 0);
+       const bonus = dmgBonus ? `+${dmgBonus}` : '';
+       el.innerHTML = `<span style="color:var(--accent)">⚔ ${weapon.name}</span> · ${dmg}${bonus} · ${ws.weapon_range || ''}`;
+     } else {
+       el.innerHTML = `<span style="color:var(--text-muted)">No weapon equipped</span>`;
+     }
+ } catch (e) { el.innerHTML = ''; }
+ }
 
 async function _loadNpcPanelAbilities(npcId) {
-  const el = document.querySelector(`[data-npc-panel-abilities="${npcId}"]`);
-  if (!el) return;
-  try {
-    const abs = await api.get(`/api/characters/${npcId}/abilities`);
-    const active = (abs || []).filter(a => !a.is_passive);
-    if (!active.length) { el.innerHTML = '<span style="color:var(--text-muted)">None</span>'; return; }
-    el.innerHTML = active.map(a => {
-      const onCd = (a.cooldown_remaining||0) > 0;
-      const cdInfo = a.cooldown ? `CD ${a.cooldown}` : '';
-      return `<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;${onCd?'opacity:0.45':''}">
-        <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${'✨'} ${a.name}</span>
-        <span style="color:var(--text-muted);font-size:0.55rem">${cdInfo}</span>
-        ${onCd ? `<span style="color:var(--text-muted);font-size:0.55rem">${a.cooldown_remaining}t</span>` : `<button class="btn btn-primary btn-xs" data-npc-panel-use-ability="${npcId}" data-ability="${a.character_ability_id}" style="font-size:0.55rem;padding:1px 5px">Use</button>`}
-      </div>`;
-    }).join('');
-    // Wire inline ability buttons
-    el.querySelectorAll('[data-npc-panel-use-ability]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const aid = parseInt(btn.dataset.ability);
-        btn.disabled = true;
-        try {
-          const res = await api.post(`/api/character-abilities/${aid}/use`, {});
-          const msg = (res.results || []).join(' · ') || 'Ability used';
-          _showNpcPanelResult(npcId, `<b>✅</b> ${msg}`);
-          _loadNpcPanelAbilities(npcId);
-          refreshChars();
-        } catch(e) {
-          let m='Ability failed'; try{const er=JSON.parse(e.message);m=er.detail?.message||er.detail||m;}catch{}
-          _showNpcPanelResult(npcId, `<b>❌</b> ${m}`, true);
-        } finally { btn.disabled = false; }
-      });
-    });
-  } catch { el.innerHTML = '<span style="color:var(--text-muted)">—</span>'; }
-}
+    const el = document.querySelector(`[data-npc-panel-abilities="${npcId}"]`);
+    if (!el) return;
+    try {
+      const abs = await api.get(`/api/characters/${npcId}/abilities`);
+      // Validate we got an array
+      if (!Array.isArray(abs)) {
+        console.warn('Expected array for abilities, got:', abs);
+        el.innerHTML = '<span style="color:var(--text-muted)">Invalid data</span>';
+        return;
+      }
+     const active = abs.filter(a => !a.is_passive);
+     if (!active.length) { 
+       if (abs.length === 0) {
+         el.innerHTML = '<span style="color:var(--text-muted)">No abilities assigned</span>';
+       } else {
+         const passiveCount = abs.filter(a => a.is_passive).length;
+         el.innerHTML = `<span style="color:var(--text-muted)">${abs.length} abilities (${passiveCount} passive)</span>`;
+       }
+       return; 
+     }
+     el.innerHTML = active.map(a => {
+       const onCd = (a.cooldown_remaining||0) > 0;
+       const cdInfo = a.cooldown_turns ? `CD ${a.cooldown_turns}` : '';
+       return `<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;${onCd?'opacity:0.45':''}">
+         <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${'✨'} ${a.name}</span>
+         <span style="color:var(--text-muted);font-size:0.55rem">${cdInfo}</span>
+         ${onCd ? `<span style="color:var(--text-muted);font-size:0.55rem">${a.cooldown_remaining}t</span>` : `<button class="btn btn-primary btn-xs" data-npc-panel-use-ability="${npcId}" data-ability="${a.character_ability_id}" style="font-size:0.55rem;padding:1px 5px">Use</button>`}
+       </div>`;
+     }).join('');
+     // Wire inline ability buttons
+     el.querySelectorAll('[data-npc-panel-use-ability]').forEach(btn => {
+       btn.addEventListener('click', async () => {
+         const aid = parseInt(btn.dataset.ability);
+         btn.disabled = true;
+         try {
+           const res = await api.post(`/api/character-abilities/${aid}/use`, {});
+           const msg = (res.results || []).join(' · ') || 'Ability used';
+           _showNpcPanelResult(npcId, `<b>✅</b> ${msg}`);
+           _loadNpcPanelAbilities(npcId);
+           refreshChars();
+         } catch(e) {
+           let m='Ability failed'; try{const er=JSON.parse(e.message);m=er.detail?.message||er.detail||m;}catch{}
+           _showNpcPanelResult(npcId, `<b>❌</b> ${m}`, true);
+         } finally { btn.disabled = false; }
+       });
+     });
+   } catch (e) {
+     console.error('Error loading NPC abilities:', e);
+     el.innerHTML = '<span style="color:var(--text-muted)">Error loading</span>';
+   }
+ }
 
 async function _loadNpcPanelItems(npcId) {
-  const el = document.querySelector(`[data-npc-panel-items="${npcId}"]`);
-  if (!el) return;
-  try {
-    const inv = await api.get(`/api/characters/${npcId}/inventory`);
-    const items = (inv.items||[]).filter(i => i.consumable || i.is_potion);
-    if (!items.length) { el.innerHTML = '<span style="color:var(--text-muted)">None</span>'; return; }
-    el.innerHTML = items.map(it => `<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px">
-      <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${it.description||''}">${it.potion_icon||'🧪'} ${it.name}</span>
-      <span style="color:var(--text-muted);font-size:0.55rem">x${it.quantity}</span>
-      <button class="btn btn-primary btn-xs" data-npc-panel-use-item="${npcId}" data-item="${it.id}" style="font-size:0.55rem;padding:1px 5px">Use</button>
-    </div>`).join('');
-    // Wire inline item buttons
-    el.querySelectorAll('[data-npc-panel-use-item]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const iid = parseInt(btn.dataset.item);
-        btn.disabled = true;
-        try {
-          const res = await api.post(`/api/inventory/${iid}/use`, {});
-          _showNpcPanelResult(npcId, `<b>✅</b> ${res.breakdown||'used'}`);
-          _loadNpcPanelItems(npcId);
-          refreshChars();
-        } catch(e) { _showNpcPanelResult(npcId, `<b>❌</b> ${e?.body?.detail||'Use failed'}`, true); }
-        finally { btn.disabled = false; }
-      });
-    });
-  } catch { el.innerHTML = '<span style="color:var(--text-muted)">—</span>'; }
-}
+   const el = document.querySelector(`[data-npc-panel-items="${npcId}"]`);
+   if (!el) return;
+   try {
+     const inv = await api.get(`/api/characters/${npcId}/inventory`);
+     // Validate inventory response structure
+     if (!inv || !Array.isArray(inv.items)) {
+       console.warn('Invalid inventory response:', inv);
+       el.innerHTML = '<span style="color:var(--text-muted)">Invalid inventory data</span>';
+       return;
+     }
+     const items = inv.items.filter(i => i.consumable || i.is_potion);
+     if (!items.length) { 
+       const totalItems = inv.items.length;
+       el.innerHTML = totalItems === 0 
+         ? '<span style="color:var(--text-muted)">No items in inventory</span>' 
+         : `<span style="color:var(--text-muted)">${totalItems} items (none usable)</span>`;
+       return; 
+     }
+     el.innerHTML = items.map(it => `<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px">
+       <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${it.description||''}">${it.potion_icon||'🧪'} ${it.name}</span>
+       <span style="color:var(--text-muted);font-size:0.55rem">x${it.quantity}</span>
+       <button class="btn btn-primary btn-xs" data-npc-panel-use-item="${npcId}" data-inventory-id="${it.inventory_id}" style="font-size:0.55rem;padding:1px 5px">Use</button>
+     </div>`).join('');
+     // Wire inline item buttons
+     el.querySelectorAll('[data-npc-panel-use-item]').forEach(btn => {
+       btn.addEventListener('click', async () => {
+         const iid = parseInt(btn.dataset.inventoryId);
+         btn.disabled = true;
+         try {
+           const res = await api.post(`/api/inventory/${iid}/use`, {});
+           _showNpcPanelResult(npcId, `<b>✅</b> ${res.breakdown||'used'}`);
+           _loadNpcPanelItems(npcId);
+           refreshChars();
+         } catch(e) { 
+           let errorMsg = 'Use failed';
+           try {
+             if (e.body && e.body.detail) errorMsg = e.body.detail;
+             else if (typeof e === 'string') errorMsg = e;
+           } finally {
+             _showNpcPanelResult(npcId, `<b>❌</b> ${errorMsg}`, true);
+           }
+         } finally { 
+           btn.disabled = false; 
+         }
+       });
+     });
+   } catch (e) {
+     console.error('Error loading NPC items:', e);
+     el.innerHTML = '<span style="color:var(--text-muted)">Error loading items</span>';
+   }
+ }
 
 function updateNpcControlPanel(npcId) {
   const p = npcPanels[npcId];
@@ -7547,6 +7707,55 @@ function _setNpcPanelAdvMode(npcId, mode) {
     b.style.fontWeight = isActive ? '700' : '400';
   });
 }
+// Reveal the damage step, populating either the damage_modes selector,
+// the read-only weapon-locked dice display, or the editable dice (unarmed).
+function _revealDmgStep(el, npcId, hitData) {
+  const hitWrap = el.querySelector(`[data-npc-panel-hit="${npcId}"]`);
+  const dmgWrap = el.querySelector(`[data-npc-panel-damage="${npcId}"]`);
+  if (hitWrap) hitWrap.style.display = 'none';
+  if (dmgWrap) dmgWrap.style.display = 'flex';
+
+  const modeWrap = el.querySelector(`[data-npc-panel-dmg-modewrap="${npcId}"]`);
+  const modeSel  = el.querySelector(`[data-npc-panel-dmg-mode="${npcId}"]`);
+  const diceWrap = el.querySelector(`[data-npc-panel-dmg-dicewrap="${npcId}"]`);
+  const roWrap   = el.querySelector(`[data-npc-panel-dmg-readonly="${npcId}"]`);
+  if (modeWrap) modeWrap.style.display = 'none';
+  if (diceWrap) diceWrap.style.display = 'none';
+  if (roWrap)   roWrap.style.display = 'none';
+
+  const modes = Array.isArray(hitData.damage_modes) ? hitData.damage_modes : [];
+  const isUnarmed = !hitData.weapon_name || hitData.weapon_name === 'Unarmed';
+  const critMul = hitData.critical ? 2 : 1;
+
+  if (modes.length) {
+    if (modeSel) {
+      modeSel.innerHTML = modes.map((m, i) =>
+        `<option value="${i}">${m.label || `Mode ${i+1}`} · ${(m.dice_count||1)*critMul}d${m.dice_type||6}${m.damage_stat?` (${m.damage_stat.slice(0,3).toUpperCase()})`:''}</option>`
+      ).join('');
+    }
+    if (modeWrap) modeWrap.style.display = '';
+  } else if (isUnarmed) {
+    if (diceWrap) diceWrap.style.display = 'flex';
+    const dcEl = el.querySelector(`[data-npc-panel-dmg-count="${npcId}"]`);
+    const dtEl = el.querySelector(`[data-npc-panel-dmg-die="${npcId}"]`);
+    if (dcEl && hitData.default_dice_count) dcEl.value = hitData.default_dice_count;
+    if (dtEl && hitData.default_dice_type) dtEl.value = hitData.default_dice_type;
+  } else {
+    // Locked weapon — surface editable count/die so GM can override (server now honors).
+    if (diceWrap) diceWrap.style.display = 'flex';
+    const dcEl = el.querySelector(`[data-npc-panel-dmg-count="${npcId}"]`);
+    const dtEl = el.querySelector(`[data-npc-panel-dmg-die="${npcId}"]`);
+    if (dcEl && hitData.default_dice_count) dcEl.value = hitData.default_dice_count;
+    if (dtEl && hitData.default_dice_type) dtEl.value = hitData.default_dice_type;
+    if (roWrap) {
+      const dc = (hitData.default_dice_count || 1) * critMul;
+      const dt = hitData.default_dice_type || 6;
+      roWrap.style.display = '';
+      roWrap.textContent = `${hitData.weapon_name} default: ${dc}d${dt}${hitData.critical?' (CRIT ×2)':''} — change to override`;
+    }
+  }
+}
+
 function _wireNpcPanelActions(el, npcId) {
   const advWrap = el.querySelector(`[data-npc-panel-adv="${npcId}"]`);
   if (advWrap) { _setNpcPanelAdvMode(npcId, 'normal'); advWrap.querySelectorAll('.adv-btn').forEach(b => b.addEventListener('click', () => _setNpcPanelAdvMode(npcId, b.dataset.mode))); }
@@ -7564,13 +7773,30 @@ function _wireNpcPanelActions(el, npcId) {
       hitBtn.disabled = true;
       try {
         const adv = _getNpcPanelAdvMode(npcId);
-        const res = await api.post('/api/combat/hit-roll', { attacker_id: npcId, target_id: targetId, advantage: adv });
-        const color = res.hit ? (res.critical ? 'var(--accent-yellow)' : 'var(--accent-green)') : 'var(--accent-red)';
-        _showNpcPanelResult(npcId, `<div style="color:${color};font-weight:700">${res.critical ? '💥 CRITICAL' : res.hit ? '✅ HIT' : '❌ MISS'}</div><div style="font-size:0.62rem;color:var(--text-muted)">d20=${res.d20_roll}${res.stat_mod?`+${res.stat_mod}`:''}${res.item_bonus?`+${res.item_bonus}`:''}${res.status_penalty?`-${res.status_penalty}`:''} vs AC ${res.target_ac} · Total ${res.total}</div>`);
-        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
-          ws.ws.send(JSON.stringify({ type: 'combat.hit_result', attacker_id: npcId, attacker_name: npc.name, target_id: targetId, target_name: target.name, hit: res.hit, critical: !!res.critical, total: res.total }));
+        const hitCountEl = el.querySelector(`[data-npc-panel-hit-count="${npcId}"]`);
+        const hitDiceCount = Math.max(1, parseInt(hitCountEl?.value) || 1);
+        const res = await api.post('/api/combat/hit-roll', { attacker_id: npcId, target_id: targetId, advantage: adv, hit_dice_count: hitDiceCount });
+        // Cache hit context for the damage step (and for defense-resolve resume)
+        if (npcPanels[npcId]) {
+          npcPanels[npcId].hitData = res;
+          npcPanels[npcId].targetId = targetId;
         }
-        if (res.hit) { hitWrap.style.display = 'none'; dmgWrap.style.display = 'flex'; }
+        const color = res.hit ? (res.critical ? 'var(--accent-yellow)' : 'var(--accent-green)') : 'var(--accent-red)';
+        const label = res.fumble ? '💨 FUMBLE' : res.critical ? '💥 CRITICAL' : res.hit ? '✅ HIT' : '❌ MISS';
+        _showNpcPanelResult(npcId, `<div style="color:${color};font-weight:700">${label}</div><div style="font-size:0.62rem;color:var(--text-muted)">${res.hit_breakdown || ''}</div>`);
+        if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+          ws.ws.send(JSON.stringify({ type: 'combat.hit_result', attacker_id: npcId, attacker_name: npc.name, target_id: targetId, target_name: target.name, hit: res.hit, critical: !!res.critical, fumble: !!res.fumble, hit_breakdown: res.hit_breakdown, total: res.total }));
+        }
+        if (res.hit) {
+          if (res.pending_defense_id) {
+            // Defense reaction is pending — wait for resolution.
+            // combat.defense_resolved listener will reveal damage step (or close it on success).
+            _showNpcPanelResult(npcId, `<div style="color:${color};font-weight:700">${label}</div><div style="font-size:0.62rem;color:var(--accent)">⏳ Waiting for ${target.name} to defend...</div>`);
+          } else {
+            // CRIT / fumble / no-defense path → reveal damage step
+            _revealDmgStep(el, npcId, res);
+          }
+        }
       } catch (e) {
         let msg = e?.body?.detail?.message || e?.body?.detail || 'Attack failed';
         _showNpcPanelResult(npcId, `<b>❌</b> ${msg}`, true);
@@ -7583,38 +7809,56 @@ function _wireNpcPanelActions(el, npcId) {
   const cancelDmgBtn = el.querySelector(`[data-npc-panel-cancel-dmg="${npcId}"]`);
   if (cancelDmgBtn) {
     cancelDmgBtn.addEventListener('click', () => {
-      hitWrap.style.display = 'block';
+      hitWrap.style.display = 'flex';
       dmgWrap.style.display = 'none';
+      if (npcPanels[npcId]) { npcPanels[npcId].hitData = null; }
     });
   }
   if (dmgBtn) {
     dmgBtn.addEventListener('click', async () => {
-      const targetSel = el.querySelector(`[data-npc-panel-target="${npcId}"]`);
-      const targetId = parseInt(targetSel?.value);
-      if (!targetId) return;
+      const ctx = npcPanels[npcId] || {};
+      const hitData = ctx.hitData;
+      const targetId = ctx.targetId || parseInt(el.querySelector(`[data-npc-panel-target="${npcId}"]`)?.value);
+      if (!targetId || !hitData) { _showNpcPanelResult(npcId, '<b>❌ Roll Hit first</b>', true); return; }
       const npc = characters.find(c => c.id === npcId);
       const target = characters.find(c => c.id === targetId);
       if (!npc || !target) return;
-      const diceCount = parseInt(el.querySelector(`[data-npc-panel-dmg-count="${npcId}"]`).value) || 1;
-      const diceType = parseInt(el.querySelector(`[data-npc-panel-dmg-die="${npcId}"]`).value) || 8;
       const adv = _getNpcPanelAdvMode(npcId);
+      // Body: critical from hitData; if NPC has weapon, server ignores dice_*; if unarmed-fallback, send overrides
+      const body = {
+        attacker_id: npcId, target_id: targetId,
+        critical: !!hitData.critical, advantage: adv,
+      };
+      const modeSel = el.querySelector(`[data-npc-panel-dmg-mode="${npcId}"]`);
+      if (modeSel && modeSel.value !== '') body.damage_mode_index = parseInt(modeSel.value);
+      const dcEl = el.querySelector(`[data-npc-panel-dmg-count="${npcId}"]`);
+      const dtEl = el.querySelector(`[data-npc-panel-dmg-die="${npcId}"]`);
+      // Forward dice override; server honors when set (works for unarmed AND armed power-attacks)
+      if (dcEl && dcEl.offsetParent !== null) body.dice_count = parseInt(dcEl.value) || 1;
+      if (dtEl && dtEl.offsetParent !== null) body.dice_type = parseInt(dtEl.value) || 8;
       dmgBtn.disabled = true;
       try {
-        const res = await api.post('/api/combat/damage-roll', {
-          attacker_id: npcId, target_id: targetId,
-          dice_count: diceCount, dice_type: diceType, advantage: adv,
-        });
-        const color = res.critical ? 'var(--accent-yellow)' : 'var(--accent-green)';
+        const res = await api.post('/api/combat/damage-roll', body);
+        const color = hitData.critical ? 'var(--accent-yellow)' : 'var(--accent-green)';
         _showNpcPanelResult(npcId, `
-          <div style="color:${color};font-weight:700">💥 ${res.total} DAMAGE</div>
-          <div style="font-size:0.62rem;color:var(--text-muted)">${res.rolls?.join(', ') || ''} ${res.item_bonus?`+${res.item_bonus}`:''} → ${target.name} HP ${res.target_hp_after||'?'}${res.damage_type?` · ${res.damage_type}`:''}</div>
+          <div style="color:${color};font-weight:700">💥 ${res.final_damage} DAMAGE${res.target_downed ? ' · 💀 DOWN' : ''}</div>
+          <div style="font-size:0.62rem;color:var(--text-muted)">${res.damage_breakdown || ''}</div>
+          <div style="font-size:0.62rem;color:var(--text-muted)">${res.intake_breakdown || ''}</div>
+          <div style="font-size:0.62rem">${target.name}: HP ${res.target_hp_before}→<b>${res.target_hp_after}</b></div>
         `);
         if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
-          ws.ws.send(JSON.stringify({ type: 'combat.damage_result', attacker_id: npcId, attacker_name: npc.name, target_id: targetId, target_name: target.name, total: res.total, target_hp_after: res.target_hp_after, damage_type: res.damage_type }));
+          ws.ws.send(JSON.stringify({
+            type: 'combat.attack_result',
+            attacker_id: npcId, attacker_name: npc.name,
+            target_id: targetId, target_name: target.name,
+            hit: true, critical: !!hitData.critical, fumble: false,
+            final_damage: res.final_damage, target_hp_after: res.target_hp_after,
+          }));
         }
         refreshChars();
-        hitWrap.style.display = 'block';
+        hitWrap.style.display = 'flex';
         dmgWrap.style.display = 'none';
+        if (npcPanels[npcId]) { npcPanels[npcId].hitData = null; }
       } catch (e) {
         let msg = e?.body?.detail?.message || e?.body?.detail || 'Damage roll failed';
         _showNpcPanelResult(npcId, `<b>❌</b> ${msg}`, true);
