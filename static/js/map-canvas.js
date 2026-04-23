@@ -1257,7 +1257,7 @@ class MapCanvas {
       const marker = this._hitMarker(m.x, m.y);
       if (marker && this.onMarkerClick) { this.onMarkerClick(marker); return; }
       const token = this._hitToken(m.x, m.y);
-      if (token && this.onTokenClick) this.onTokenClick(token);
+      if (token && this.onTokenClick) this.onTokenClick(token, e.shiftKey);
     });
 
     // Right-click for token context menu (GM only)
