@@ -121,6 +121,7 @@ async function refreshChars() {
   renderNPCList();
   $('#player-count').textContent = characters.filter(c => !c.is_npc).length;
   if (selectedCharId) renderCharDetail();
+  _updateAllNpcPanels();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -7417,11 +7418,12 @@ async function _loadNpcPanelWeapon(npcId) {
   if (!el) return;
   try {
     const inv = await api.get(`/api/characters/${npcId}/inventory`);
-    const weapon = (inv.items || []).find(i => i.equipped);
+    const weapon = (inv.items || []).find(i => i.is_equipped);
     if (weapon) {
-      const dmg = weapon.damage_dice || '—';
-      const bonus = weapon.damage_bonus ? `+${weapon.damage_bonus}` : '';
-      el.innerHTML = `<span style="color:var(--accent)">⚔ ${weapon.name}</span> · ${dmg}${bonus} · ${weapon.weapon_type || ''}`;
+      const ws = (weapon.weapon_stats && weapon.weapon_stats[0]) || {};
+      const dmg = ws.dice_count && ws.dice_type ? `${ws.dice_count}d${ws.dice_type}` : '—';
+      const bonus = ws.damage_bonus ? `+${ws.damage_bonus}` : '';
+      el.innerHTML = `<span style="color:var(--accent)">⚔ ${weapon.name}</span> · ${dmg}${bonus} · ${ws.weapon_type || ''}`;
     } else {
       el.innerHTML = `<span style="color:var(--text-muted)">No weapon equipped</span>`;
     }
@@ -7433,15 +7435,15 @@ async function _loadNpcPanelAbilities(npcId) {
   if (!el) return;
   try {
     const abs = await api.get(`/api/characters/${npcId}/abilities`);
-    const active = (abs || []).filter(a => a.ability_type !== 'passive');
+    const active = (abs || []).filter(a => !a.is_passive);
     if (!active.length) { el.innerHTML = '<span style="color:var(--text-muted)">None</span>'; return; }
     el.innerHTML = active.map(a => {
       const onCd = (a.cooldown_remaining||0) > 0;
-      const cost = [a.mana_cost?`🔮${a.mana_cost}`:'', a.hp_cost?`❤️${a.hp_cost}`:''].filter(Boolean).join(' ');
+      const cdInfo = a.cooldown ? `CD ${a.cooldown}` : '';
       return `<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;${onCd?'opacity:0.45':''}">
-        <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${a.description||''}">${a.icon||'✨'} ${a.name}</span>
-        <span style="color:var(--text-muted);font-size:0.55rem">${cost}</span>
-        ${onCd ? `<span style="color:var(--text-muted);font-size:0.55rem">CD ${a.cooldown_remaining}t</span>` : `<button class="btn btn-primary btn-xs" data-npc-panel-use-ability="${npcId}" data-ability="${a.character_ability_id}" style="font-size:0.55rem;padding:1px 5px">Use</button>`}
+        <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${'✨'} ${a.name}</span>
+        <span style="color:var(--text-muted);font-size:0.55rem">${cdInfo}</span>
+        ${onCd ? `<span style="color:var(--text-muted);font-size:0.55rem">${a.cooldown_remaining}t</span>` : `<button class="btn btn-primary btn-xs" data-npc-panel-use-ability="${npcId}" data-ability="${a.character_ability_id}" style="font-size:0.55rem;padding:1px 5px">Use</button>`}
       </div>`;
     }).join('');
     // Wire inline ability buttons
@@ -7469,12 +7471,12 @@ async function _loadNpcPanelItems(npcId) {
   if (!el) return;
   try {
     const inv = await api.get(`/api/characters/${npcId}/inventory`);
-    const items = (inv.items||[]).filter(i => i.is_consumable || i.is_potion);
+    const items = (inv.items||[]).filter(i => i.consumable || i.is_potion);
     if (!items.length) { el.innerHTML = '<span style="color:var(--text-muted)">None</span>'; return; }
     el.innerHTML = items.map(it => `<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px">
       <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${it.description||''}">${it.potion_icon||'🧪'} ${it.name}</span>
       <span style="color:var(--text-muted);font-size:0.55rem">x${it.quantity}</span>
-      <button class="btn btn-primary btn-xs" data-npc-panel-use-item="${npcId}" data-item="${it.inventory_id}" style="font-size:0.55rem;padding:1px 5px">Use</button>
+      <button class="btn btn-primary btn-xs" data-npc-panel-use-item="${npcId}" data-item="${it.id}" style="font-size:0.55rem;padding:1px 5px">Use</button>
     </div>`).join('');
     // Wire inline item buttons
     el.querySelectorAll('[data-npc-panel-use-item]').forEach(btn => {

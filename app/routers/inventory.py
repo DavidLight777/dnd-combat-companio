@@ -543,6 +543,10 @@ def _inventory_item_dict(inv: InventoryItem) -> dict:
     d["equipped_slot"] = inv.equipped_slot
     d["custom_notes"] = inv.custom_notes or ""
     d["acquired_at"] = inv.acquired_at.isoformat() if inv.acquired_at else None
+    d["quantity"] = inv.quantity
+    d["consumable"] = item.consumable
+    d["is_potion"] = item.is_potion
+    d["potion_icon"] = item.potion_icon or ""
     return d
 
 
