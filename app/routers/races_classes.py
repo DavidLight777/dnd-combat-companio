@@ -22,6 +22,8 @@ class RaceBody(BaseModel):
     # Rework v2: race defines the HP die rolled at creation + every level-up
     hp_die: int = 8
     hp_dice_count: int = 1
+    spiritual_hp_die: int = 4
+    spiritual_hp_dice_count: int = 1
 
 
 class ClassBody(BaseModel):
@@ -45,8 +47,10 @@ def _ser_race(r: Race) -> dict:
         "bonuses": json.loads(r.bonuses) if r.bonuses else [],
         "special_abilities": json.loads(r.special_abilities) if r.special_abilities else [],
         "is_available": r.is_available,
-        "hp_die": r.hp_die or 8,
-        "hp_dice_count": r.hp_dice_count or 1,
+        "hp_die": r.hp_die,
+        "hp_dice_count": r.hp_dice_count,
+        "spiritual_hp_die": r.spiritual_hp_die,
+        "spiritual_hp_dice_count": r.spiritual_hp_dice_count,
     }
 
 
@@ -92,7 +96,9 @@ async def create_race(body: RaceBody, db: AsyncSession = Depends(get_session)):
         special_abilities=json.dumps(body.special_abilities),
         is_available=body.is_available,
         hp_die=max(1, int(body.hp_die or 8)),
-        hp_dice_count=max(1, int(body.hp_dice_count or 1)),
+        hp_dice_count=max(1, min(20, int(body.hp_dice_count or 1))),
+        spiritual_hp_die=max(1, int(body.spiritual_hp_die or 4)),
+        spiritual_hp_dice_count=max(1, min(20, int(body.spiritual_hp_dice_count or 1))),
     )
     db.add(r)
     await db.commit()
@@ -112,7 +118,9 @@ async def update_race(race_id: int, body: RaceBody, db: AsyncSession = Depends(g
     r.special_abilities = json.dumps(body.special_abilities)
     r.is_available = body.is_available
     r.hp_die = max(1, int(body.hp_die or 8))
-    r.hp_dice_count = max(1, int(body.hp_dice_count or 1))
+    r.hp_dice_count = max(1, min(20, int(body.hp_dice_count or 1)))
+    r.spiritual_hp_die = max(1, int(body.spiritual_hp_die or 4))
+    r.spiritual_hp_dice_count = max(1, min(20, int(body.spiritual_hp_dice_count or 1)))
     await db.commit()
     await db.refresh(r)
     return _ser_race(r)
@@ -123,6 +131,10 @@ async def delete_race(race_id: int, db: AsyncSession = Depends(get_session)):
     r = await db.get(Race, race_id)
     if not r:
         raise HTTPException(404, "Race not found")
+    # Null out race_id on all characters referencing this race
+    from sqlalchemy import update as sa_update
+    from app.models import Character as _Char
+    await db.execute(sa_update(_Char).where(_Char.race_id == race_id).values(race_id=None))
     await db.delete(r)
     await db.commit()
     return {"ok": True}
@@ -201,42 +213,42 @@ SEED_RACES = [
         "description": "Versatile and adaptable, humans excel in all areas.",
         "bonuses": [{"type": "stat_bonus", "stat": "strength", "value": 1}, {"type": "stat_bonus", "stat": "charisma", "value": 1}],
         "special_abilities": ["Versatility: +1 to two stats", "Extra skill proficiency"],
-        "hp_die": 8, "hp_dice_count": 1,
+        "hp_die": 8, "hp_dice_count": 1, "spiritual_hp_die": 8, "spiritual_hp_dice_count": 1,
     },
     {
         "name": "Elf",
         "description": "Graceful and long-lived, with keen senses and natural magic affinity.",
         "bonuses": [{"type": "stat_bonus", "stat": "dexterity", "value": 2}],
         "special_abilities": ["Darkvision (60 ft)", "Fey Ancestry: advantage vs charm", "Trance: 4 hours rest"],
-        "hp_die": 6, "hp_dice_count": 1,
+        "hp_die": 6, "hp_dice_count": 1, "spiritual_hp_die": 6, "spiritual_hp_dice_count": 1,
     },
     {
         "name": "Dwarf",
         "description": "Stout and hardy, skilled in craftsmanship and combat.",
         "bonuses": [{"type": "stat_bonus", "stat": "constitution", "value": 2}],
         "special_abilities": ["Darkvision (60 ft)", "Dwarven Resilience: poison resistance", "Stonecunning"],
-        "hp_die": 10, "hp_dice_count": 1,
+        "hp_die": 10, "hp_dice_count": 1, "spiritual_hp_die": 10, "spiritual_hp_dice_count": 1,
     },
     {
         "name": "Orc",
         "description": "Powerful and fierce, orcs are born warriors.",
         "bonuses": [{"type": "stat_bonus", "stat": "strength", "value": 2}, {"type": "stat_bonus", "stat": "constitution", "value": 1}],
         "special_abilities": ["Aggressive: bonus action dash toward enemy", "Relentless Endurance: drop to 1 HP instead of 0 (1/day)"],
-        "hp_die": 10, "hp_dice_count": 1,
+        "hp_die": 10, "hp_dice_count": 1, "spiritual_hp_die": 10, "spiritual_hp_dice_count": 1,
     },
     {
         "name": "Halfling",
         "description": "Small and nimble, with surprising bravery and luck.",
         "bonuses": [{"type": "stat_bonus", "stat": "dexterity", "value": 2}],
         "special_abilities": ["Lucky: reroll natural 1s", "Brave: advantage vs frightened", "Halfling Nimbleness"],
-        "hp_die": 6, "hp_dice_count": 1,
+        "hp_die": 6, "hp_dice_count": 1, "spiritual_hp_die": 6, "spiritual_hp_dice_count": 1,
     },
     {
         "name": "Tiefling",
         "description": "Bearing the blood of fiends, tieflings wield infernal powers.",
         "bonuses": [{"type": "stat_bonus", "stat": "charisma", "value": 2}, {"type": "stat_bonus", "stat": "intelligence", "value": 1}],
         "special_abilities": ["Darkvision (60 ft)", "Hellish Resistance: fire resistance", "Infernal Legacy: thaumaturgy cantrip"],
-        "hp_die": 8, "hp_dice_count": 1,
+        "hp_die": 8, "hp_dice_count": 1, "spiritual_hp_die": 8, "spiritual_hp_dice_count": 1,
     },
 ]
 
@@ -299,6 +311,8 @@ async def seed_races_classes(db: AsyncSession = Depends(get_session)):
                 special_abilities=json.dumps(rd["special_abilities"]),
                 hp_die=int(rd.get("hp_die", 8)),
                 hp_dice_count=int(rd.get("hp_dice_count", 1)),
+                spiritual_hp_die=int(rd.get("spiritual_hp_die", rd.get("hp_die", 8))),
+                spiritual_hp_dice_count=int(rd.get("spiritual_hp_dice_count", 1)),
             ))
             races_added += 1
 
@@ -320,6 +334,8 @@ async def seed_races_classes(db: AsyncSession = Depends(get_session)):
 # ══════════════════════════════════════════════════════════════
 # RACE RANK CONFIGURATION SYSTEM
 # ══════════════════════════════════════════════════════════════
+VALID_RANKS = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "divine"]
+
 class RaceRankConfigBody(BaseModel):
     rank: str
     rank_plus: int = 0
@@ -370,6 +386,9 @@ async def list_rank_configs(race_id: int, db: AsyncSession = Depends(get_session
 @router.post("/races/{race_id}/rank-configs")
 async def create_rank_config(race_id: int, body: RaceRankConfigBody, db: AsyncSession = Depends(get_session)):
     """Create a new rank configuration for a race."""
+    if body.rank.lower() not in VALID_RANKS:
+        raise HTTPException(400, f"Invalid rank. Must be one of: {', '.join(VALID_RANKS)}")
+    body.rank = body.rank.lower()
     race = await db.get(Race, race_id)
     if not race:
         raise HTTPException(404, "Race not found")
@@ -463,32 +482,31 @@ async def calculate_hp(body: CalculateHPBody, db: AsyncSession = Depends(get_ses
     )
     rc = result.scalar_one_or_none()
 
+    from app.game_mechanics import calculate_race_hp_for_level
+
     if not rc:
         # Fall back to base race hp_die values
-        from app.game_mechanics import roll_dice
-        max_hp = roll_dice(race.hp_dice_count, race.hp_die) * body.level
-        mana_max = 10 + (body.level - 1) * 2
-        return {
-            "max_hp": max_hp,
-            "mana_max": mana_max,
-            "physical_hp_per_level": f"{race.hp_dice_count}d{race.hp_die}",
-            "spiritual_hp_per_level": None,
+        cfg = {
+            "physical_hp_dice_count": int(race.hp_dice_count or 1),
+            "physical_hp_die": int(race.hp_die or 8),
+            "spiritual_hp_dice_count": int(race.spiritual_hp_dice_count or 1),
+            "spiritual_hp_die": int(race.spiritual_hp_die or 6),
             "mana_per_level": 2,
-            "used_fallback": True,
         }
+        result = calculate_race_hp_for_level(cfg, body.level)
+        result["used_fallback"] = True
+        result["rank_config_found"] = False
+        return result
 
-    # Calculate HP based on rank config
-    from app.game_mechanics import roll_dice
-    physical_hp_per_level = roll_dice(rc.physical_hp_dice_count, rc.physical_hp_die)
-    spiritual_hp_per_level = roll_dice(rc.spiritual_hp_dice_count, rc.spiritual_hp_die)
-    total_hp = (physical_hp_per_level + spiritual_hp_per_level) * body.level
-    total_mana = 10 + rc.mana_per_level * (body.level - 1)
-
-    return {
-        "max_hp": total_hp,
-        "mana_max": total_mana,
-        "physical_hp_per_level": f"{rc.physical_hp_dice_count}d{rc.physical_hp_die}",
-        "spiritual_hp_per_level": f"{rc.spiritual_hp_dice_count}d{rc.spiritual_hp_die}",
-        "mana_per_level": rc.mana_per_level,
-        "used_fallback": False,
+    cfg = {
+        "physical_hp_dice_count": int(rc.physical_hp_dice_count or 1),
+        "physical_hp_die": int(rc.physical_hp_die or 8),
+        "spiritual_hp_dice_count": int(rc.spiritual_hp_dice_count or 1),
+        "spiritual_hp_die": int(rc.spiritual_hp_die or 6),
+        "mana_per_level": int(rc.mana_per_level or 0),
+        "notes": rc.notes or "",
     }
+    result = calculate_race_hp_for_level(cfg, body.level)
+    result["used_fallback"] = False
+    result["rank_config_found"] = True
+    return result

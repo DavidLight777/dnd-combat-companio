@@ -936,3 +936,191 @@ def calculate_race_hp_for_level(
             mana_per_level=2,
             used_fallback=True,
         )
+
+
+# ══════════════════════════════════════════════════════════════
+# RACE HP CALCULATION FOR LEVEL (Section 2 — NPC Quick Creator)
+# ══════════════════════════════════════════════════════════════
+
+def calculate_race_hp_for_level(config: dict, level: int) -> dict:
+    """Roll HP dice `level` times using rank config.
+
+    config keys: physical_hp_dice_count, physical_hp_die (or physical_hp_dice_type),
+                 spiritual_hp_dice_count, spiritual_hp_die (or spiritual_hp_dice_type),
+                 mana_per_level, bonus_flat_hp, bonus_flat_mana
+    Returns: physical_hp, spiritual_hp, mana, breakdowns.
+    """
+    level = max(0, int(level or 0))
+    phys_count = int(config.get("physical_hp_dice_count") or 1)
+    phys_die   = int(config.get("physical_hp_die") or config.get("physical_hp_dice_type") or 8)
+    spir_count = int(config.get("spiritual_hp_dice_count") or 1)
+    spir_die   = int(config.get("spiritual_hp_die") or config.get("spiritual_hp_dice_type") or 6)
+    mana_pl    = int(config.get("mana_per_level") or 0)
+    flat_hp    = int(config.get("bonus_flat_hp") or 0)
+    flat_mana  = int(config.get("bonus_flat_mana") or 0)
+
+    phys_rolls, spir_rolls = [], []
+    for _ in range(level):
+        phys_rolls.append([random.randint(1, phys_die) for _ in range(phys_count)])
+        spir_rolls.append([random.randint(1, spir_die) for _ in range(spir_count)])
+
+    phys_totals = [sum(r) for r in phys_rolls]
+    spir_totals = [sum(r) for r in spir_rolls]
+
+    physical_hp  = sum(phys_totals) + flat_hp
+    spiritual_hp = sum(spir_totals)
+    mana         = mana_pl * level + flat_mana
+
+    phys_breakdown = ", ".join(
+        f"Lvl{i+1}: {'+'.join(str(v) for v in phys_rolls[i])}={phys_totals[i]}"
+        for i in range(level)
+    )
+    spir_breakdown = ", ".join(
+        f"Lvl{i+1}: {'+'.join(str(v) for v in spir_rolls[i])}={spir_totals[i]}"
+        for i in range(level)
+    )
+
+    return {
+        "physical_hp": physical_hp,
+        "spiritual_hp": spiritual_hp,
+        "mana": mana,
+        "phys_rolls": phys_totals,
+        "spir_rolls": spir_totals,
+        "phys_breakdown": phys_breakdown or "—",
+        "spir_breakdown": spir_breakdown or "—",
+        "dice_str_phys": f"{phys_count}d{phys_die}",
+        "dice_str_spir": f"{spir_count}d{spir_die}",
+        "mana_per_level": mana_pl,
+        "level": level,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# FIXES V3 + SYSTEMS OVERHAUL — SHARED UTILITIES
+# ══════════════════════════════════════════════════════════════
+
+RANK_PROGRESSION = {
+    "common":    {"next": "uncommon", "max_level": 10},
+    "uncommon":  {"next": "rare",     "max_level": 10},
+    "rare":      {"next": "epic",     "max_level": 10},
+    "epic":      {"next": "legendary","max_level": 10},
+    "legendary": {"next": "mythic",   "max_level": 10},
+    "mythic":    {"next": "divine",   "max_level": 10},
+    "divine":    {"next": None,       "max_level": 10},
+}
+
+RANK_ORDER = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "divine"]
+
+
+def xp_needed_for_level(current_level: int) -> int:
+    """Base XP needed for next level. Level 0→1 = 100, 1→2 = 200, etc."""
+    return 100 + 100 * max(0, int(current_level or 0))
+
+
+def apply_rank_promotion_if_needed(character) -> bool:
+    """Check if character's level exceeds rank max and auto-promote.
+    Returns True if promotion occurred."""
+    rank = (getattr(character, "rank", None) or "common").lower()
+    level = int(getattr(character, "level", 0) or 0)
+    cfg = RANK_PROGRESSION.get(rank)
+    if not cfg:
+        return False
+    if level > cfg["max_level"] and cfg["next"]:
+        character.rank = cfg["next"]
+        character.level = 1
+        character.experience = 0
+        return True
+    return False
+
+
+async def check_and_trigger_level_up(db, character) -> dict:
+    """Check if character has enough XP to level up. Does NOT auto-apply —
+    notifies that level-up is available.
+    Returns {"leveled_up": bool, "current_xp": int, "xp_needed": int}."""
+    needed = xp_needed_for_level(character.level)
+    if (character.experience or 0) >= needed:
+        return {
+            "leveled_up": True,
+            "character_id": character.id,
+            "current_xp": character.experience,
+            "xp_needed": needed,
+        }
+    return {"leveled_up": False, "current_xp": character.experience, "xp_needed": needed}
+
+
+def calculate_total_attribute_points(start_rank: str, start_level: int,
+                                     current_rank: str, current_level: int) -> int:
+    """Calculate total attribute points a character should have.
+    Every character starts with 10 points at level 0.
+    Gains +1 point per level gained across all ranks."""
+    start_rank = (start_rank or "common").lower()
+    current_rank = (current_rank or "common").lower()
+    start_level = max(0, int(start_level or 0))
+    current_level = max(0, int(current_level or 0))
+
+    try:
+        start_idx = RANK_ORDER.index(start_rank)
+        current_idx = RANK_ORDER.index(current_rank)
+    except ValueError:
+        return 10
+
+    total_levels = 0
+    for i in range(start_idx, current_idx + 1):
+        rank = RANK_ORDER[i]
+        max_lvl = RANK_PROGRESSION[rank]["max_level"]
+        if i == start_idx and i == current_idx:
+            # Same rank: count levels gained within this rank
+            total_levels += max(0, current_level - start_level)
+        elif i == start_idx:
+            # Starting rank: count from start_level to max
+            total_levels += max(0, max_lvl - start_level + 1)
+        elif i == current_idx:
+            # Current rank: count from 1 to current_level
+            total_levels += current_level
+        else:
+            # Intermediate rank: full max_level
+            total_levels += max_lvl
+
+    return 10 + total_levels
+
+
+async def add_item_to_inventory(db, character_id: int, item_id: int, quantity: int = 1):
+    """Add an item to character's inventory. Respects slot cap.
+    Returns the created/updated InventoryItem or None if cap reached."""
+    from sqlalchemy import select as _sel
+    from app.models import Character, InventoryItem as InvItem, Item
+
+    char = await db.get(Character, character_id)
+    if not char:
+        return None
+
+    # Check slot cap (0 = unlimited)
+    if (char.max_inventory_slots or 0) > 0:
+        current_items = await db.execute(
+            _sel(InvItem).where(InvItem.character_id == character_id)
+        )
+        current_count = len(current_items.scalars().all())
+        if current_count >= char.max_inventory_slots:
+            return None
+
+    # Check if item already in inventory
+    existing = await db.execute(
+        _sel(InvItem).where(
+            InvItem.character_id == character_id,
+            InvItem.item_id == item_id,
+        )
+    )
+    inv = existing.scalar_one_or_none()
+    if inv:
+        inv.quantity = (inv.quantity or 0) + quantity
+    else:
+        inv = InvItem(
+            character_id=character_id,
+            item_id=item_id,
+            quantity=quantity,
+            is_equipped=False,
+        )
+        db.add(inv)
+
+    await db.flush()
+    return inv

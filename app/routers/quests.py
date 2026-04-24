@@ -22,6 +22,7 @@ class QuestTemplateBody(BaseModel):
     reward_item_ids: list = []
     reward_description: str = ""
     reward_is_hidden: bool = False
+    structured_rewards: dict | None = None  # {"xp": 500, "currency": {...}, "items": [...]}
     stages: list = []  # [{order, title, description}]
     is_multi_stage: bool = True
 
@@ -37,6 +38,7 @@ class AssignBody(BaseModel):
     reward_item_ids: list = []
     reward_description: str = ""
     reward_is_hidden: bool = False
+    structured_rewards: dict | None = None
     stages: list = []
     is_multi_stage: bool = True
 
@@ -57,6 +59,7 @@ def _ser_template(t: QuestTemplate) -> dict:
         "reward_item_ids": json.loads(t.reward_item_ids) if t.reward_item_ids else [],
         "reward_description": t.reward_description,
         "reward_is_hidden": t.reward_is_hidden,
+        "structured_rewards": json.loads(t.structured_rewards) if t.structured_rewards else None,
         "stages": json.loads(t.stages) if t.stages else [],
         "is_multi_stage": t.is_multi_stage,
     }
@@ -78,6 +81,7 @@ def _ser_quest(q: CharacterQuest) -> dict:
         "reward_description": q.reward_description,
         "reward_is_hidden": q.reward_is_hidden,
         "reward_revealed": q.reward_revealed,
+        "structured_rewards": json.loads(q.structured_rewards) if q.structured_rewards else None,
         "assigned_at": q.assigned_at.isoformat() if q.assigned_at else None,
         "completed_at": q.completed_at.isoformat() if q.completed_at else None,
     }
@@ -105,6 +109,7 @@ async def create_template(body: QuestTemplateBody, db: AsyncSession = Depends(ge
         reward_item_ids=json.dumps(body.reward_item_ids),
         reward_description=body.reward_description,
         reward_is_hidden=body.reward_is_hidden,
+        structured_rewards=json.dumps(body.structured_rewards) if body.structured_rewards else None,
         stages=json.dumps(body.stages),
         is_multi_stage=body.is_multi_stage,
     )
@@ -126,6 +131,7 @@ async def update_template(template_id: int, body: QuestTemplateBody, db: AsyncSe
     t.reward_item_ids = json.dumps(body.reward_item_ids)
     t.reward_description = body.reward_description
     t.reward_is_hidden = body.reward_is_hidden
+    t.structured_rewards = json.dumps(body.structured_rewards) if body.structured_rewards else None
     t.stages = json.dumps(body.stages)
     t.is_multi_stage = body.is_multi_stage
     await db.commit()
@@ -163,6 +169,7 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
         reward_items = t.reward_item_ids
         reward_desc = t.reward_description
         reward_hidden = t.reward_is_hidden
+        structured_rewards = t.structured_rewards
         is_multi = t.is_multi_stage
         # Get NPC name
         npc_name = None
@@ -180,6 +187,7 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
         reward_items = json.dumps(body.reward_item_ids)
         reward_desc = body.reward_description
         reward_hidden = body.reward_is_hidden
+        structured_rewards = json.dumps(body.structured_rewards) if body.structured_rewards else None
         is_multi = body.is_multi_stage
         npc_name = body.source_npc_name
 
@@ -201,6 +209,7 @@ async def assign_quest(body: AssignBody, db: AsyncSession = Depends(get_session)
             reward_item_ids=reward_items if isinstance(reward_items, str) else json.dumps(reward_items),
             reward_description=reward_desc,
             reward_is_hidden=reward_hidden,
+            structured_rewards=structured_rewards,
             reward_revealed=False,
         )
         db.add(q)
@@ -267,6 +276,9 @@ async def complete_stage(quest_id: int, body: StageCompleteBody, db: AsyncSessio
 
 @router.patch("/character-quests/{quest_id}/complete")
 async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session)):
+    from app.game_mechanics import add_item_to_inventory, check_and_trigger_level_up
+    from app.websocket_manager import manager as _ws
+
     q = await db.get(CharacterQuest, quest_id)
     if not q:
         raise HTTPException(404, "Quest not found")
@@ -277,14 +289,16 @@ async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session))
     q.completed_at = datetime.now(timezone.utc)
     q.reward_revealed = True
 
+    rewards_applied = {"xp": 0, "currency": 0, "items": []}
+
     # Grant rewards
     char = await db.get(Character, q.character_id)
     if char:
-        # Gold
+        # Legacy rewards (gold + flat item ids)
         if q.reward_gold_bronze > 0:
             char.wealth_bronze = (char.wealth_bronze or 0) + q.reward_gold_bronze
+            rewards_applied["currency"] += q.reward_gold_bronze
 
-        # Items
         item_ids = json.loads(q.reward_item_ids) if q.reward_item_ids else []
         for item_id in item_ids:
             inv = InventoryItem(
@@ -294,9 +308,66 @@ async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session))
                 is_equipped=False,
             )
             db.add(inv)
+            rewards_applied["items"].append({"item_id": item_id, "quantity": 1})
+
+        # Fix 3: structured rewards (XP + currency + items)
+        if q.structured_rewards:
+            try:
+                sr = json.loads(q.structured_rewards)
+                if isinstance(sr, dict):
+                    # XP
+                    if sr.get("xp"):
+                        xp_amount = int(sr["xp"])
+                        char.experience = (char.experience or 0) + xp_amount
+                        rewards_applied["xp"] += xp_amount
+
+                    # Currency
+                    if sr.get("currency"):
+                        c = sr["currency"]
+                        bronze_total = (
+                            int(c.get("platinum", 0)) * 1000 +
+                            int(c.get("gold", 0)) * 100 +
+                            int(c.get("silver", 0)) * 10 +
+                            int(c.get("bronze", 0))
+                        )
+                        if bronze_total > 0:
+                            char.wealth_bronze = (char.wealth_bronze or 0) + bronze_total
+                            rewards_applied["currency"] += bronze_total
+
+                    # Items with quantities
+                    if sr.get("items"):
+                        for item_reward in sr["items"]:
+                            item_id = int(item_reward["item_id"])
+                            qty = int(item_reward.get("quantity", 1))
+                            inv = await add_item_to_inventory(db, char.id, item_id, qty)
+                            if inv:
+                                rewards_applied["items"].append({"item_id": item_id, "quantity": qty})
+            except Exception:
+                pass
 
     await db.commit()
     await db.refresh(q)
+    await db.refresh(char)
+
+    # Check level-up after XP gain
+    if rewards_applied["xp"] > 0:
+        try:
+            level_up_info = await check_and_trigger_level_up(db, char)
+            rewards_applied["level_up_available"] = level_up_info.get("leveled_up", False)
+        except Exception:
+            pass
+
+    # WS broadcast
+    try:
+        sess = await db.get(Session, char.session_id)
+        if sess:
+            await _ws.broadcast_to_session(sess.code, "quest.completed", {
+                "quest_id": q.id,
+                "character_id": q.character_id,
+                "rewards_applied": rewards_applied,
+            })
+    except Exception:
+        pass
 
     # FIX 5: Append completion note to the existing "Quest: ..." memory entry
     try:
@@ -309,7 +380,7 @@ async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session))
     except Exception:
         pass
 
-    return _ser_quest(q)
+    return {**_ser_quest(q), "rewards_applied": rewards_applied}
 
 
 @router.patch("/character-quests/{quest_id}/fail")

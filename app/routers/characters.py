@@ -61,6 +61,8 @@ def _serialize_char(c: Character) -> dict:
         "armor_class": c.armor_class,
         "current_hp": c.current_hp,
         "max_hp": c.max_hp,
+        "spiritual_hp": c.spiritual_hp,
+        "spiritual_max_hp": c.spiritual_max_hp,
         "strength": c.strength,
         "dexterity": c.dexterity,
         "constitution": c.constitution,
@@ -98,6 +100,8 @@ def _serialize_char(c: Character) -> dict:
         "gender": c.gender,
         "max_inventory_slots": c.max_inventory_slots,
         "declined_stats": bool(c.declined_stats),
+        "attribute_points_available": getattr(c, "attribute_points_available", 0) or 0,
+        "kill_xp_reward": getattr(c, "kill_xp_reward", 0) or 0,
         # Rework Phase 1: rank chain + Phase 4: multi-profession list
         "rank": getattr(c, "rank", "common") or "common",
         "professions": [
@@ -147,7 +151,9 @@ async def get_character(char_id: int, db: AsyncSession = Depends(get_session)):
         await db.commit()
         await db.refresh(c)
     payload = _serialize_char(c)
-    # Rework v2: surface race HP die for the level-up preview.
+    # Rework v2: surface race HP die for the level-up preview (rank-aware).
+    from app.models import RaceRankConfig as _RRC
+    from sqlalchemy import select as _sel, func as _func
     hp_die, hp_dice_count, race_name = 8, 1, None
     if c.race_id:
         race = await db.get(Race, c.race_id)
@@ -155,6 +161,18 @@ async def get_character(char_id: int, db: AsyncSession = Depends(get_session)):
             hp_die = int(race.hp_die or 8)
             hp_dice_count = int(race.hp_dice_count or 1)
             race_name = race.name
+            # Try rank-aware override
+            char_rank = (getattr(c, "rank", None) or "common").lower()
+            q_rc = await db.execute(
+                _sel(_RRC).where(
+                    _RRC.race_id == race.id,
+                    _func.lower(_RRC.rank) == char_rank,
+                )
+            )
+            rc = q_rc.scalars().first()
+            if rc:
+                hp_die = int(rc.physical_hp_die or hp_die)
+                hp_dice_count = int(rc.physical_hp_dice_count or hp_dice_count)
     payload["hp_die"] = hp_die
     payload["hp_dice_count"] = hp_dice_count
     payload["race_name"] = race_name
@@ -237,8 +255,8 @@ async def spend_mana_endpoint(char_id: int, body: dict, db: AsyncSession = Depen
     eff_max = get_effective_mana_max(c.mana_max)
     result = spend_mana(c.mana_current, eff_max, cost)
     if not result["success"]:
-        raise HTTPException(400, result)
-    c.mana_current = result["mana_current"]
+        raise HTTPException(400, result["reason"])
+    c.mana_current = result["new_mana"]
     await db.commit()
     await db.refresh(c)
     return {"mana_current": c.mana_current, "mana_max": c.mana_max, "effective_mana_max": eff_max}
@@ -295,20 +313,21 @@ async def grant_xp(char_id: int, body: dict, db: AsyncSession = Depends(get_sess
 
 @router.post("/characters/{char_id}/level-up")
 async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
-    """Rework v2: level-up rolls a race HP die and applies ONE chosen benefit.
+    """Level-up: HP/Mana always, then choose +1 attribute OR upgrade an ability.
+    At max level (10) → rank-up: level resets to 0, rank increases, HP/Mana from new rank.
 
     Body:
       {
-        "choice": "stats" | "upgrade_feature",
-        "stat_a": "strength",            # required for "stats"
-        "stat_b": "dexterity",           # required for "stats" (must differ from stat_a)
-        "character_ability_id": 17,      # required for "upgrade_feature"
-        "force": false                   # optional GM bypass of the XP threshold
+        "choice": "attributes" | "ability",
+        "ability_id": 123,       # required if choice == "ability"
+        "force": false           # optional GM bypass of the XP threshold
       }
-    Return: {level, hp_rolls, hp_gained, chosen, ...}
     """
     import random
-    from app.models import Race, Ability, CharacterAbility, StatModifier
+    from sqlalchemy import select as sa_select, func as sa_func
+    from app.models import Race, RaceRankConfig, CharacterAbility, AbilityLevelConfig
+    from app.game_mechanics import RANK_PROGRESSION
+    from app.websocket_manager import manager as _ws
 
     body = body or {}
     c = await db.get(Character, char_id)
@@ -324,18 +343,44 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
         })
 
     choice = str(body.get("choice", "")).lower()
-    if choice not in ("stats", "upgrade_feature"):
-        raise HTTPException(400, "`choice` must be 'stats' or 'upgrade_feature'")
+    if choice not in ("attributes", "ability"):
+        raise HTTPException(400, "`choice` must be 'attributes' or 'ability'")
 
-    # ── 1. Roll the race HP die (+ apply to max & current)
+    result = {
+        "choice": choice,
+        "previous_level": cur_level,
+        "previous_rank": getattr(c, "rank", "common") or "common",
+    }
+
+    # ── HP/Mana roll (always happens) ──
     hp_die = 8
     hp_dice_count = 1
+    spirit_hp_die = 4
+    spirit_hp_dice_count = 1
+    mana_per_level = 2
+    char_rank = (getattr(c, "rank", None) or "common").lower()
     if c.race_id:
         race = await db.get(Race, c.race_id)
         if race:
             hp_die = int(race.hp_die or 8)
             hp_dice_count = int(race.hp_dice_count or 1)
-    # Rework v3: passive-ability bonuses may bump the die size or count.
+            spirit_hp_die = int(race.spiritual_hp_die or 4)
+            spirit_hp_dice_count = int(race.spiritual_hp_dice_count or 1)
+            q_rc = await db.execute(
+                sa_select(RaceRankConfig).where(
+                    RaceRankConfig.race_id == race.id,
+                    sa_func.lower(RaceRankConfig.rank) == char_rank,
+                )
+            )
+            rc = q_rc.scalars().first()
+            if rc:
+                hp_die = int(rc.physical_hp_die or hp_die)
+                hp_dice_count = int(rc.physical_hp_dice_count or hp_dice_count)
+                spirit_hp_die = int(rc.spiritual_hp_die or spirit_hp_die)
+                spirit_hp_dice_count = int(rc.spiritual_hp_dice_count or spirit_hp_dice_count)
+                mana_per_level = int(rc.mana_per_level if rc.mana_per_level is not None else 2)
+
+    # Passive-ability bonuses may bump the die size or count.
     hp_die_bonus = sum(
         int(m.value or 0) for m in c.stat_modifiers
         if m.is_active and m.stat_name == "hp_die_bonus"
@@ -351,87 +396,95 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
     c.max_hp += hp_gained
     c.current_hp += hp_gained
 
-    chosen: dict = {"choice": choice, "hp_rolls": rolls, "hp_die": hp_die,
-                    "hp_dice_count": hp_dice_count, "hp_gained": hp_gained}
+    # Spiritual HP
+    spirit_rolls = [random.randint(1, spirit_hp_die) for _ in range(max(1, spirit_hp_dice_count))]
+    spirit_gained = sum(spirit_rolls)
+    c.spiritual_max_hp = (c.spiritual_max_hp or 0) + spirit_gained
+    c.spiritual_hp = (c.spiritual_hp or 0) + spirit_gained
 
-    # ── 2. Apply chosen benefit
-    if choice == "stats":
-        a = body.get("stat_a")
-        b = body.get("stat_b")
-        valid = {"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
-        if a not in valid or b not in valid or a == b:
-            raise HTTPException(400, "Provide two distinct stats (stat_a != stat_b)")
-        # Track CON delta so we can bump the inventory slot cap by the same
-        # amount as the wizard formula (10 + 2 × CON). We apply a DELTA rather
-        # than recompute from scratch to preserve any GM override already on
-        # max_inventory_slots (e.g. a +N magical boon).
-        old_con = int(c.constitution or 0)
-        setattr(c, a, int(getattr(c, a) or 0) + 1)
-        setattr(c, b, int(getattr(c, b) or 0) + 1)
-        new_con = int(c.constitution or 0)
-        con_delta = new_con - old_con
-        if con_delta and int(c.max_inventory_slots or 0) > 0:
-            c.max_inventory_slots = max(0, int(c.max_inventory_slots) + 2 * con_delta)
-            chosen["slots_delta"] = 2 * con_delta
-            chosen["max_inventory_slots"] = c.max_inventory_slots
-        chosen["stat_a"] = a
-        chosen["stat_b"] = b
+    # Mana
+    c.mana_max = (c.mana_max or 0) + mana_per_level
+    c.mana_current = min(c.mana_current or 0, c.mana_max)
 
-    else:  # upgrade_feature
-        cab_id = body.get("character_ability_id")
-        if not cab_id:
-            raise HTTPException(400, "`character_ability_id` is required for upgrade_feature")
-        cab = await db.get(CharacterAbility, int(cab_id))
-        if not cab or cab.character_id != c.id:
-            raise HTTPException(404, "Feature not owned by this character")
-        old_ab = cab.ability
-        if not old_ab:
-            raise HTTPException(404, "Feature template missing")
+    # ── Determine if this is a rank-up (level 10 → 0) ──
+    rank_promoted = False
+    if cur_level >= 10:
+        cfg = RANK_PROGRESSION.get(char_rank)
+        if cfg and cfg.get("next"):
+            c.rank = cfg["next"]
+            c.level = 0
+            rank_promoted = True
+        else:
+            # At divine max rank — can't go higher, just stay at 10
+            c.level = cur_level + 1
+    else:
+        c.level = cur_level + 1
 
-        RANKS = ["common", "uncommon", "rare", "epic", "legendary"]
-        cur_rar = (old_ab.rarity or "common").lower()
-        if cur_rar not in RANKS or RANKS.index(cur_rar) >= len(RANKS) - 1:
-            raise HTTPException(400, "Feature is already at the highest rarity")
-        new_rar = RANKS[RANKS.index(cur_rar) + 1]
-
-        # Pull pool at new rarity, same session-or-global scope
-        q = await db.execute(
-            select(Ability)
-            .where(Ability.is_in_starting_pool == True)       # noqa: E712
-            .where(Ability.rarity == new_rar)
-            .where((Ability.session_id == c.session_id) | (Ability.session_id.is_(None)))
-            .order_by(Ability.id)
-        )
-        pool = list(q.scalars().all())
-        if not pool:
-            raise HTTPException(
-                400,
-                f"No {new_rar} feature available to upgrade to. Ask the GM to add some.",
-            )
-        bucket = pool[:4]
-        d_size = len(bucket)
-        d_rolled = random.randint(1, d_size)
-        new_ab = bucket[d_rolled - 1]
-
-        # Replace the CharacterAbility (same row, new template)
-        cab.ability_id = new_ab.id
-        cab.current_uses = new_ab.max_uses
-        cab.cooldown_remaining = 0
-        cab.granted_from = "level_up"
-        chosen["character_ability_id"] = cab.id
-        chosen["old_ability_id"] = old_ab.id
-        chosen["new_ability_id"] = new_ab.id
-        chosen["new_rarity"] = new_rar
-        chosen["d_size"] = d_size
-        chosen["d_rolled"] = d_rolled
-
-    # ── 3. Consume XP + advance level
+    # Consume XP
     c.experience = max(0, (c.experience or 0) - threshold)
-    c.level = cur_level + 1
+
+    # ── Choice: attribute point or ability upgrade ──
+    if choice == "attributes":
+        c.attribute_points_available = (c.attribute_points_available or 0) + 1
+        result.update({
+            "attribute_points_gained": 1,
+        })
+    else:  # ability
+        ca_id = body.get("ability_id")
+        if not ca_id:
+            raise HTTPException(400, "ability_id is required when choice is 'ability'")
+        ca = await db.get(CharacterAbility, ca_id)
+        if not ca or ca.character_id != c.id:
+            raise HTTPException(404, "Ability not found on this character")
+        ca.ability_level = (ca.ability_level or 0) + 1
+        result.update({
+            "ability_id": ca.id,
+            "ability_name": ca.ability.name if ca.ability else "Unknown",
+            "ability_level": ca.ability_level,
+        })
+
+    result.update({
+        "hp_rolls": rolls,
+        "hp_die": hp_die,
+        "hp_dice_count": hp_dice_count,
+        "hp_gained": hp_gained,
+        "spirit_hp_rolls": spirit_rolls,
+        "spirit_hp_die": spirit_hp_die,
+        "spirit_hp_dice_count": spirit_hp_dice_count,
+        "spirit_gained": spirit_gained,
+        "mana_gained": mana_per_level,
+        "level": c.level,
+        "rank": c.rank,
+        "rank_promoted": rank_promoted,
+    })
 
     await db.commit()
     await db.refresh(c)
     await _broadcast_char(c.session_id, c.id)
+
+    # WS broadcast
+    try:
+        sess = await db.get(Session, c.session_id)
+        if sess:
+            await _ws.broadcast_to_session(sess.code, "character.leveled_up", {
+                "character_id": c.id,
+                "character_name": c.name,
+                "level": c.level,
+                "rank": c.rank,
+                "attribute_points_available": c.attribute_points_available,
+                "hp_gained": hp_gained,
+                "mana_gained": mana_per_level,
+                "rank_promoted": rank_promoted,
+            })
+            if rank_promoted:
+                await _ws.broadcast_to_session(sess.code, "character.rank_promoted", {
+                    "character_id": c.id,
+                    "character_name": c.name,
+                    "new_rank": c.rank,
+                })
+    except Exception:
+        pass
+
     return {
         "experience": c.experience,
         "level": c.level,
@@ -439,7 +492,12 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
         "xp_to_next": xp_to_next(c.level),
         "max_hp": c.max_hp,
         "current_hp": c.current_hp,
-        "chosen": chosen,
+        "spiritual_max_hp": c.spiritual_max_hp,
+        "spiritual_hp": c.spiritual_hp,
+        "mana_max": c.mana_max,
+        "mana_current": c.mana_current,
+        "attribute_points_available": getattr(c, "attribute_points_available", 0) or 0,
+        "chosen": result,
     }
 
 
@@ -479,6 +537,38 @@ async def rank_up(char_id: int, body: dict | None = None, db: AsyncSession = Dep
     }
 
 
+@router.post("/characters/{char_id}/spend-attribute-point")
+async def spend_attribute_point(char_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    """Spend one attribute point to increase a stat by 1."""
+    c = await db.get(Character, char_id)
+    if not c:
+        raise HTTPException(404, "Character not found")
+    if (c.attribute_points_available or 0) <= 0:
+        raise HTTPException(400, "No attribute points available")
+
+    stat = body.get("stat", "").lower()
+    valid_stats = {"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+    if stat not in valid_stats:
+        raise HTTPException(400, f"Invalid stat: {stat}")
+
+    current_val = getattr(c, stat, 0) or 0
+    setattr(c, stat, current_val + 1)
+    c.attribute_points_available = (c.attribute_points_available or 0) - 1
+
+    # If CON increased, bump inventory slots
+    if stat == "constitution" and int(c.max_inventory_slots or 0) > 0:
+        c.max_inventory_slots = int(c.max_inventory_slots) + 2
+
+    await db.commit()
+    await db.refresh(c)
+    await _broadcast_char(c.session_id, c.id)
+    return {
+        "stat": stat,
+        "new_value": getattr(c, stat),
+        "attribute_points_available": c.attribute_points_available,
+    }
+
+
 @router.get("/characters/{char_id}/progression")
 async def get_progression(char_id: int, db: AsyncSession = Depends(get_session)):
     """Convenience endpoint: return the full progression snapshot."""
@@ -509,6 +599,14 @@ async def create_npc(code: str, body: CharacterCreate, db: AsyncSession = Depend
         armor_class=body.armor_class,
         current_hp=body.max_hp,
         max_hp=body.max_hp,
+        spiritual_hp=body.spiritual_max_hp or 0,
+        spiritual_max_hp=body.spiritual_max_hp or 0,
+        mana_current=body.mana_max or 0,
+        mana_max=body.mana_max or 0,
+        race_id=body.race_id,
+        rank=body.rank or "common",
+        level=body.level or 1,
+        kill_xp_reward=body.kill_xp_reward or 0,
     )
     db.add(npc)
     await db.commit()

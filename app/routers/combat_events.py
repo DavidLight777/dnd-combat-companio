@@ -1053,14 +1053,53 @@ async def execute_attack(body: ExecuteAttackBody, db: AsyncSession = Depends(get
 
     intake_str = " ".join(intake_parts) + f" = {final_damage} final"
 
-    # 11. Apply to target HP
-    hp_before = target.current_hp
-    target.current_hp = max(0, target.current_hp - final_damage)
-    hp_after = target.current_hp
-    target_downed = hp_after <= 0
+    # 11. Apply to target HP (check for spiritual damage type)
+    damage_type = weapon.get("damage_type", "physical") if weapon else "physical"
+    is_spiritual = damage_type == "spiritual"
+    
+    if is_spiritual:
+        hp_before = target.spiritual_hp or 0
+        target.spiritual_hp = max(0, (target.spiritual_hp or 0) - final_damage)
+        hp_after = target.spiritual_hp
+        # Spiritual HP 0 doesn't kill character, just depletes spirit
+        target_downed = False
+    else:
+        hp_before = target.current_hp
+        target.current_hp = max(0, target.current_hp - final_damage)
+        hp_after = target.current_hp
+        target_downed = hp_after <= 0
 
     if target_downed:
         target.is_alive = False
+
+        # Fix 4: Award XP for killing blow
+        if target.is_npc and getattr(target, "kill_xp_reward", 0) and target.kill_xp_reward > 0:
+            if not attacker.is_npc:
+                attacker.experience = (attacker.experience or 0) + target.kill_xp_reward
+                await db.commit()
+                await db.refresh(attacker)
+
+                # WS broadcast
+                try:
+                    from app.game_mechanics import check_and_trigger_level_up
+                    sess = await db.get(Session, target.session_id)
+                    if sess:
+                        await manager.broadcast_to_session(sess.code, "xp.awarded", {
+                            "character_id": attacker.id,
+                            "character_name": attacker.name,
+                            "amount": target.kill_xp_reward,
+                            "source": f"Killed {target.name}",
+                        })
+                        # Check level-up availability
+                        level_up_info = await check_and_trigger_level_up(db, attacker)
+                        if level_up_info.get("leveled_up"):
+                            await manager.broadcast_to_session(sess.code, "level_up.available", {
+                                "character_id": attacker.id,
+                                "current_xp": attacker.experience,
+                                "xp_needed": level_up_info["xp_needed"],
+                            })
+                except Exception:
+                    pass
 
     await db.commit()
     await db.refresh(target)
@@ -1400,11 +1439,20 @@ async def damage_roll(body: DamageRollBody, db: AsyncSession = Depends(get_sessi
         intake_parts.append(f"- {tgt_flat_dr} flat ({src_str})")
     intake_str = " ".join(intake_parts) + f" = {final_damage} final"
 
-    # Apply HP change
-    hp_before = target.current_hp
-    target.current_hp = max(0, target.current_hp - final_damage)
-    hp_after = target.current_hp
-    target_downed = hp_after <= 0
+    # Apply HP change (check for spiritual damage type)
+    damage_type = tpl.damage_type if tpl else "physical"
+    is_spiritual = damage_type == "spiritual"
+    
+    if is_spiritual:
+        hp_before = target.spiritual_hp or 0
+        target.spiritual_hp = max(0, (target.spiritual_hp or 0) - final_damage)
+        hp_after = target.spiritual_hp
+        target_downed = False
+    else:
+        hp_before = target.current_hp
+        target.current_hp = max(0, target.current_hp - final_damage)
+        hp_after = target.current_hp
+        target_downed = hp_after <= 0
     if target_downed:
         target.is_alive = False
 
@@ -1491,21 +1539,6 @@ async def _apply_weapon_poison_on_hit(attacker: Character, target: Character, db
             "character_id": target.id,
         })
         await manager.broadcast(attacker.session_id, {
-            "event": "inventory.update",
-            "character_id": attacker.id,
-        })
-    except Exception:
-        pass
-    return {
-        "template_id": tpl.id,
-        "name": tpl.name,
-        "icon": tpl.icon,
-        "dice_expr": f"{tpl.damage_dice_count}d{tpl.damage_dice_type}",
-        "per_tick_damage": dot_damage,
-        "turns": coat.turns_per_hit,
-        "charges_remaining": max(0, coat.charges_remaining),
-    }
-_id, {
             "event": "inventory.update",
             "character_id": attacker.id,
         })

@@ -29,6 +29,8 @@ class TemplateBody(BaseModel):
     description: str = ""
     is_merchant: bool = False
     max_hp: int = 20
+    spiritual_max_hp: int = 10
+    mana_max: int = 0
     armor_class: int = 10
     strength: int = 10
     dexterity: int = 10
@@ -91,6 +93,8 @@ def _ser_template(t: NpcTemplate) -> dict:
         "description": t.description,
         "is_merchant": t.is_merchant,
         "max_hp": t.max_hp,
+        "spiritual_max_hp": t.spiritual_max_hp,
+        "mana_max": t.mana_max,
         "armor_class": t.armor_class,
         "strength": t.strength,
         "dexterity": t.dexterity,
@@ -215,6 +219,8 @@ async def create_template(body: TemplateBody, db: AsyncSession = Depends(get_ses
         description=body.description,
         is_merchant=body.is_merchant,
         max_hp=body.max_hp,
+        spiritual_max_hp=body.spiritual_max_hp,
+        mana_max=body.mana_max,
         armor_class=body.armor_class,
         strength=body.strength,
         dexterity=body.dexterity,
@@ -239,7 +245,7 @@ async def update_template(template_id: int, body: TemplateBody, db: AsyncSession
     t = await db.get(NpcTemplate, template_id)
     if not t:
         raise HTTPException(404, "Template not found")
-    for field in ['name', 'description', 'is_merchant', 'max_hp', 'armor_class',
+    for field in ['name', 'description', 'is_merchant', 'max_hp', 'spiritual_max_hp', 'mana_max', 'armor_class',
                   'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma',
                   'initiative_bonus', 'token_color', 'notes', 'folder_id']:
         setattr(t, field, getattr(body, field))
@@ -277,6 +283,10 @@ async def spawn_from_template(template_id: int, body: SpawnBody, db: AsyncSessio
             is_gm_controlled=True,
             max_hp=t.max_hp,
             current_hp=t.max_hp,
+            spiritual_max_hp=t.spiritual_max_hp,
+            spiritual_hp=t.spiritual_max_hp,
+            mana_max=t.mana_max,
+            mana_current=t.mana_max,
             armor_class=t.armor_class,
             strength=t.strength,
             dexterity=t.dexterity,
@@ -409,6 +419,10 @@ async def trigger_event(event_id: int, db: AsyncSession = Depends(get_session)):
                 is_gm_controlled=True,
                 max_hp=t.max_hp,
                 current_hp=t.max_hp,
+                spiritual_max_hp=t.spiritual_max_hp,
+                spiritual_hp=t.spiritual_max_hp,
+                mana_max=t.mana_max,
+                mana_current=t.mana_max,
                 armor_class=t.armor_class,
                 strength=t.strength,
                 dexterity=t.dexterity,

@@ -915,6 +915,18 @@ async def use_consumable(inventory_id: int, body: dict | None = None,
             roll_str = "+".join(str(r) for r in rolls)
             results.append(f"Heal: {dice_count}d{dice_type}+{flat_bonus} ({roll_str}+{flat_bonus}={total_heal}) → +{actual} HP{_tgt_tag()}")
 
+        elif etype == "heal_spirit":
+            dice_count = eff.get("dice_count", 1)
+            dice_type = eff.get("dice_type", 4)
+            flat_bonus = eff.get("flat_bonus", 0)
+            rolls = [random.randint(1, dice_type) for _ in range(dice_count)]
+            total_heal = sum(rolls) + flat_bonus
+            old_spirit = target.spiritual_hp or 0
+            target.spiritual_hp = min(target.spiritual_max_hp or 0, (target.spiritual_hp or 0) + total_heal)
+            actual = (target.spiritual_hp or 0) - old_spirit
+            roll_str = "+".join(str(r) for r in rolls)
+            results.append(f"Spirit Heal: {dice_count}d{dice_type}+{flat_bonus} ({roll_str}+{flat_bonus}={total_heal}) → +{actual} Spirit HP{_tgt_tag()}")
+
         elif etype == "restore_mana":
             amount = eff.get("amount", 0)
             eff_max = get_effective_mana_max(target.mana_max)

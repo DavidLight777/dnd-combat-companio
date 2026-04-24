@@ -38,6 +38,8 @@ class MapCanvas {
     this.onMarkerClick = options.onMarkerClick || null;
     this.onTokenClick = options.onTokenClick || null;
     this.onTokenRightClick = options.onTokenRightClick || null;
+    this.onChestClick = options.onChestClick || null;
+    this.onMapClick = options.onMapClick || null; // callback(nx, ny) for any click on empty map
     this.onEraseMarker = options.onEraseMarker || null;
     this.onEraseDrawing = options.onEraseDrawing || null;
 
@@ -69,6 +71,8 @@ class MapCanvas {
     this.tiles = {};
     // Map Builder: traps list for rendering
     this.traps = [];
+    // Chests overlay
+    this.chests = [];
 
     // Transform
     this.offsetX = 0;
@@ -373,6 +377,11 @@ class MapCanvas {
 
   setTraps(traps) {
     this.traps = traps || [];
+    this.render();
+  }
+
+  setChests(chests) {
+    this.chests = chests || [];
     this.render();
   }
 
@@ -910,6 +919,44 @@ class MapCanvas {
       ctx.globalAlpha = 1;
     }
 
+    // Chests (rendered under tokens but above map)
+    if (this.chests && this.chests.length) {
+      for (const ch of this.chests) {
+        if (!ch.is_revealed && this.role !== 'gm') continue;
+        if (ch.map_x == null || ch.map_y == null) continue;
+        const px = ch.map_x * this.mapWidth;
+        const py = ch.map_y * this.mapHeight;
+        const size = this.gridSize * 0.6;
+        ctx.save();
+        ctx.translate(px, py);
+        // Draw chest box
+        ctx.fillStyle = ch.is_revealed ? '#8B4513' : '#555';
+        ctx.fillRect(-size/2, -size/2, size, size);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 1.5 / this.scale;
+        ctx.strokeRect(-size/2, -size/2, size, size);
+        // Lid line
+        ctx.beginPath();
+        ctx.moveTo(-size/2, -size/4);
+        ctx.lineTo(size/2, -size/4);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 1 / this.scale;
+        ctx.stroke();
+        // Lock
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(0, 0, size/8, 0, Math.PI*2);
+        ctx.fill();
+        // Label
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.max(8, size*0.35)}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('📦', 0, -size/3);
+        ctx.restore();
+      }
+    }
+
     // Combat FX — drawn last so they sit above every token and HP
     // bar. The loop in `_startFxLoop` keeps calling render() while
     // any effect is alive, giving us a smooth ~60fps animation
@@ -976,6 +1023,21 @@ class MapCanvas {
       const py = t.y * this.mapHeight;
       const dx = mx - px, dy = my - py;
       if (dx * dx + dy * dy <= radius * radius) return t;
+    }
+    return null;
+  }
+
+  _hitChest(mx, my) {
+    if (!this.chests || !this.chests.length) return null;
+    const size = this.gridSize * 0.6;
+    for (let i = this.chests.length - 1; i >= 0; i--) {
+      const ch = this.chests[i];
+      if (!ch.is_revealed && this.role !== 'gm') continue;
+      if (ch.map_x == null || ch.map_y == null) continue;
+      const px = ch.map_x * this.mapWidth;
+      const py = ch.map_y * this.mapHeight;
+      const half = size / 2;
+      if (mx >= px - half && mx <= px + half && my >= py - half && my <= py + half) return ch;
     }
     return null;
   }
@@ -1256,8 +1318,14 @@ class MapCanvas {
       // Check marker click
       const marker = this._hitMarker(m.x, m.y);
       if (marker && this.onMarkerClick) { this.onMarkerClick(marker); return; }
+      // Check chest click
+      const chest = this._hitChest(m.x, m.y);
+      if (chest && this.onChestClick) { this.onChestClick(chest); return; }
       const token = this._hitToken(m.x, m.y);
-      if (token && this.onTokenClick) this.onTokenClick(token, e.shiftKey);
+      if (token && this.onTokenClick) { this.onTokenClick(token, e.shiftKey); return; }
+      // If nothing was clicked, fire onMapClick with normalized coords
+      const n = this._mapToNormalized(m.x, m.y);
+      if (this.onMapClick) this.onMapClick(n.x, n.y);
     });
 
     // Right-click for token context menu (GM only)

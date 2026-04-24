@@ -249,6 +249,24 @@ async def update_session_status(code: str, body: dict, db: AsyncSession = Depend
     return {"status": session.status}
 
 
+# ── Update session XP threshold config (GM only) ────────────
+@router.patch("/{code}/xp-config")
+async def update_xp_threshold_config(code: str, body: dict, db: AsyncSession = Depends(get_session)):
+    gm_token = body.get("gm_token")
+    config = body.get("config")
+    if not gm_token:
+        raise HTTPException(400, "gm_token required")
+    result = await db.execute(select(Session).where(Session.code == code))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.gm_token != gm_token:
+        raise HTTPException(403, "Invalid GM token")
+    session.xp_threshold_config = json.dumps(config) if isinstance(config, (dict, list)) else str(config) if config else None
+    await db.commit()
+    return {"ok": True, "xp_threshold_config": session.xp_threshold_config}
+
+
 # ── Full Rest (GM-only long-rest for all living players) ─────
 @router.post("/{code}/full-rest")
 async def full_rest(code: str, db: AsyncSession = Depends(get_session)):

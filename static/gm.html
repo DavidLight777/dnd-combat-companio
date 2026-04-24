@@ -95,10 +95,17 @@
     <div class="npc-section">
       <div class="sidebar-head">
         <h2>NPCs <span id="npc-count" style="color:var(--text-faint);font-weight:400"></span></h2>
-        <button class="btn btn-ghost btn-xs" id="btn-show-npc-form" style="padding:1px 6px;font-size:0.6rem">+ NPC</button>
+        <button class="btn btn-ghost btn-xs" id="btn-show-npc-spawn" style="padding:1px 6px;font-size:0.6rem">+ NPC</button>
       </div>
       <div class="sidebar-body tight">
-        <div id="npc-form-area" class="hidden"></div>
+        <div id="npc-spawn-area" class="hidden" style="padding:4px 0">
+          <select id="npc-spawn-select" style="width:100%;font-size:0.72rem;margin-bottom:4px"></select>
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:0.7rem;color:var(--text-muted)">Count:</span>
+            <input type="number" id="npc-spawn-count" value="1" min="1" max="20" style="width:40px;font-size:0.72rem">
+            <button class="btn btn-primary btn-xs" id="btn-npc-spawn" style="margin-left:auto;font-size:0.7rem">Spawn</button>
+          </div>
+        </div>
         <div id="npc-list"></div>
       </div>
     </div>
@@ -167,6 +174,9 @@
           </button>
           <button class="gm-tab" data-tab="items">
             <span class="tab-icon">⊞</span>Items
+          </button>
+          <button class="gm-tab" data-tab="cards">
+            <span class="tab-icon">🃏</span>Cards
           </button>
           <button class="gm-tab" data-tab="npc-library">
             <span class="tab-icon">⊛</span>NPC Library
@@ -253,6 +263,32 @@
           </div>
         </div>
 
+        <!-- ── Card Library ──────────────────────────────────── -->
+        <div class="tab-content" id="tab-cards">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>🃏 Card Library</h2>
+              <div style="display:flex;gap:5px">
+                <button class="btn btn-primary btn-sm" id="btn-new-card">+ New Card</button>
+                <button class="btn btn-ghost btn-sm" id="btn-refresh-cards">↻ Refresh</button>
+              </div>
+            </div>
+            <div class="detail-body">
+              <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <input type="text" id="card-search" placeholder="Search cards…" style="flex:1;min-width:140px">
+                <select id="card-filter-type" style="min-width:96px">
+                  <option value="">All Types</option>
+                  <option value="character">Character</option>
+                  <option value="location">Location</option>
+                  <option value="item">Item</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div id="card-grid" class="item-grid"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- ── Combat ────────────────────────────────────────── -->
         <div class="tab-content" id="tab-combat">
           <div id="combat-panel"></div>
@@ -294,6 +330,9 @@
             <button class="btn btn-ghost btn-xs" id="btn-fog-reset">Reset</button>
             <div class="sep"></div>
             <button class="btn btn-ghost btn-xs" id="btn-center-map">🎯 Center</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-place-chest">📦 Chest</button>
+            <button class="btn btn-ghost btn-xs" id="btn-list-chests">📦 List</button>
           </div>
           <div class="map-toolbar" id="map-draw-toolbar">
             <button class="btn btn-ghost btn-xs map-mode-btn active" data-mode="">🖱</button>
@@ -623,6 +662,78 @@
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" id="btn-cancel-cat">Cancel</button>
       <button class="btn btn-primary btn-sm" id="btn-save-cat">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CARD LIBRARY MODAL ─────────────────────────────────── -->
+<div id="card-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header">
+      <h2 id="card-modal-title">New Card</h2>
+      <button class="btn-icon" id="btn-close-card-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Name</label><input type="text" id="card-ed-name" placeholder="Card name"></div>
+        <div class="form-group"><label>Type</label>
+          <select id="card-ed-type">
+            <option value="character">Character</option>
+            <option value="location">Location</option>
+            <option value="item">Item</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:10px"><label>Description</label><textarea id="card-ed-desc" rows="3" placeholder="Card description…"></textarea></div>
+      <div class="form-group" style="margin-top:10px"><label>Extra Data (JSON)</label><textarea id="card-ed-data" rows="2" placeholder='{"key": "value"}'></textarea></div>
+      <div style="margin-top:12px">
+        <label style="font-size:0.78rem">Image</label>
+        <div id="card-image-preview" style="margin-top:6px;max-width:200px;max-height:150px;overflow:hidden;border-radius:var(--r-md);background:var(--bg-surface-3)">
+          <img id="card-preview-img" src="" style="width:100%;height:auto;display:none">
+          <div id="card-no-image" style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.7rem">No image</div>
+        </div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin-top:6px;display:inline-block">📁 Upload Image<input type="file" id="card-image-upload" accept="image/*" style="display:none"></label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-card">Cancel</button>
+      <button class="btn btn-danger btn-sm hidden" id="btn-delete-card">Delete</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-card">Save Card</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CHEST MODAL ──────────────────────────────────────────── -->
+<div id="chest-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:420px">
+    <div class="modal-header">
+      <h2 id="chest-modal-title">Chest</h2>
+      <button class="btn-icon" id="btn-close-chest-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Name</label><input type="text" id="chest-ed-name" placeholder="Chest name"></div>
+        <div class="form-group"><label>Icon</label><input type="text" id="chest-ed-icon" value="📦" style="width:56px"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px"><label>Description</label><textarea id="chest-ed-desc" rows="2" placeholder="Description…"></textarea></div>
+      <div style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h3 style="font-size:0.78rem;flex:1">Items inside</h3>
+          <button class="btn btn-ghost btn-xs" id="btn-chest-add-item">+ Add Item</button>
+        </div>
+        <div id="chest-item-list" style="display:flex;flex-direction:column;gap:4px"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" id="btn-chest-reveal">👁 Reveal</button>
+        <button class="btn btn-ghost btn-sm" id="btn-chest-hide">🙈 Hide</button>
+        <button class="btn btn-ghost btn-sm" id="btn-chest-give">🎁 Give to Player</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-chest">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="btn-delete-chest">Delete</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-chest">Save Chest</button>
     </div>
   </div>
 </div>

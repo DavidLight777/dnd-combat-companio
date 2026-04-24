@@ -44,6 +44,12 @@ class CharacterCreate(BaseModel):
     is_npc: bool = False
     armor_class: int = 10
     max_hp: int = 20
+    spiritual_max_hp: Optional[int] = None
+    mana_max: Optional[int] = None
+    race_id: Optional[int] = None
+    rank: Optional[str] = "common"
+    level: Optional[int] = 1
+    kill_xp_reward: Optional[int] = 0
 
 
 class CharacterUpdate(BaseModel):
@@ -51,6 +57,8 @@ class CharacterUpdate(BaseModel):
     armor_class: Optional[int] = None
     current_hp: Optional[int] = None
     max_hp: Optional[int] = None
+    spiritual_hp: Optional[int] = None
+    spiritual_max_hp: Optional[int] = None
     strength: Optional[int] = None
     dexterity: Optional[int] = None
     constitution: Optional[int] = None
@@ -79,6 +87,7 @@ class CharacterUpdate(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
     max_inventory_slots: Optional[int] = None
+    kill_xp_reward: Optional[int] = None
     declined_stats: Optional[bool] = None
 
 

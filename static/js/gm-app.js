@@ -55,6 +55,14 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 // ── Log ──────────────────────────────────────────────────────
 function addLog(event, text) {
   const log = $('#event-log');
@@ -161,6 +169,10 @@ const deadBadge = !c.is_alive ? ' <span class="cc-badge badge-dead">💀</span>'
         <div class="cc-line" style="flex:1;min-width:0">
           <div class="hp-bar-container"><div class="hp-bar" style="width:${pct}%;background:${color}"></div></div>
         </div>
+        ${c.spiritual_max_hp > 0 ? `
+        <div class="cc-line" style="margin-top:4px">
+          <span class="hp-text" style="font-size:0.7rem;color:#a855f7">👻 ${c.spiritual_hp}/${c.spiritual_max_hp}</span>
+        </div>` : ''}
       </div>
       <div class="cc-status-badges" data-sidebar-status="${c.id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px"></div>
       <div class="cc-actions" style="display:flex;gap:4px;align-items:center;margin-top:3px">
@@ -281,6 +293,10 @@ function renderNPCList() {
           <div class="cc-line" style="flex:1;min-width:0">
             <div class="hp-bar-container"><div class="hp-bar" style="width:${pct}%;background:${color}"></div></div>
           </div>
+          ${c.spiritual_max_hp > 0 ? `
+          <div class="cc-line" style="margin-top:4px">
+            <span class="hp-text" style="font-size:0.7rem;color:#a855f7">👻 ${c.spiritual_hp}/${c.spiritual_max_hp}</span>
+          </div>` : ''}
         </div>
         <div class="cc-status-badges" data-sidebar-status="${c.id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px"></div>
         <div class="cc-actions" style="display:flex;gap:4px;align-items:center;margin-top:3px">
@@ -423,6 +439,33 @@ async function renderCharDetail() {
       <button class="btn btn-ghost btn-xs" id="gm-hp-set">Set</button>
     </div>`;
 
+  // Spiritual HP
+  const spiritPct = c.spiritual_max_hp > 0 ? (c.spiritual_hp / c.spiritual_max_hp * 100) : 0;
+  const spiritColor = spiritPct > 50 ? '#a855f7' : spiritPct > 25 ? '#c084fc' : '#e879f9';
+  const spiritHtml = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <span style="font-size:1.2rem;font-weight:700;color:${spiritColor};font-variant-numeric:tabular-nums">👻 ${c.spiritual_hp || 0} / ${c.spiritual_max_hp || 0}</span>
+      <span style="font-size:0.75rem;color:var(--text-muted)">Spirit HP</span>
+      <div class="hp-bar-container" style="flex:1"><div class="hp-bar" style="width:${spiritPct}%;background:${spiritColor}"></div></div>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="-5">-5</button>
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="-10">-10</button>
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="-20">-20</button>
+      <span style="width:8px"></span>
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="5">+5</button>
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="10">+10</button>
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="20">+20</button>
+      <button class="btn btn-ghost btn-xs" data-spirit-delta="999" style="color:#a855f7">Full</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+      <label style="font-size:0.78rem;color:var(--text-muted)">Custom:</label>
+      <input type="number" id="gm-spirit-custom" value="0" style="width:60px">
+      <button class="btn btn-ghost btn-xs" id="gm-spirit-add">+ Add</button>
+      <button class="btn btn-ghost btn-xs" id="gm-spirit-sub">- Sub</button>
+      <button class="btn btn-ghost btn-xs" id="gm-spirit-set">Set</button>
+    </div>`;
+
   const manaHtml = c.mana_max > 0 ? (() => {
     const manaPct = c.mana_max > 0 ? (c.mana_current / c.mana_max * 100) : 0;
     return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
@@ -474,11 +517,15 @@ async function renderCharDetail() {
       <div class="stat-inline"><div class="sl">KD</div><div class="sv" style="color:var(--accent)">${c.armor_class}</div></div>
     </div>`;
 
+  const hasPoints = (c.attribute_points_available || 0) > 0;
   const editStatsHtml = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-      ${stats.map((s,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      ${stats.map((s,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative">
         <span style="font-size:0.6rem;color:var(--text-muted)">${labels[i]}</span>
-        <input type="number" value="${c[s]}" data-gm-stat="${s}" style="width:48px;font-size:0.78rem;padding:3px">
+        <div style="display:flex;align-items:center;gap:2px">
+          <input type="number" value="${c[s]}" data-gm-stat="${s}" style="width:48px;font-size:0.78rem;padding:3px">
+          ${hasPoints ? `<button class="btn btn-xs btn-primary gm-stat-plus" data-stat="${s}" style="padding:1px 4px;font-size:0.6rem" title="+1 point">+1</button>` : ''}
+        </div>
       </div>`).join('')}
       <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
         <span style="font-size:0.6rem;color:var(--text-muted)">KD</span>
@@ -487,6 +534,10 @@ async function renderCharDetail() {
       <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
         <span style="font-size:0.6rem;color:var(--text-muted)">MaxHP</span>
         <input type="number" value="${c.max_hp}" data-gm-stat="max_hp" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:#fbbf24">KillXP</span>
+        <input type="number" value="${c.kill_xp_reward || 0}" data-gm-stat="kill_xp_reward" style="width:48px;font-size:0.78rem;padding:3px">
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
         <span style="font-size:0.6rem;color:#60a5fa">MaxMP</span>
@@ -681,6 +732,7 @@ async function renderCharDetail() {
           <!-- Tab: Stats & Combat -->
           <div class="npc-tab-content active" data-npc-panel="stats">
             ${hpHtml}
+            ${spiritHtml}
             ${manaHtml}
             ${permanentBonusesHtml}
             ${statsHtml}
@@ -770,6 +822,7 @@ async function renderCharDetail() {
               <span title="Rank" style="text-transform:capitalize">${(c.rank||'common')}</span>
               · Lvl <strong>${c.level ?? 0}</strong>
               · XP <strong><span id="gm-char-xp">${c.experience || 0}</span></strong>/<span id="gm-char-xp-next">${100 + 100 * (c.level || 0)}</span>
+              ${(c.attribute_points_available || 0) > 0 ? `· Points: <strong style="color:#fbbf24">${c.attribute_points_available}</strong>` : ''}
               <button class="btn btn-ghost btn-xs" id="btn-grant-xp" style="padding:0 3px;margin-left:4px;font-size:0.65rem" title="Grant XP">+XP</button>
               <button class="btn btn-ghost btn-xs" id="btn-level-up" style="padding:0 3px;font-size:0.65rem" title="Level up">⬆</button>
               <button class="btn btn-ghost btn-xs" id="btn-rank-up" style="padding:0 3px;font-size:0.65rem" title="Rank up">★</button>
@@ -777,6 +830,7 @@ async function renderCharDetail() {
             </span>
           </div>
           ${hpHtml}
+          ${spiritHtml}
           ${manaHtml}
           ${abilitiesAssignHtml}
           <hr class="section-divider">
@@ -844,6 +898,21 @@ async function renderCharDetail() {
   $('#gm-hp-sub').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:-v}); await refreshChars(); addLog('gm.hp',`${c.name}: -${v}`); });
   $('#gm-hp-set').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{set:v}); await refreshChars(); addLog('gm.hp',`${c.name}: set ${v}`); });
 
+  // Spiritual HP delta buttons
+  area.querySelectorAll('[data-spirit-delta]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const d = parseInt(btn.dataset.spiritDelta);
+      const newVal = Math.max(0, Math.min((c.spiritual_max_hp || 0), (c.spiritual_hp || 0) + d));
+      await api.patch(`/api/characters/${c.id}`, { spiritual_hp: newVal });
+      await refreshChars();
+      addLog('gm.spirit_hp', `${c.name}: ${d===999?'Full Spirit Heal':d>0?'+'+d:d} Spirit HP`);
+    });
+  });
+  // Custom Spiritual HP
+  $('#gm-spirit-add').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.min((c.spiritual_max_hp||0), (c.spiritual_hp||0)+v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: +${v} Spirit`); });
+  $('#gm-spirit-sub').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.max(0, (c.spiritual_hp||0)-v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: -${v} Spirit`); });
+  $('#gm-spirit-set').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; await api.patch(`/api/characters/${c.id}`, {spiritual_hp: v}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: set ${v} Spirit`); });
+
   // Mana delta buttons
   area.querySelectorAll('[data-mana-delta]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -874,6 +943,22 @@ async function renderCharDetail() {
       await api.put(`/api/characters/${c.id}`, { [f]: v });
       await refreshChars();
       addLog('gm.stat', `${c.name}: ${f}=${v}`);
+    });
+  });
+
+  // Attribute point [+1] buttons (Fix 1)
+  area.querySelectorAll('.gm-stat-plus').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const stat = btn.dataset.stat;
+      try {
+        const res = await api.post(`/api/characters/${c.id}/spend-attribute-point`, { stat });
+        showToast(`${stat.slice(0,3).toUpperCase()} +1! Points left: ${res.attribute_points_available}`, 'accent');
+        addLog('gm.stat', `${c.name}: ${stat} +1 (point spent)`);
+        await refreshChars();
+        renderCharDetail();
+      } catch (e) {
+        showToast('Failed to spend point', 'error');
+      }
     });
   });
 
@@ -1376,14 +1461,19 @@ if (showHpChk) {
           const costParts = [];
           if (a.mana_cost) costParts.push(`🔮${a.mana_cost}`);
           if (a.hp_cost) costParts.push(`❤️${a.hp_cost}`);
+          const rankBadge = `<span style="font-size:0.6rem;text-transform:capitalize;background:var(--bg-surface-3);padding:1px 4px;border-radius:4px">${a.ability_rank||'common'}</span>`;
+          const lvlBadge = `<span style="font-size:0.6rem;background:var(--bg-surface-3);padding:1px 4px;border-radius:4px">Lv.${a.ability_level||0}</span>`;
           return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;padding:4px 8px;border-left:3px solid ${a.color||'#60a5fa'};background:var(--bg-surface-2);border-radius:var(--r-sm);${onCd?'opacity:0.5':''}">
             <span style="font-weight:600;font-size:0.78rem">${a.icon||'⚡'} ${a.name}</span>
             ${typeBadge}
+            ${rankBadge}
+            ${lvlBadge}
             ${costParts.length ? `<span style="font-size:0.65rem;color:var(--text-muted)">${costParts.join(' ')}</span>` : ''}
             ${onCd ? `<span style="color:var(--accent-orange);font-size:0.65rem">⏳${a.cooldown_remaining}t</span>` : ''}
             ${a.cooldown_turns && !onCd ? `<span style="font-size:0.6rem;color:var(--text-muted)">CD:${a.cooldown_turns}t</span>` : ''}
             <span style="margin-left:auto;display:flex;gap:3px">
               ${a.ability_type !== 'passive' && !onCd ? `<button class="btn btn-primary btn-xs" data-use-ca="${a.character_ability_id}" data-use-name="${a.name}" style="font-size:0.6rem;padding:1px 6px">Use</button>` : ''}
+              <button class="btn btn-ghost btn-xs" data-promote-ca="${a.character_ability_id}" title="Promote rank" style="font-size:0.6rem;padding:1px 4px">⭐</button>
               <button class="btn btn-ghost btn-xs" data-rm-ca="${a.character_ability_id}" style="color:var(--accent-red);font-size:0.65rem">✕</button>
             </span>
           </div>`;
@@ -1392,6 +1482,15 @@ if (showHpChk) {
           btn.addEventListener('click', async () => {
             await api.del(`/api/character-abilities/${btn.dataset.rmCa}`);
             renderCharDetail();
+          });
+        });
+        abList.querySelectorAll('[data-promote-ca]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            try {
+              const res = await api.post(`/api/characters/${c.id}/abilities/${btn.dataset.promoteCa}/promote-rank`);
+              showToast(`${res.ability_name} promoted to ${res.ability_rank}!`);
+              renderCharDetail();
+            } catch (e) { showToast('Promotion failed'); }
           });
         });
         abList.querySelectorAll('[data-use-ca]').forEach(btn => {
@@ -1535,44 +1634,15 @@ if (showHpChk) {
         } catch (e) { showToast('Failed to grant XP'); }
       });
     }
-    // Rework Phase 8: Level up
+    // Fix 1: Level up with choice (attributes vs rank)
     const lvlUpBtn = area.querySelector('#btn-level-up');
     if (lvlUpBtn) {
-      lvlUpBtn.addEventListener('click', async () => {
-        try {
-          const res = await api.post(`/api/characters/${c.id}/level-up`, {});
-          addLog('gm.lvl', `${c.name} → Lvl ${res.level}`);
-          await refreshChars();
-          renderCharDetail();
-        } catch (e) {
-          let msg = 'Level up failed';
-          try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
-          if (!confirm(`${msg}. Force level-up anyway?`)) return;
-          try {
-            const res = await api.post(`/api/characters/${c.id}/level-up`, { force: true });
-            addLog('gm.lvl', `${c.name} → Lvl ${res.level} (forced)`);
-            await refreshChars();
-            renderCharDetail();
-          } catch { showToast('Level up failed'); }
-        }
-      });
+      lvlUpBtn.addEventListener('click', () => openGmLevelUpModal(c));
     }
-    // Rework Phase 8: Rank up
+    // Remove old rank-up button handler (now integrated into level-up modal)
     const rankBtn = area.querySelector('#btn-rank-up');
     if (rankBtn) {
-      rankBtn.addEventListener('click', async () => {
-        if (!confirm(`Promote ${c.name} to the next rank?`)) return;
-        try {
-          const res = await api.post(`/api/characters/${c.id}/rank-up`, {});
-          addLog('gm.rank', `${c.name} → Rank ${res.rank} (Lvl ${res.level})`);
-          await refreshChars();
-          renderCharDetail();
-        } catch (e) {
-          let msg = 'Rank up failed';
-          try { const err = JSON.parse(e.message); msg = err.detail || msg; } catch {}
-          showToast(msg);
-        }
-      });
+      rankBtn.style.display = 'none';  // Hide old button
     }
   }
 
@@ -2017,6 +2087,163 @@ function openGmBuybackModal(invId, itemName, basePrice, charId) {
       let msg = 'Buyback failed';
       try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
       overlay.querySelector('#bb-result').innerHTML = `<span style="color:var(--accent-red)">${msg}</span>`;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// Fix 1 — GM Level-Up Choice Modal
+// ══════════════════════════════════════════════════════════════
+const _GM_RANK_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'divine'];
+
+function openGmLevelUpModal(character) {
+  if (document.getElementById('gm-lvlup-modal')) return;
+
+  const level = character.level ?? 0;
+  const xp = character.experience || 0;
+  const thresh = 100 + 100 * Math.max(0, level);
+  const rank = (character.rank || 'common').toLowerCase();
+  const isRankUp = level >= 10;
+
+  const hpCount = character.hp_dice_count || 1;
+  const hpDie = character.hp_die || 8;
+  const hpDieStr = `${hpCount}d${hpDie}`;
+
+  let mode = 'attributes';  // 'attributes' | 'ability'
+  let selectedAbilityId = null;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'gm-lvlup-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:90%;max-width:480px;padding:20px">
+      <h3 style="margin:0 0 8px">⬆ ${isRankUp ? 'Rank Up' : 'Level Up'}: ${character.name}</h3>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+        ${isRankUp ? '<strong>Level 10 reached!</strong> Rank will advance automatically.' : `Current: <strong>${rank}</strong> rank · Level ${level} · ${xp}/${thresh} XP`}
+      </div>
+
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:12px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-sm)">
+        🎲 HP ${hpDieStr} + spiritual HP + mana — always rolled
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="gm-lvlup-choice ${mode==='attributes'?'selected':''}" data-mode="attributes" style="padding:12px;border:2px solid var(--border);border-radius:var(--r-md);cursor:pointer;transition:all .15s">
+          <div style="font-weight:700;font-size:0.9rem;margin-bottom:4px">📈 +1 Attribute</div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">
+            Gain 1 attribute point
+          </div>
+        </div>
+        <div class="gm-lvlup-choice ${mode==='ability'?'selected':''}" data-mode="ability" style="padding:12px;border:2px solid var(--border);border-radius:var(--r-md);cursor:pointer;transition:all .15s">
+          <div style="font-weight:700;font-size:0.9rem;margin-bottom:4px">⚡ Upgrade Ability</div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">
+            Increase ability level
+          </div>
+        </div>
+      </div>
+
+      <div id="gm-ability-select" style="display:none;margin-bottom:12px">
+        <label style="font-size:0.78rem">Select ability:</label>
+        <select id="gm-lvlup-ability" style="width:100%;font-size:0.78rem;margin-top:4px">
+          <option value="">— Choose ability —</option>
+        </select>
+      </div>
+
+      <div id="gm-lvlup-error" style="color:var(--accent-red);font-size:0.78rem;min-height:14px;margin-bottom:8px"></div>
+
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="gm-lvlup-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="gm-lvlup-confirm">Confirm</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#gm-lvlup-cancel').addEventListener('click', () => overlay.remove());
+
+  const err = overlay.querySelector('#gm-lvlup-error');
+  const confirmBtn = overlay.querySelector('#gm-lvlup-confirm');
+  const abilityArea = overlay.querySelector('#gm-ability-select');
+  const abilitySelect = overlay.querySelector('#gm-lvlup-ability');
+
+  // Load character abilities
+  (async () => {
+    try {
+      const abs = await api.get(`/api/characters/${character.id}/abilities`);
+      abs.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.character_ability_id;
+        opt.textContent = `${a.name} (Lv.${a.ability_level || 0})`;
+        abilitySelect.appendChild(opt);
+      });
+    } catch {}
+  })();
+
+  overlay.querySelectorAll('.gm-lvlup-choice').forEach(card => {
+    card.addEventListener('click', () => {
+      mode = card.dataset.mode;
+      overlay.querySelectorAll('.gm-lvlup-choice').forEach(c => {
+        c.classList.toggle('selected', c === card);
+        c.style.borderColor = c === card ? 'var(--accent)' : 'var(--border)';
+        c.style.background = c === card ? 'rgba(96,165,250,0.08)' : '';
+      });
+      abilityArea.style.display = mode === 'ability' ? 'block' : 'none';
+    });
+  });
+
+  // Set initial selection style
+  const initialCard = overlay.querySelector(`[data-mode="${mode}"]`);
+  if (initialCard) {
+    initialCard.style.borderColor = 'var(--accent)';
+    initialCard.style.background = 'rgba(96,165,250,0.08)';
+  }
+
+  confirmBtn.addEventListener('click', async () => {
+    if (mode === 'ability') {
+      selectedAbilityId = parseInt(abilitySelect.value);
+      if (!selectedAbilityId) {
+        err.textContent = 'Select an ability to upgrade';
+        return;
+      }
+    }
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Rolling…';
+    const payload = { choice: mode };
+    if (mode === 'ability') payload.ability_id = selectedAbilityId;
+
+    try {
+      const res = await api.post(`/api/characters/${character.id}/level-up`, payload);
+      const hpGained = res.chosen?.hp_gained ?? '?';
+      const attrPoints = res.attribute_points_available ?? '?';
+      const abilityName = res.chosen?.ability_name || '';
+
+      if (mode === 'attributes') {
+        showToast(`Level ${res.level}! +${hpGained} HP · +1 point (total: ${attrPoints})`, 'accent');
+        addLog('gm.lvl', `${character.name} → Lvl ${res.level} · +${hpGained} HP · +1 point`);
+      } else {
+        showToast(`Level ${res.level}! +${hpGained} HP · ⚡ ${abilityName} +1 level`, 'accent');
+        addLog('gm.lvl', `${character.name} → Lvl ${res.level} · +${hpGained} HP · ${abilityName} upgraded`);
+      }
+      if (res.chosen?.rank_promoted) {
+        addLog('gm.rank', `${character.name} auto-promoted to ${res.rank}!`);
+      }
+      overlay.remove();
+      await refreshChars();
+      renderCharDetail();
+    } catch (e) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm';
+      let msg = 'Level up failed';
+      try { const err = JSON.parse(e.message); msg = err.detail?.message || err.detail || msg; } catch {}
+      err.textContent = msg;
+
+      if (!confirm(`${msg}. Force level-up anyway?`)) return;
+      try {
+        const res = await api.post(`/api/characters/${character.id}/level-up`, { ...payload, force: true });
+        overlay.remove();
+        await refreshChars();
+        renderCharDetail();
+      } catch { showToast('Level up failed'); }
     }
   });
 }
@@ -2572,35 +2799,35 @@ function openInitiateTradeModal(npcId, npcName) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// NPC CREATION
+// NPC SIDEBAR SPAWN (from NPC Library)
 // ══════════════════════════════════════════════════════════════
-$('#btn-show-npc-form').addEventListener('click', () => {
-  const area = $('#npc-form-area');
+$('#btn-show-npc-spawn').addEventListener('click', async () => {
+  const area = $('#npc-spawn-area');
   if (!area.classList.contains('hidden')) { area.classList.add('hidden'); return; }
   area.classList.remove('hidden');
-  area.innerHTML = `
-    <div class="npc-form">
-      <div class="form-row"><label>Name:</label><input type="text" id="npc-name" placeholder="Goblin"></div>
-      <div class="form-row">
-        <label>HP:</label><input type="number" id="npc-hp" value="20" style="width:56px">
-        <label>KD:</label><input type="number" id="npc-kd" value="10" style="width:56px">
-      </div>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-primary btn-sm" id="btn-create-npc">Create NPC</button>
-        <button class="btn btn-ghost btn-sm" id="btn-cancel-npc">Cancel</button>
-      </div>
-    </div>
-  `;
-  $('#btn-create-npc').addEventListener('click', async () => {
-    const name = $('#npc-name').value.trim() || 'NPC';
-    const hp = parseInt($('#npc-hp').value) || 0;
-    const kd = parseInt($('#npc-kd').value) || 0;
-    await api.post(`/api/sessions/${SESSION_CODE}/npc`, { name, is_npc: true, max_hp: hp, armor_class: kd });
-    area.classList.add('hidden');
+  // Load templates into dropdown
+  const sel = $('#npc-spawn-select');
+  if (!npcTemplates.length) {
+    try {
+      const t = await api.get(`/api/npc-library/templates?session_id=${SESSION_ID}`);
+      npcTemplates = t;
+    } catch(e) { npcTemplates = []; }
+  }
+  sel.innerHTML = npcTemplates.length
+    ? npcTemplates.map(t => `<option value="${t.id}">${t.name}</option>`).join('')
+    : '<option disabled>No templates</option>';
+});
+
+$('#btn-npc-spawn').addEventListener('click', async () => {
+  const tplId = parseInt($('#npc-spawn-select').value);
+  const count = parseInt($('#npc-spawn-count').value) || 1;
+  if (!tplId) return;
+  try {
+    const res = await api.post(`/api/npc-library/templates/${tplId}/spawn`, { session_id: SESSION_ID, count });
+    $('#npc-spawn-area').classList.add('hidden');
+    showToast(`Spawned ${res.spawned.length} NPC(s)`);
     await refreshChars();
-    addLog('gm.npc', `Created NPC: ${name} (HP:${hp} KD:${kd})`);
-  });
-  $('#btn-cancel-npc').addEventListener('click', () => area.classList.add('hidden'));
+  } catch(e) { showToast('Failed to spawn: ' + e.message, 'error'); }
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -2681,6 +2908,12 @@ function initMapCanvas() {
       if (shiftKey && token.is_npc) openNpcControlPanel(token.character_id);
     },
     onTokenRightClick: (token, cx, cy) => openTokenContextMenu(token, cx, cy),
+    onChestClick: (chest) => openChestModal(chest),
+    onMapClick: (nx, ny) => {
+      if (placingChest) {
+        handleMapClickForChest(nx, ny);
+      }
+    },
     // Phase 5: wall/object placement. Finishes a drag-to-place
     // rectangle; the server normalises and broadcasts map.objects_updated,
     // which we listen for below to refresh the list.
@@ -3925,10 +4158,176 @@ if (_ipChk) {
   });
 }
 
+// ══════════════════════════════════════════════════════════════
+// CARD LIBRARY
+// ══════════════════════════════════════════════════════════════
+let allCards = [];
+let editingCardId = null;
+let pendingCardImage = null;
+
+async function loadCards() {
+  if (!SESSION_ID) return;
+  try {
+    const search = $('#card-search').value.trim();
+    const type = $('#card-filter-type').value;
+    let url = `/api/cards?session_id=${SESSION_ID}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (type) url += `&type=${encodeURIComponent(type)}`;
+    allCards = await api.get(url);
+    renderCardGrid();
+  } catch (e) { console.error('loadCards error:', e); }
+}
+
+function renderCardGrid() {
+  const grid = $('#card-grid');
+  if (!allCards.length) {
+    grid.innerHTML = '<div class="item-grid-empty">No cards found. Click "+ New Card" to create one.</div>';
+    return;
+  }
+  grid.innerHTML = allCards.map(card => {
+    const typeIcon = { character: '👤', location: '📍', item: '⚔️', custom: '🔮' }[card.card_type] || '🃏';
+    const hasImage = card.image_url ? `<div style="margin-top:6px;max-height:120px;overflow:hidden;border-radius:var(--r-sm)"><img src="${card.image_url}" style="width:100%;height:auto"></div>` : '';
+    return `
+      <div class="item-card" data-card-id="${card.id}">
+        <div class="ic-top">
+          <span class="ic-icon">${typeIcon}</span>
+          <span class="ic-name">${card.name}</span>
+          <span style="font-size:0.6rem;color:var(--text-muted);text-transform:capitalize">${card.card_type}</span>
+        </div>
+        <div class="ic-desc">${card.description || ''}</div>
+        ${hasImage}
+      </div>`;
+  }).join('');
+
+  grid.querySelectorAll('[data-card-id]').forEach(card => {
+    card.addEventListener('click', () => openCardEditor(parseInt(card.dataset.cardId)));
+  });
+}
+
+function openCardEditor(cardId = null) {
+  editingCardId = cardId;
+  const modal = $('#card-modal');
+  modal.classList.remove('hidden');
+  pendingCardImage = null;
+
+  if (cardId) {
+    const card = allCards.find(c => c.id === cardId);
+    if (!card) return;
+    $('#card-modal-title').textContent = 'Edit Card';
+    $('#card-ed-name').value = card.name;
+    $('#card-ed-type').value = card.card_type;
+    $('#card-ed-desc').value = card.description || '';
+    $('#card-ed-data').value = JSON.stringify(card.card_data || {}, null, 2);
+    if (card.image_url) {
+      $('#card-preview-img').src = card.image_url;
+      $('#card-preview-img').style.display = 'block';
+      $('#card-no-image').style.display = 'none';
+    } else {
+      $('#card-preview-img').style.display = 'none';
+      $('#card-no-image').style.display = 'block';
+    }
+    $('#btn-delete-card').classList.remove('hidden');
+  } else {
+    $('#card-modal-title').textContent = 'New Card';
+    $('#card-ed-name').value = '';
+    $('#card-ed-type').value = 'character';
+    $('#card-ed-desc').value = '';
+    $('#card-ed-data').value = '{}';
+    $('#card-preview-img').style.display = 'none';
+    $('#card-no-image').style.display = 'block';
+    $('#btn-delete-card').classList.add('hidden');
+  }
+}
+
+function closeCardModal() {
+  $('#card-modal').classList.add('hidden');
+  editingCardId = null;
+  pendingCardImage = null;
+}
+
+async function saveCard() {
+  const name = $('#card-ed-name').value.trim();
+  if (!name) { showToast('Name is required'); return; }
+
+  let cardData = {};
+  try {
+    cardData = JSON.parse($('#card-ed-data').value || '{}');
+  } catch { cardData = {}; }
+
+  const payload = {
+    session_id: SESSION_ID,
+    name: name,
+    description: $('#card-ed-desc').value,
+    card_type: $('#card-ed-type').value,
+    card_data: cardData,
+  };
+
+  try {
+    let card;
+    if (editingCardId) {
+      card = await api.put(`/api/cards/${editingCardId}`, payload);
+    } else {
+      card = await api.post('/api/cards', payload);
+    }
+
+    if (pendingCardImage) {
+      const formData = new FormData();
+      formData.append('file', pendingCardImage);
+      await fetch(`/api/cards/${card.id}/upload-image`, {
+        method: 'POST',
+        body: formData,
+      });
+    }
+
+    showToast(editingCardId ? 'Card updated' : 'Card created');
+    closeCardModal();
+    loadCards();
+  } catch (e) {
+    showToast('Error: ' + (e.message || 'Failed to save card'));
+  }
+}
+
+async function deleteCard() {
+  if (!editingCardId) return;
+  if (!confirm('Delete this card?')) return;
+  try {
+    await api.del(`/api/cards/${editingCardId}`);
+    showToast('Card deleted');
+    closeCardModal();
+    loadCards();
+  } catch (e) {
+    showToast('Error: ' + (e.message || 'Failed to delete card'));
+  }
+}
+
+// ── Card Library event listeners ──
+$('#btn-new-card').addEventListener('click', () => openCardEditor());
+$('#btn-refresh-cards').addEventListener('click', loadCards);
+$('#btn-close-card-modal').addEventListener('click', closeCardModal);
+$('#btn-cancel-card').addEventListener('click', closeCardModal);
+$('#btn-save-card').addEventListener('click', saveCard);
+$('#btn-delete-card').addEventListener('click', deleteCard);
+$('#card-search').addEventListener('input', debounce(loadCards, 300));
+$('#card-filter-type').addEventListener('change', loadCards);
+
+$('#card-image-upload').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  pendingCardImage = file;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    $('#card-preview-img').src = ev.target.result;
+    $('#card-preview-img').style.display = 'block';
+    $('#card-no-image').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
 // ── Use Effects Editor ──
 let tempUseEffects = [];
 const USE_EFFECT_TYPES = [
   {value:'heal_hp', label:'Heal HP'},
+  {value:'heal_spirit', label:'Heal Spirit HP'},
   {value:'restore_mana', label:'Restore Mana'},
   {value:'apply_status', label:'Apply Status'},
   {value:'stat_boost', label:'Stat Boost'},
@@ -3943,6 +4342,12 @@ function _formatUseEffectPreview(e) {
     if (e.dice_count && e.dice_type) parts.push(`${e.dice_count}d${e.dice_type}`);
     if (e.flat_bonus) parts.push(`${e.flat_bonus > 0 ? '+' : ''}${e.flat_bonus}`);
     return `❤️ Heal ${parts.join(' ') || '0'} HP`;
+  }
+  if (e.type === 'heal_spirit') {
+    const parts = [];
+    if (e.dice_count && e.dice_type) parts.push(`${e.dice_count}d${e.dice_type}`);
+    if (e.flat_bonus) parts.push(`${e.flat_bonus > 0 ? '+' : ''}${e.flat_bonus}`);
+    return `👻 Heal ${parts.join(' ') || '0'} Spirit HP`;
   }
   if (e.type === 'damage') {
     const parts = [];
@@ -3969,7 +4374,7 @@ function renderUseEffectEditor() {
       `<option value="${t.value}" ${t.value === e.type ? 'selected' : ''}>${t.label}</option>`
     ).join('');
     let fields = '';
-    if (e.type === 'heal_hp' || e.type === 'damage') {
+    if (e.type === 'heal_hp' || e.type === 'heal_spirit' || e.type === 'damage') {
       fields = `<input type="number" data-ue-field="dice_count" value="${e.dice_count||1}" min="1" style="width:40px" title="Dice count">d<input type="number" data-ue-field="dice_type" value="${e.dice_type||4}" min="1" style="width:40px" title="Dice type">+<input type="number" data-ue-field="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" title="Flat bonus">`;
     } else if (e.type === 'restore_mana') {
       fields = `<label style="font-size:0.7rem">Amount:</label><input type="number" data-ue-field="amount" value="${e.amount||0}" style="width:50px">`;
@@ -5374,6 +5779,7 @@ async function loadRacesClasses() {
       api.get('/api/races-classes/classes'),
     ]);
     rcRaces = rr;
+    window._allRaces = rcRaces;
     rcClasses = cc;
   } catch { rcRaces = []; rcClasses = []; }
   renderRCList();
@@ -5398,7 +5804,8 @@ function renderRCList() {
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:700;font-size:0.85rem">${r.name}</span>
         <div style="display:flex;gap:4px;align-items:center">
-          <span style="font-size:0.62rem;padding:1px 6px;border-radius:10px;background:rgba(200,60,60,0.22);color:#ff9494;font-weight:700" title="HP die rolled at creation and every level-up">${r.hp_dice_count || 1}d${r.hp_die || 8}</span>
+          <span style="font-size:0.62rem;padding:1px 6px;border-radius:10px;background:rgba(200,60,60,0.22);color:#ff9494;font-weight:700" title="Physical HP die">${r.hp_dice_count || 1}d${r.hp_die || 8}</span>
+          <span style="font-size:0.62rem;padding:1px 6px;border-radius:10px;background:rgba(60,100,200,0.22);color:#94b4ff;font-weight:700" title="Spiritual HP die">${r.spiritual_hp_dice_count || 1}d${r.spiritual_hp_die || 4}</span>
           <button class="btn btn-ghost btn-xs" data-edit-race="${r.id}">✏️</button>
           <button class="btn btn-ghost btn-xs" data-del-race="${r.id}" style="color:var(--accent-red)">🗑</button>
         </div>
@@ -5435,8 +5842,10 @@ function renderRCList() {
   rList.querySelectorAll('[data-del-race]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this race?')) return;
-      await api.del(`/api/races-classes/races/${btn.dataset.delRace}`);
-      loadRacesClasses();
+      try {
+        await api.del(`/api/races-classes/races/${btn.dataset.delRace}`);
+        loadRacesClasses();
+      } catch (e) { showToast('Failed to delete race: ' + (e.message || e), 'error'); }
     });
   });
   cList.querySelectorAll('[data-edit-class]').forEach(btn => {
@@ -5459,7 +5868,7 @@ function openRCEditorModal(kind, existing) {
   const kindLabel = kind === 'race' ? 'Race' : 'Profession';   // Rework v2 UI rename
   const title = isEdit ? `Edit ${kindLabel}` : `Create ${kindLabel}`;
   const data = existing || { name: '', description: '', bonuses: [], special_abilities: [], is_available: true,
-                             hp_die: 8, hp_dice_count: 1 };
+                             hp_die: 8, hp_dice_count: 1, spiritual_hp_die: 4, spiritual_hp_dice_count: 1 };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -5472,14 +5881,26 @@ function openRCEditorModal(kind, existing) {
         ${kind === 'race' ? `
           <div class="form-group" style="display:flex;gap:10px;align-items:flex-end">
             <div style="flex:1">
-              <label title="Rolled at creation and on every level-up">HP Die</label>
+              <label title="Rolled at creation and on every level-up">Physical HP Die</label>
               <select id="rc-ed-hpdie">
                 ${[4,6,8,10,12].map(d => `<option value="${d}"${(data.hp_die||8)===d?' selected':''}>d${d}</option>`).join('')}
               </select>
             </div>
             <div style="flex:1">
-              <label>HP Dice Count</label>
-              <input type="number" id="rc-ed-hpcount" min="1" max="5" value="${data.hp_dice_count || 1}">
+              <label>Physical HP Dice Count</label>
+              <input type="number" id="rc-ed-hpcount" min="1" max="20" value="${data.hp_dice_count || 1}">
+            </div>
+          </div>
+          <div class="form-group" style="display:flex;gap:10px;align-items:flex-end">
+            <div style="flex:1">
+              <label title="Spiritual HP die (separate pool for spirit-based damage)">Spiritual HP Die</label>
+              <select id="rc-ed-spirithpdie">
+                ${[4,6,8,10,12].map(d => `<option value="${d}"${(data.spiritual_hp_die||4)===d?' selected':''}>d${d}</option>`).join('')}
+              </select>
+            </div>
+            <div style="flex:1">
+              <label>Spiritual HP Dice Count</label>
+              <input type="number" id="rc-ed-spirithpcount" min="1" max="20" value="${data.spiritual_hp_dice_count || 1}">
             </div>
           </div>` : ''}
         <div class="form-group">
@@ -5596,7 +6017,7 @@ function openRCEditorModal(kind, existing) {
         rankConfigsContainer.innerHTML = '<p class="text-muted" style="font-size:0.75rem">No rank configs yet. Click "+ Add Rank" to create one.</p>';
         return;
       }
-      const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+      const rankOrder = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'divine'];
       const sorted = [...rankConfigs].sort((a, b) => {
         const rankDiff = rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
         if (rankDiff !== 0) return rankDiff;
@@ -5649,27 +6070,28 @@ function openRCEditorModal(kind, existing) {
 
     function openRankConfigEditor(rcId = null) {
       const existingRc = rcId ? rankConfigs.find(r => r.id === rcId) : null;
-      const rcData = existingRc || { rank: 'E', rank_plus: 0, physical_hp_die: 4, physical_hp_dice_count: 1, spiritual_hp_die: 4, spiritual_hp_dice_count: 1, mana_per_level: 2, notes: '' };
+      const rcData = existingRc || { rank: 'common', rank_plus: 0, physical_hp_die: 4, physical_hp_dice_count: 1, spiritual_hp_die: 4, spiritual_hp_dice_count: 1, mana_per_level: 2, notes: '' };
       const isEditing = !!existingRc;
 
-      const rcOverlay = document.createElement('div');
-      rcOverlay.className = 'modal-overlay';
-      rcOverlay.style.zIndex = '350';
-      rcOverlay.innerHTML = `
-        <div class="modal" style="max-width:420px">
-          <div class="modal-header"><h3>${isEditing ? 'Edit' : 'Add'} Rank Config</h3><button class="modal-close">&times;</button></div>
-          <div class="modal-body">
+      // Save original modal content
+      const originalContent = overlay.querySelector('.modal-body').innerHTML;
+      const originalHeader = overlay.querySelector('.modal-header h3').textContent;
+      const originalFooter = overlay.querySelector('.modal-footer').innerHTML;
+
+      // Replace modal content with rank config editor
+      overlay.querySelector('.modal-header h3').textContent = `${isEditing ? 'Edit' : 'Add'} Rank Config`;
+      overlay.querySelector('.modal-body').innerHTML = `
             <div class="form-group" style="display:flex;gap:10px">
               <div style="flex:1">
                 <label>Rank</label>
                 <select id="rc-rank" style="width:100%">
-                  ${['E','D','C','B','A','S','SS','SSS'].map(r => `<option value="${r}"${rcData.rank===r?' selected':''}>${r}</option>`).join('')}
+                  ${['common','uncommon','rare','epic','legendary','mythic','divine'].map(r => `<option value="${r}"${rcData.rank===r?' selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
                 </select>
               </div>
               <div style="width:80px">
                 <label>Plus</label>
                 <select id="rc-rank-plus" style="width:100%">
-                  ${[0,1,2,3,4,5].map(p => `<option value="${p}"${rcData.rank_plus===p?' selected':''}>${p > 0 ? '+'+p : 'Base'}</option>`).join('')}
+                  ${[0].map(p => `<option value="${p}"${rcData.rank_plus===p?' selected':''}>${'Base'}</option>`).join('')}
                 </select>
               </div>
             </div>
@@ -5695,33 +6117,39 @@ function openRCEditorModal(kind, existing) {
             </div>
             <div class="form-group">
               <label>Mana per Level</label>
-              <input type="number" id="rc-mana" min="0" max="10" value="${rcData.mana_per_level}" style="width:100px">
+              <input type="number" id="rc-mana" min="0" value="${rcData.mana_per_level}" style="width:100px">
             </div>
             <div class="form-group">
               <label>Notes</label>
               <input type="text" id="rc-notes" value="${rcData.notes}" placeholder="Special properties, e.g., +1d6 regen at B+" style="width:100%">
             </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-ghost" id="rc-rank-cancel">Cancel</button>
-            <button class="btn btn-primary" id="rc-rank-save">${isEditing ? 'Save' : 'Create'}</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(rcOverlay);
+          </div>`;
 
-      rcOverlay.querySelector('.modal-close').addEventListener('click', () => rcOverlay.remove());
-      rcOverlay.querySelector('#rc-rank-cancel').addEventListener('click', () => rcOverlay.remove());
-      rcOverlay.querySelector('#rc-rank-save').addEventListener('click', async () => {
+      overlay.querySelector('.modal-footer').innerHTML = `
+        <button class="btn btn-ghost" id="rc-rank-cancel">Cancel</button>
+        <button class="btn btn-primary" id="rc-rank-save">${isEditing ? 'Save' : 'Create'}</button>
+      `;
+
+      function restoreOriginal() {
+        overlay.querySelector('.modal-header h3').textContent = originalHeader;
+        overlay.querySelector('.modal-body').innerHTML = originalContent;
+        overlay.querySelector('.modal-footer').innerHTML = originalFooter;
+        // Re-attach event listeners for the original modal
+        loadRankConfigs();
+      }
+
+      overlay.querySelector('.modal-close').addEventListener('click', restoreOriginal);
+      overlay.querySelector('#rc-rank-cancel').addEventListener('click', restoreOriginal);
+      overlay.querySelector('#rc-rank-save').addEventListener('click', async () => {
         const body = {
-          rank: rcOverlay.querySelector('#rc-rank').value,
-          rank_plus: parseInt(rcOverlay.querySelector('#rc-rank-plus').value),
-          physical_hp_dice_count: parseInt(rcOverlay.querySelector('#rc-phys-count').value) || 1,
-          physical_hp_die: parseInt(rcOverlay.querySelector('#rc-phys-die').value) || 4,
-          spiritual_hp_dice_count: parseInt(rcOverlay.querySelector('#rc-spirit-count').value) || 1,
-          spiritual_hp_die: parseInt(rcOverlay.querySelector('#rc-spirit-die').value) || 4,
-          mana_per_level: parseInt(rcOverlay.querySelector('#rc-mana').value) || 0,
-          notes: rcOverlay.querySelector('#rc-notes').value.trim(),
+          rank: overlay.querySelector('#rc-rank').value,
+          rank_plus: parseInt(overlay.querySelector('#rc-rank-plus').value),
+          physical_hp_dice_count: parseInt(overlay.querySelector('#rc-phys-count').value) || 1,
+          physical_hp_die: parseInt(overlay.querySelector('#rc-phys-die').value) || 4,
+          spiritual_hp_dice_count: parseInt(overlay.querySelector('#rc-spirit-count').value) || 1,
+          spiritual_hp_die: parseInt(overlay.querySelector('#rc-spirit-die').value) || 4,
+          mana_per_level: parseInt(overlay.querySelector('#rc-mana').value) || 0,
+          notes: overlay.querySelector('#rc-notes').value.trim(),
         };
         try {
           if (isEditing) {
@@ -5729,7 +6157,7 @@ function openRCEditorModal(kind, existing) {
           } else {
             await api.post(`/api/races-classes/races/${existing.id}/rank-configs`, body);
           }
-          rcOverlay.remove();
+          restoreOriginal();
           await loadRankConfigs();
         } catch (e) {
           showToast(e?.body?.detail || 'Failed to save rank config');
@@ -5757,6 +6185,8 @@ function openRCEditorModal(kind, existing) {
     if (kind === 'race') {
       body.hp_die = parseInt(overlay.querySelector('#rc-ed-hpdie')?.value) || 8;
       body.hp_dice_count = Math.max(1, Math.min(5, parseInt(overlay.querySelector('#rc-ed-hpcount')?.value) || 1));
+      body.spiritual_hp_die = parseInt(overlay.querySelector('#rc-ed-spirithpdie')?.value) || 4;
+      body.spiritual_hp_dice_count = Math.max(1, Math.min(5, parseInt(overlay.querySelector('#rc-ed-spirithpcount')?.value) || 1));
     }
 
     if (isEdit) {
@@ -5942,6 +6372,17 @@ async function deleteQuestTemplate(tplId) {
   } catch (e) { showToast('Failed to delete template'); }
 }
 
+function renderStructuredRewardItems(items) {
+  if (!items || !items.length) return '<div style="font-size:0.72rem;color:var(--text-muted)">No items</div>';
+  return items.map((it, i) => `
+    <div class="qt-sr-item" data-sr-idx="${i}" style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
+      <input type="number" class="qt-sr-item-id" value="${it.item_id || ''}" placeholder="Item ID" style="width:60px;font-size:0.72rem">
+      <input type="number" class="qt-sr-item-qty" value="${it.quantity || 1}" min="1" style="width:50px;font-size:0.72rem">
+      <button class="btn btn-danger btn-xs" onclick="this.closest('div').remove()">×</button>
+    </div>
+  `).join('');
+}
+
 function openQuestEditorModal(tplId = null) {
   const existing = tplId ? questTemplates.find(t => t.id === tplId) : null;
   const npcs = characters.filter(c => c.is_npc);
@@ -5990,6 +6431,28 @@ function openQuestEditorModal(tplId = null) {
           Hidden reward (player sees "???")
         </label>
 
+        <hr style="border-color:var(--border);margin-top:10px">
+        <label style="font-size:0.75rem;font-weight:600">Structured Rewards</label>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:0.72rem">XP:</label>
+          <input type="number" id="qt-sr-xp" value="${existing?.structured_rewards?.xp ?? 0}" style="width:60px;font-size:0.78rem">
+          <label style="font-size:0.72rem">P:</label>
+          <input type="number" id="qt-sr-p" value="${existing?.structured_rewards?.currency?.platinum ?? 0}" style="width:50px;font-size:0.78rem">
+          <label style="font-size:0.72rem">G:</label>
+          <input type="number" id="qt-sr-g" value="${existing?.structured_rewards?.currency?.gold ?? 0}" style="width:50px;font-size:0.78rem">
+          <label style="font-size:0.72rem">S:</label>
+          <input type="number" id="qt-sr-s" value="${existing?.structured_rewards?.currency?.silver ?? 0}" style="width:50px;font-size:0.78rem">
+          <label style="font-size:0.72rem">B:</label>
+          <input type="number" id="qt-sr-b" value="${existing?.structured_rewards?.currency?.bronze ?? 0}" style="width:50px;font-size:0.78rem">
+        </div>
+        <div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:0.72rem;font-weight:600">Items</span>
+            <button class="btn btn-ghost btn-xs" id="btn-qt-sr-add-item">+ Add Item</button>
+          </div>
+          <div id="qt-sr-items">${renderStructuredRewardItems(existing?.structured_rewards?.items || [])}</div>
+        </div>
+
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary btn-sm" id="btn-qt-save" style="flex:1">${existing ? 'Save' : 'Create'}</button>
           <button class="btn btn-ghost btn-sm" id="btn-qt-cancel" style="flex:1">Cancel</button>
@@ -6013,6 +6476,19 @@ function openQuestEditorModal(tplId = null) {
     list.appendChild(row);
   });
 
+  modal.querySelector('#btn-qt-sr-add-item')?.addEventListener('click', () => {
+    const list = modal.querySelector('#qt-sr-items');
+    const row = document.createElement('div');
+    row.className = 'qt-sr-item';
+    row.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:3px';
+    row.innerHTML = `
+      <input type="number" class="qt-sr-item-id" placeholder="Item ID" style="width:60px;font-size:0.72rem">
+      <input type="number" class="qt-sr-item-qty" value="1" min="1" style="width:50px;font-size:0.72rem">
+      <button class="btn btn-danger btn-xs" onclick="this.closest('div').remove()">×</button>
+    `;
+    list.appendChild(row);
+  });
+
   modal.querySelector('#btn-qt-cancel').addEventListener('click', () => modal.remove());
   modal.querySelector('#btn-qt-save').addEventListener('click', async () => {
     const title = modal.querySelector('#qt-title').value.trim();
@@ -6025,6 +6501,25 @@ function openQuestEditorModal(tplId = null) {
     });
 
     const sess = await api.get(`/api/sessions/${SESSION_CODE}`);
+
+    // Structured rewards
+    const srItems = [];
+    modal.querySelectorAll('.qt-sr-item').forEach(row => {
+      const itemId = parseInt(row.querySelector('.qt-sr-item-id').value);
+      const qty = parseInt(row.querySelector('.qt-sr-item-qty').value) || 1;
+      if (itemId) srItems.push({ item_id: itemId, quantity: qty });
+    });
+    const structuredRewards = {
+      xp: parseInt(modal.querySelector('#qt-sr-xp').value) || 0,
+      currency: {
+        platinum: parseInt(modal.querySelector('#qt-sr-p').value) || 0,
+        gold: parseInt(modal.querySelector('#qt-sr-g').value) || 0,
+        silver: parseInt(modal.querySelector('#qt-sr-s').value) || 0,
+        bronze: parseInt(modal.querySelector('#qt-sr-b').value) || 0,
+      },
+      items: srItems,
+    };
+
     const payload = {
       session_id: sess.id,
       title,
@@ -6036,6 +6531,7 @@ function openQuestEditorModal(tplId = null) {
       reward_is_hidden: modal.querySelector('#qt-hidden').checked,
       stages: stagesData,
       is_multi_stage: stagesData.length > 0,
+      structured_rewards: structuredRewards,
     };
 
     try {
@@ -6478,8 +6974,17 @@ function openNpcTemplateModal(existing) {
             ${flatFolders.map(f => `<option value="${f.id}"${d.folder_id === f.id ? ' selected' : ''}>${f.name}</option>`).join('')}
           </select>
         </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+          <div class="form-group" style="flex:1"><label>Race</label><select id="nt-race"><option value="">—</option>${(window._allRaces||[]).map(r=>`<option value="${r.id}">${r.name}</option>`).join('')}</select></div>
+          <div class="form-group" style="flex:1"><label>Rank</label><select id="nt-rank">${['common','uncommon','rare','epic','legendary','mythic','divine'].map(r=>`<option value="${r}">${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}</select></div>
+          <div class="form-group" style="width:70px"><label>Level</label><input type="number" id="nt-level" value="1" min="0" max="20"></div>
+          <button class="btn btn-ghost btn-xs" id="nt-calc" type="button" style="margin-top:18px">🎲 Calc</button>
+        </div>
+        <div id="nt-calc-result" style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;min-height:18px"></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <div class="form-group" style="width:70px"><label>HP</label><input type="number" id="nt-hp" value="${d.max_hp}"></div>
+          <div class="form-group" style="width:70px"><label>Spr.HP</label><input type="number" id="nt-sprhp" value="${d.spiritual_max_hp||0}"></div>
+          <div class="form-group" style="width:70px"><label>Mana</label><input type="number" id="nt-mana" value="${d.mana_max||0}"></div>
           <div class="form-group" style="width:70px"><label>KD</label><input type="number" id="nt-ac" value="${d.armor_class}"></div>
           <div class="form-group" style="width:70px"><label>Init</label><input type="number" id="nt-init" value="${d.initiative_bonus}"></div>
         </div>
@@ -6508,6 +7013,21 @@ function openNpcTemplateModal(existing) {
   overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#nt-cancel').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#nt-ai-gen').addEventListener('click', () => openAINpcModal(overlay));
+  overlay.querySelector('#nt-calc').addEventListener('click', async () => {
+    const raceId = parseInt(overlay.querySelector('#nt-race').value) || null;
+    const rank = overlay.querySelector('#nt-rank').value;
+    const level = parseInt(overlay.querySelector('#nt-level').value) || 0;
+    const resEl = overlay.querySelector('#nt-calc-result');
+    if (!raceId) { resEl.textContent = 'Select a Race first'; return; }
+    try {
+      const res = await api.post('/api/races-classes/calculate-hp', { race_id: raceId, rank, rank_plus: 0, level });
+      overlay.querySelector('#nt-hp').value = res.physical_hp;
+      overlay.querySelector('#nt-sprhp').value = res.spiritual_hp;
+      overlay.querySelector('#nt-mana').value = res.mana;
+      const warn = res.used_fallback ? ' (fallback)' : '';
+      resEl.innerHTML = `<span style="color:var(--accent-green)">Phys HP ${res.physical_hp}</span> · <span style="color:#a855f7">Spr.HP ${res.spiritual_hp}</span> · <span style="color:#60a5fa">Mana ${res.mana}</span>${warn}`;
+    } catch(e) { resEl.textContent = 'Error: ' + e.message; }
+  });
   overlay.querySelector('#nt-save').addEventListener('click', async () => {
     const body = {
       session_id: SESSION_ID,
@@ -6515,6 +7035,8 @@ function openNpcTemplateModal(existing) {
       description: overlay.querySelector('#nt-desc').value.trim(),
       folder_id: overlay.querySelector('#nt-folder').value ? parseInt(overlay.querySelector('#nt-folder').value) : null,
       max_hp: parseInt(overlay.querySelector('#nt-hp').value) || 0,
+      spiritual_max_hp: parseInt(overlay.querySelector('#nt-sprhp').value) || 0,
+      mana_max: parseInt(overlay.querySelector('#nt-mana').value) || 0,
       armor_class: parseInt(overlay.querySelector('#nt-ac').value) || 0,
       initiative_bonus: parseInt(overlay.querySelector('#nt-init').value) || 0,
       strength: parseInt(overlay.querySelector('#nt-str').value) || 0,
@@ -7028,7 +7550,7 @@ const _AB_ICONS = ['⚡','⚔️','🔥','❄️','☠️','✨','🛡️','💨
 const _AB_DMGTYPES = ['physical','fire','ice','lightning','poison','holy','dark','arcane','custom'];
 const _AB_STATS = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
 // Rework v3: added restore_hp_by_die (rolls the race HP die for healing).
-const _AB_EFF_TYPES = ['heal_hp','restore_hp_by_die','restore_mana','apply_status','stat_boost','remove_status','damage','summon_npc','teleport','custom'];
+const _AB_EFF_TYPES = ['heal_hp','heal_spirit','restore_hp_by_die','restore_mana','apply_status','stat_boost','remove_status','damage','summon_npc','teleport','custom'];
 // Rework v3: passive bonus types available in the ability editor dropdown.
 const _AB_PASSIVE_BONUS_TYPES = [
   { value: 'attack_bonus',           label: '⚔️  ATK Bonus'                  },
@@ -7105,6 +7627,7 @@ function renderGmAbilities() {
       </div>
       <div style="display:flex;flex-direction:column;gap:2px;padding:4px;justify-content:center">
         <button class="btn btn-ghost btn-xs" data-edit-ability="${a.id}" title="Edit">✏️</button>
+        <button class="btn btn-ghost btn-xs" data-config-ability="${a.id}" title="Level / Rank Configs">⚙️</button>
         <button class="btn btn-ghost btn-xs" data-dup-ability="${a.id}" title="Duplicate">📋</button>
         <button class="btn btn-ghost btn-xs" data-assign-ability="${a.id}" title="Assign">👤</button>
         <button class="btn btn-ghost btn-xs" data-del-ability="${a.id}" style="color:var(--accent-red)" title="Delete">🗑️</button>
@@ -7116,6 +7639,12 @@ function renderGmAbilities() {
     btn.addEventListener('click', () => {
       const ab = gmAbilities.find(a => a.id == btn.dataset.editAbility);
       if (ab) showAbilityEditor(ab);
+    });
+  });
+  el.querySelectorAll('[data-config-ability]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ab = gmAbilities.find(a => a.id == btn.dataset.configAbility);
+      if (ab) showAbilityConfigEditor(ab);
     });
   });
   el.querySelectorAll('[data-dup-ability]').forEach(btn => {
@@ -7324,7 +7853,7 @@ function showAbilityEditor(existing = null) {
     if (!editorEffects.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No effects</span>'; return; }
     el.innerHTML = editorEffects.map((e, i) => {
       let fields = '';
-      if (e.type === 'heal_hp' || e.type === 'damage') {
+      if (e.type === 'heal_hp' || e.type === 'heal_spirit' || e.type === 'damage') {
         fields = `<input type="number" data-ef="dice_count" value="${e.dice_count||1}" min="1" style="width:40px" placeholder="dc"> d <input type="number" data-ef="dice_type" value="${e.dice_type||6}" style="width:40px" placeholder="dt"> + <input type="number" data-ef="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" placeholder="bonus">`;
       } else if (e.type === 'restore_mana') {
         fields = `Amount: <input type="number" data-ef="amount" value="${e.amount||0}" style="width:50px">`;
@@ -7472,6 +8001,147 @@ function showAbilityEditor(existing = null) {
       loadGmAbilities();
     } catch (e) { showToast('Save failed: ' + (e.message || '')); }
   });
+}
+
+async function showAbilityConfigEditor(ability) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;justify-content:center;align-items:flex-start;padding:30px;overflow-y:auto';
+
+  // Fetch existing configs
+  let levelConfigs = [];
+  let rankConfigs = [];
+  try {
+    levelConfigs = await api.get(`/api/abilities/${ability.id}/level-configs`);
+  } catch {}
+  try {
+    rankConfigs = await api.get(`/api/abilities/${ability.id}/rank-configs`);
+  } catch {}
+
+  overlay.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:520px;max-width:95vw;padding:20px;max-height:90vh;overflow-y:auto">
+    <h2 style="margin:0 0 12px;font-size:1rem">⚙️ ${ability.name} — Configs</h2>
+
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">📈 Level Configs</legend>
+      <div id="abl-config-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+      <button class="btn btn-ghost btn-xs" id="abl-add-lvl">+ Add Level</button>
+    </fieldset>
+
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">⭐ Rank Configs</legend>
+      <div id="abr-config-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+      <button class="btn btn-ghost btn-xs" id="abl-add-rank">+ Add Rank</button>
+    </fieldset>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-ghost btn-sm" id="abl-cfg-cancel">Close</button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(overlay);
+
+  function renderLevelConfigs() {
+    const el = overlay.querySelector('#abl-config-list');
+    if (!levelConfigs.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No level configs</span>'; return; }
+    el.innerHTML = levelConfigs.map((c, i) => `
+      <div style="display:flex;gap:4px;align-items:center;font-size:0.72rem" data-lc-idx="${i}">
+        <span style="width:50px;font-weight:700">Lv.${c.level}</span>
+        <input type="text" class="abl-lc-json" value='${JSON.stringify(c.config_json)}' style="flex:1;font-size:0.72rem;font-family:monospace" placeholder='{"mana_cost":15}'>
+        <button class="btn btn-ghost btn-xs" data-save-lc="${c.id}" style="color:var(--accent-green)">💾</button>
+        <button class="btn btn-ghost btn-xs" data-del-lc="${c.id}" style="color:var(--accent-red)">✕</button>
+      </div>
+    `).join('');
+
+    el.querySelectorAll('[data-save-lc]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('[data-lc-idx]');
+        const idx = parseInt(row.dataset.lcIdx);
+        const jsonStr = row.querySelector('.abl-lc-json').value;
+        let config = {};
+        try { config = JSON.parse(jsonStr); } catch { showToast('Invalid JSON'); return; }
+        try {
+          await api.post(`/api/abilities/${ability.id}/level-configs`, { level: levelConfigs[idx].level, config });
+          showToast('Saved');
+          levelConfigs[idx].config_json = config;
+        } catch (e) { showToast('Save failed'); }
+      });
+    });
+    el.querySelectorAll('[data-del-lc]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('[data-lc-idx]');
+        const idx = parseInt(row.dataset.lcIdx);
+        if (!confirm('Delete level config?')) return;
+        try {
+          await api.del(`/api/abilities/${ability.id}/level-configs/${levelConfigs[idx].id}`);
+          levelConfigs.splice(idx, 1);
+          renderLevelConfigs();
+        } catch {}
+      });
+    });
+  }
+
+  function renderRankConfigs() {
+    const el = overlay.querySelector('#abr-config-list');
+    if (!rankConfigs.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No rank configs</span>'; return; }
+    el.innerHTML = rankConfigs.map((c, i) => `
+      <div style="display:flex;gap:4px;align-items:center;font-size:0.72rem;flex-wrap:wrap" data-rc-idx="${i}">
+        <span style="width:70px;font-weight:700;text-transform:capitalize">${c.rank}</span>
+        <input type="text" class="abl-rc-json" value='${JSON.stringify(c.config_json)}' style="flex:1;font-size:0.72rem;font-family:monospace" placeholder='{"damage_dice_count":2}'>
+        <input type="text" class="abl-rc-notes" value="${c.notes || ''}" style="width:100px;font-size:0.72rem" placeholder="Notes">
+        <button class="btn btn-ghost btn-xs" data-save-rc="${c.id}" style="color:var(--accent-green)">💾</button>
+        <button class="btn btn-ghost btn-xs" data-del-rc="${c.id}" style="color:var(--accent-red)">✕</button>
+      </div>
+    `).join('');
+
+    el.querySelectorAll('[data-save-rc]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('[data-rc-idx]');
+        const idx = parseInt(row.dataset.rcIdx);
+        const jsonStr = row.querySelector('.abl-rc-json').value;
+        let config = {};
+        try { config = JSON.parse(jsonStr); } catch { showToast('Invalid JSON'); return; }
+        const notes = row.querySelector('.abl-rc-notes').value;
+        try {
+          await api.post(`/api/abilities/${ability.id}/rank-configs`, { rank: rankConfigs[idx].rank, config, notes });
+          showToast('Saved');
+          rankConfigs[idx].config_json = config;
+          rankConfigs[idx].notes = notes;
+        } catch (e) { showToast('Save failed'); }
+      });
+    });
+    el.querySelectorAll('[data-del-rc]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('[data-rc-idx]');
+        const idx = parseInt(row.dataset.rcIdx);
+        if (!confirm('Delete rank config?')) return;
+        try {
+          await api.del(`/api/abilities/${ability.id}/rank-configs/${rankConfigs[idx].id}`);
+          rankConfigs.splice(idx, 1);
+          renderRankConfigs();
+        } catch {}
+      });
+    });
+  }
+
+  renderLevelConfigs();
+  renderRankConfigs();
+
+  overlay.querySelector('#abl-add-lvl').addEventListener('click', () => {
+    const level = parseInt(prompt('Level number (1-10):'));
+    if (!level || level < 1 || level > 10) return;
+    levelConfigs.push({ id: null, ability_id: ability.id, level, config_json: {} });
+    renderLevelConfigs();
+  });
+
+  overlay.querySelector('#abl-add-rank').addEventListener('click', () => {
+    const rank = prompt('Rank (common/uncommon/rare/epic/legendary/mythic/divine):');
+    if (!rank) return;
+    rankConfigs.push({ id: null, ability_id: ability.id, rank: rank.toLowerCase(), config_json: {}, notes: '' });
+    renderRankConfigs();
+  });
+
+  overlay.querySelector('#abl-cfg-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
 if ($('#btn-new-ability')) {
@@ -8685,6 +9355,204 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ══════════════════════════════════════════════════════════════
+// CHESTS
+// ══════════════════════════════════════════════════════════════
+let allChests = [];
+let editingChestId = null;
+let placingChest = false;
+
+async function loadChests() {
+  if (!SESSION_CODE) return;
+  try {
+    allChests = await api.get(`/api/map/${SESSION_CODE}/chests`);
+    if (mapCanvas) mapCanvas.setChests(allChests);
+  } catch (e) { console.error('loadChests error:', e); }
+}
+
+function openChestModal(chest = null) {
+  editingChestId = chest ? chest.id : null;
+  const modal = $('#chest-modal');
+  modal.classList.remove('hidden');
+
+  if (chest) {
+    $('#chest-modal-title').textContent = 'Edit Chest';
+    $('#chest-ed-name').value = chest.name || '';
+    $('#chest-ed-icon').value = chest.icon || '📦';
+    $('#chest-ed-desc').value = chest.description || '';
+    renderChestItemList(chest.items || []);
+    $('#btn-delete-chest').classList.remove('hidden');
+  } else {
+    $('#chest-modal-title').textContent = 'New Chest';
+    $('#chest-ed-name').value = '';
+    $('#chest-ed-icon').value = '📦';
+    $('#chest-ed-desc').value = '';
+    renderChestItemList([]);
+    $('#btn-delete-chest').classList.add('hidden');
+  }
+}
+
+function closeChestModal() {
+  $('#chest-modal').classList.add('hidden');
+  editingChestId = null;
+  placingChest = false;
+}
+
+function renderChestItemList(items) {
+  const list = $('#chest-item-list');
+  if (!items.length) {
+    list.innerHTML = '<div style="font-size:0.78rem;color:var(--text-muted);padding:4px 0">No items in this chest.</div>';
+    return;
+  }
+  list.innerHTML = items.map(ci => `
+    <div style="display:flex;align-items:center;gap:6px;padding:4px;background:var(--bg-surface-3);border-radius:var(--r-sm)">
+      <span style="font-size:0.78rem;flex:1">${ci.item_name || 'Unknown'} ×${ci.quantity}</span>
+      <button class="btn btn-ghost btn-xs" data-remove-chest-item="${ci.id}">🗑</button>
+    </div>
+  `).join('');
+  list.querySelectorAll('[data-remove-chest-item]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ciId = parseInt(btn.dataset.removeChestItem);
+      try {
+        await api.del(`/api/chest-items/${ciId}`);
+        showToast('Item removed');
+        if (editingChestId) {
+          const chest = allChests.find(c => c.id === editingChestId);
+          if (chest) {
+            chest.items = chest.items.filter(ci => ci.id !== ciId);
+            renderChestItemList(chest.items);
+          }
+        }
+      } catch (e) { showToast('Error removing item'); }
+    });
+  });
+}
+
+async function saveChest() {
+  const name = $('#chest-ed-name').value.trim();
+  if (!name) { showToast('Name is required'); return; }
+
+  const payload = {
+    name: name,
+    description: $('#chest-ed-desc').value,
+    icon: $('#chest-ed-icon').value,
+    map_x: 0.5,
+    map_y: 0.5,
+  };
+
+  try {
+    if (editingChestId) {
+      const chest = allChests.find(c => c.id === editingChestId);
+      if (chest) {
+        payload.map_x = chest.map_x;
+        payload.map_y = chest.map_y;
+      }
+      await api.put(`/api/chests/${editingChestId}`, payload);
+      showToast('Chest updated');
+    } else {
+      await api.post(`/api/map/${SESSION_CODE}/chests`, payload);
+      showToast('Chest placed');
+    }
+    closeChestModal();
+    loadChests();
+  } catch (e) {
+    showToast('Error: ' + (e.message || 'Failed to save chest'));
+  }
+}
+
+async function deleteChest() {
+  if (!editingChestId) return;
+  if (!confirm('Delete this chest?')) return;
+  try {
+    await api.del(`/api/chests/${editingChestId}`);
+    showToast('Chest deleted');
+    closeChestModal();
+    loadChests();
+  } catch (e) {
+    showToast('Error: ' + (e.message || 'Failed to delete chest'));
+  }
+}
+
+async function revealChest() {
+  if (!editingChestId) return;
+  try {
+    await api.patch(`/api/chests/${editingChestId}/reveal`);
+    showToast('Chest revealed');
+    loadChests();
+  } catch (e) { showToast('Error revealing chest'); }
+}
+
+async function hideChest() {
+  if (!editingChestId) return;
+  try {
+    await api.patch(`/api/chests/${editingChestId}/hide`);
+    showToast('Chest hidden');
+    loadChests();
+  } catch (e) { showToast('Error hiding chest'); }
+}
+
+async function giveChestToPlayer() {
+  if (!editingChestId) return;
+  const playerId = prompt('Enter player character ID:');
+  if (!playerId) return;
+  try {
+    const res = await api.post(`/api/chests/${editingChestId}/give-to-player`, { player_id: parseInt(playerId) });
+    showToast(`Gave ${res.transferred.length} items to player`);
+    loadChests();
+    refreshChars();
+  } catch (e) { showToast('Error: ' + (e.message || 'Failed to transfer')); }
+}
+
+// Chest event listeners
+$('#btn-place-chest').addEventListener('click', () => {
+  placingChest = true;
+  showToast('Click on the map to place a chest');
+});
+$('#btn-list-chests').addEventListener('click', () => {
+  openChestModalList();
+});
+$('#btn-close-chest-modal').addEventListener('click', closeChestModal);
+$('#btn-cancel-chest').addEventListener('click', closeChestModal);
+$('#btn-save-chest').addEventListener('click', saveChest);
+$('#btn-delete-chest').addEventListener('click', deleteChest);
+$('#btn-chest-reveal').addEventListener('click', revealChest);
+$('#btn-chest-hide').addEventListener('click', hideChest);
+$('#btn-chest-give').addEventListener('click', giveChestToPlayer);
+
+// Place chest on map click
+function handleMapClickForChest(nx, ny) {
+  if (!placingChest) return false;
+  placingChest = false;
+  const payload = {
+    name: 'Chest',
+    description: '',
+    icon: '📦',
+    map_x: nx,
+    map_y: ny,
+  };
+  api.post(`/api/map/${SESSION_CODE}/chests`, payload)
+    .then(() => { showToast('Chest placed'); loadChests(); })
+    .catch(e => showToast('Error: ' + (e.message || 'Failed to place chest')));
+  return true;
+}
+
+function openChestModalList() {
+  if (!allChests.length) { showToast('No chests'); return; }
+  // Just open the first chest for now, or show a simple list
+  openChestModal(allChests[0]);
+}
+
+// Chest WS handlers
+ws.on('chest.placed', () => loadChests());
+ws.on('chest.revealed', () => loadChests());
+ws.on('chest.hidden', () => loadChests());
+ws.on('chest.updated', () => loadChests());
+ws.on('chest.items_transferred', d => {
+  showToast(`${d.player_name} looted ${d.items.length} items from a chest`);
+  loadChests();
+  refreshChars();
+});
+
 // Builder WS handlers
 ws.on('map.floor_added', d => { if (!builderFloors.find(f => f.id === d.id)) { builderFloors.push(d); renderBuilderFloorSelect(); } });
 ws.on('map.floor_updated', d => { const i = builderFloors.findIndex(f => f.id === d.id); if (i >= 0) builderFloors[i] = d; renderBuilderFloorSelect(); });
@@ -8725,4 +9593,6 @@ loadGmAbilities();
 loadWizardPending();
 loadBuilder();
 loadMapState();
+loadCards();
+loadChests();
 ws.connect();

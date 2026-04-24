@@ -271,42 +271,61 @@ def run(base: str) -> int:
             hit_cap_at is not None and 5 <= hit_cap_at <= 10,
             f"hit_cap_at={hit_cap_at}")
 
-    # ── ζ: level-up (force past XP gate both paths) ──
+    # ── ζ: level-up (attributes vs ability choice) ──
     s.group("Phase ζ: level-up")
 
+    # Grant 140 XP first to test carry-over
+    s.req("POST", f"/api/characters/{cid}/grant-xp", {"amount": 140})
     code, ch0 = s.req("GET", f"/api/characters/{cid}")
+    s.check("pre-level XP is 140", ch0["experience"] == 140)
+
     code, lu = s.req("POST", f"/api/characters/{cid}/level-up", {
-        "choice": "stats", "stat_a": "strength", "stat_b": "dexterity",
+        "choice": "attributes",
         "force": True,
     })
-    s.check("level-up stats 200", code == 200, f"code={code}")
+    s.check("level-up attributes 200", code == 200, f"code={code}")
     s.check("level advanced L0 → L1", lu["level"] == ch0["level"] + 1)
     s.check("HP roll within race die", 1 <= lu["chosen"]["hp_gained"] <= 12)
+    s.check("1 attribute point gained", lu["attribute_points_available"] == 1)
+    s.check("XP carry-over: 140-100=40", lu["experience"] == 40)
 
     code, ch1 = s.req("GET", f"/api/characters/{cid}")
-    s.check("STR +1", ch1["strength"] == ch0["strength"] + 1)
-    s.check("DEX +1", ch1["dexterity"] == ch0["dexterity"] + 1)
+    s.check("attribute_points_available persisted", (ch1.get("attribute_points_available") or 0) >= 1)
     s.check("xp_to_next reflects new level = 200", ch1["xp_to_next"] == 200)
+    s.check("XP persisted as 40", ch1["experience"] == 40)
 
-    code, abs_after = s.req("GET", f"/api/characters/{cid}/abilities")
-    cab = abs_after[0]
-    code, lu2 = s.req("POST", f"/api/characters/{cid}/level-up", {
-        "choice": "upgrade_feature",
-        "character_ability_id": cab["character_ability_id"],
+    # Test ability upgrade choice
+    # First get character abilities
+    code, char_abilities = s.req("GET", f"/api/characters/{cid}/abilities")
+    ability_to_upgrade = char_abilities[0]["character_ability_id"] if char_abilities else None
+
+    if ability_to_upgrade:
+        code, lu2 = s.req("POST", f"/api/characters/{cid}/level-up", {
+            "choice": "ability",
+            "ability_id": ability_to_upgrade,
+            "force": True,
+        })
+        s.check("level-up ability choice 200", code == 200, f"body={lu2}")
+        s.check("ability level increased", lu2["chosen"].get("ability_level", 0) >= 1)
+        s.check("HP still rolled on ability choice", lu2["chosen"]["hp_gained"] > 0)
+
+    # Test rank-up: force character to level 10 then level-up
+    s.req("PATCH", f"/api/characters/{cid}", {"level": 10, "experience": 1100})
+    code, ch_before_rank = s.req("GET", f"/api/characters/{cid}")
+    s.check("pre-rank-up level is 10", ch_before_rank["level"] == 10)
+
+    code, lu3 = s.req("POST", f"/api/characters/{cid}/level-up", {
+        "choice": "attributes",
         "force": True,
     })
-    s.check("level-up upgrade 200", code == 200, f"body={lu2}")
-    s.check("upgrade → next rarity",
-            lu2["chosen"]["new_rarity"] != cab["rarity"],
-            f"{cab['rarity']} → {lu2['chosen']['new_rarity']}")
+    s.check("rank-up auto promotion 200", code == 200)
+    s.check("rank-up resets level to 0", lu3["level"] == 0)
+    s.check("rank advanced common → uncommon", lu3["rank"] == "uncommon")
+    s.check("rank promoted flag true", lu3["chosen"]["rank_promoted"] == True)
 
-    # Reject cases
+    # Reject case: XP gate without force
     code, _bad = s.req("POST", f"/api/characters/{cid}/level-up", {
-        "choice": "stats", "stat_a": "strength", "stat_b": "strength", "force": True,
-    })
-    s.check("level-up rejects stat_a == stat_b", code == 400)
-    code, _bad = s.req("POST", f"/api/characters/{cid}/level-up", {
-        "choice": "stats", "stat_a": "strength", "stat_b": "dexterity",
+        "choice": "attributes",
     })
     s.check("level-up XP gate blocks without force", code == 400)
 

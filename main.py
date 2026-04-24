@@ -40,6 +40,8 @@ from app.routers.memory import router as memory_router
 from app.routers.professions import router as professions_router
 from app.routers.poisons import router as poisons_router
 from app.routers.wizard import router as wizard_router
+from app.routers.cards import router as cards_router
+from app.routers.chests import router as chests_router
 
 
 # ── Load config ──────────────────────────────────────────────
@@ -91,6 +93,8 @@ app.include_router(memory_router)
 app.include_router(professions_router)
 app.include_router(poisons_router)
 app.include_router(wizard_router)
+app.include_router(cards_router)
+app.include_router(chests_router)
 app.include_router(map_builder_router)
 
 # Static files

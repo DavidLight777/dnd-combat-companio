@@ -153,7 +153,9 @@ async function loadChar() {
   }
   // Rework v2: Character.class_id is gone; professions are the sole source of truth.
   const rankLabel = (char.rank && char.rank !== 'common') ? ` · ${char.rank.charAt(0).toUpperCase()+char.rank.slice(1)}` : '';
-  badges.push(`Lvl ${char.level ?? 0}${rankLabel}`);
+  const attrPoints = char.attribute_points_available || 0;
+  const attrLabel = attrPoints > 0 ? ` · ${attrPoints} point${attrPoints > 1 ? 's' : ''}` : '';
+  badges.push(`Lvl ${char.level ?? 0}${rankLabel}${attrLabel}`);
   const el = $('#char-rc-badges');
   if (el) el.textContent = badges.join(' · ');
   // Update sidebar identity line with same info
@@ -345,6 +347,12 @@ function renderCharSidebar() {
   const hpFill = $('#cs-hp-fill'); if (hpFill) { hpFill.style.width = hpPct + '%'; hpFill.style.background = hpColor; }
   const kdEl = $('#cs-kd'); if (kdEl) kdEl.textContent = c.armor_class;
 
+  // Spiritual HP
+  const spiritHpPct = c.spiritual_max_hp > 0 ? Math.min(100, Math.max(0, c.spiritual_hp / c.spiritual_max_hp * 100)) : 0;
+  const spiritHpColor = spiritHpPct > 50 ? '#a855f7' : spiritHpPct > 25 ? '#c084fc' : '#e879f9';
+  const spiritHpVal = $('#cs-spirit-hp-value'); if (spiritHpVal) spiritHpVal.textContent = `${c.spiritual_hp} / ${c.spiritual_max_hp}`;
+  const spiritHpFill = $('#cs-spirit-hp-fill'); if (spiritHpFill) { spiritHpFill.style.width = spiritHpPct + '%'; spiritHpFill.style.background = spiritHpColor; }
+
   // Mana
   const manaBlk = $('#cs-mana-block');
   if (manaBlk) {
@@ -453,6 +461,7 @@ function renderCharStatsSidebar() {
     { key: 'wisdom', label: 'WIS' },
     { key: 'charisma', label: 'CHA' },
   ];
+  const hasPoints = (c.attribute_points_available || 0) > 0;
   grid.innerHTML = stats.map(s => {
     // Rework v2: stat value IS the bonus (0..N). 0 is a legitimate value —
     // declined characters have every stat at 0. Never fall back to 10.
@@ -460,13 +469,33 @@ function renderCharStatsSidebar() {
     const mods = (c.stat_modifiers || []).filter(m => m.stat_name === s.key && m.is_active);
     const modSum = mods.reduce((a, m) => a + m.value, 0);
     const total = base + modSum;
-    const modText = modSum !== 0 ? `<span style="font-size:0.6rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${modSum > 0 ? '+' : ''}${modSum}</span>` : '';
+    const modText = modSum !== 0 ? `<span style="font-size:0.6rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}"​>${modSum > 0 ? '+' : ''}${modSum}</span>` : '';
+    const plusBtn = hasPoints ? `<button class="btn btn-xs btn-primary stat-plus-btn" data-stat="${s.key}" style="padding:1px 6px;font-size:0.65rem;margin-left:4px" title="+1 ${s.label}"​>+1</button>` : '';
     return `
-      <div style="padding:4px;background:var(--bg-surface);border-radius:var(--r-sm)">
-        <div style="font-size:0.65rem;color:var(--text-muted)">${s.label}</div>
-        <div style="font-weight:700">${total} ${modText}</div>
+      <div style="padding:4px;background:var(--bg-surface);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:0.65rem;color:var(--text-muted)">${s.label}</div>
+          <div style="font-weight:700">${total} ${modText}</div>
+        </div>
+        ${plusBtn}
       </div>`;
   }).join('');
+
+  // Wire [+1] buttons
+  if (hasPoints) {
+    grid.querySelectorAll('.stat-plus-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const stat = btn.dataset.stat;
+        try {
+          const res = await api.post(`/api/characters/${CHAR_ID}/spend-attribute-point`, { stat });
+          showToast(`${stat.slice(0,3).toUpperCase()} +1! Points left: ${res.attribute_points_available}`, 'accent');
+          await loadChar();
+        } catch (e) {
+          showToast('Failed to spend point', 'error');
+        }
+      });
+    });
+  }
 }
 
 function renderMana() {
@@ -3046,10 +3075,19 @@ ws.on('quest.stage_completed', d => {
   loadPlayerQuests();
 });
 ws.on('quest.completed', d => {
-  showToast('Quest completed! Rewards granted!');
+  const rewards = d.rewards_applied || {};
+  let msg = 'Quest completed!';
+  const parts = [];
+  if (rewards.xp) parts.push(`${rewards.xp} XP`);
+  if (rewards.currency) parts.push(`${rewards.currency} copper worth`);
+  if (rewards.items?.length) parts.push(`${rewards.items.length} item(s)`);
+  if (parts.length) msg += ' Rewards: ' + parts.join(', ');
+  if (rewards.level_up_available) msg += ' ⬆ Level up available!';
+  showToast(msg);
   loadPlayerQuests();
   loadCurrency();
   loadInventory();
+  loadChar();
 });
 ws.on('quest.failed', d => {
   showToast('A quest has been failed...');
@@ -4911,10 +4949,9 @@ function initFreeRollWidget() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Rework v2 — LEVEL-UP MODAL
+// Fix 1 — LEVEL-UP CHOICE MODAL (attributes vs rank)
 // ══════════════════════════════════════════════════════════════
-const _RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-const _STAT_KEYS = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+const _RANK_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'divine'];
 
 function openLevelUpModal() {
   if (document.getElementById('levelup-modal')) return;
@@ -4928,63 +4965,61 @@ function openLevelUpModal() {
     return;
   }
 
+  const rank = (char.rank || 'common').toLowerCase();
+  const rankIdx = _RANK_ORDER.indexOf(rank);
+  const isMaxRank = rankIdx >= _RANK_ORDER.length - 1;
+  const isRankUp = level >= 10;
+
   // Race HP die copy (if no race, backend defaults to 1d8)
   const hpCount = char.race?.hp_dice_count || char.hp_dice_count || 1;
   const hpDie   = char.race?.hp_die       || char.hp_die       || 8;
   const hpDieStr = `${hpCount}d${hpDie}`;
 
-  // Upgradeable abilities (not legendary)
-  const upgradable = (abilitiesData || []).filter(a => {
-    const r = (a.rarity || 'common').toLowerCase();
-    return _RARITY_ORDER.indexOf(r) < _RARITY_ORDER.length - 1;
-  });
-
-  let mode = 'stats';          // 'stats' | 'upgrade_feature'
-  let statA = null, statB = null;
-  let pickedCabId = null;
+  let mode = 'attributes';  // 'attributes' | 'ability'
+  let selectedAbilityId = null;
 
   const overlay = document.createElement('div');
   overlay.id = 'levelup-modal';
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal-content" style="max-width:520px">
-      <h2 style="margin:0 0 4px">⬆ Level ${level} → ${level + 1}</h2>
+      <h2 style="margin:0 0 4px">⬆ ${isRankUp ? 'Rank Up!' : 'Level Up'}</h2>
       <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
-        Your racial HP die (<strong>${hpDieStr}</strong>) will be rolled on confirm — result is server-side.
+        ${isRankUp ? `<strong>Level 10 reached!</strong> Rank will advance to next tier.` : `Current: <strong>${rank}</strong> rank · Level ${level} · ${xp} XP`}
+      </div>
+
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-sm)">
+        🎲 HP ${hpDieStr} + spiritual HP + mana — always rolled<br>
+        Choose your bonus:
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div class="lvlup-choice ${mode==='stats'?'selected':''}" data-mode="stats">
-          <div class="lc-title">+1 to two stats</div>
-          <div class="lc-sub">Each stat is the roll bonus itself — STR 3 means +3 to strength rolls.</div>
+        <div class="lvlup-choice ${mode==='attributes'?'selected':''}" data-mode="attributes">
+          <div class="lc-title">📈 +1 Attribute</div>
+          <div class="lc-sub">
+            Gain 1 attribute point to spend on any stat
+          </div>
         </div>
-        <div class="lvlup-choice ${mode==='upgrade_feature'?'selected':''} ${upgradable.length ? '' : 'disabled'}" data-mode="upgrade_feature"
-             ${upgradable.length ? '' : 'title="You need at least one non-legendary feature"'}>
-          <div class="lc-title">Upgrade a feature</div>
-          <div class="lc-sub">Auto d4-roll into the next-rarity bucket of the GM's starting pool.</div>
+        <div class="lvlup-choice ${mode==='ability'?'selected':''}" data-mode="ability">
+          <div class="lc-title">⚡ Upgrade Ability</div>
+          <div class="lc-sub">
+            Increase level of one of your abilities
+          </div>
         </div>
       </div>
 
-      <!-- Stats picker -->
-      <div id="lvlup-stats-pane" style="margin-bottom:12px">
-        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">Pick two DIFFERENT stats to boost:</div>
-        <div id="lvlup-stat-pills" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-      </div>
-
-      <!-- Feature picker -->
-      <div id="lvlup-feature-pane" style="display:none;margin-bottom:12px">
-        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">Pick the feature to upgrade:</div>
-        <div id="lvlup-feature-list" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto"></div>
-        <div style="font-size:0.68rem;color:var(--text-muted);font-style:italic;margin-top:6px">
-          The server will roll a d4 against the pool of the next rarity and replace the chosen feature.
-        </div>
+      <div id="ability-select-area" style="display:none;margin-bottom:12px">
+        <label style="font-size:0.78rem">Select ability to upgrade:</label>
+        <select id="lvlup-ability-select" style="width:100%;font-size:0.78rem;margin-top:4px">
+          <option value="">— Choose ability —</option>
+        </select>
       </div>
 
       <div id="lvlup-error" class="error-msg" style="color:var(--accent-red);font-size:0.78rem;min-height:14px;margin-bottom:6px"></div>
 
       <div style="display:flex;gap:6px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" id="lvlup-cancel">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="lvlup-confirm" disabled>⚔ Confirm & Roll</button>
+        <button class="btn btn-primary btn-sm" id="lvlup-confirm">⚔ Confirm</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -4993,115 +5028,199 @@ function openLevelUpModal() {
 
   const err = overlay.querySelector('#lvlup-error');
   const confirmBtn = overlay.querySelector('#lvlup-confirm');
-  const statsPane  = overlay.querySelector('#lvlup-stats-pane');
-  const featPane   = overlay.querySelector('#lvlup-feature-pane');
-  const statPills  = overlay.querySelector('#lvlup-stat-pills');
-  const featList   = overlay.querySelector('#lvlup-feature-list');
+  const abilityArea = overlay.querySelector('#ability-select-area');
+  const abilitySelect = overlay.querySelector('#lvlup-ability-select');
 
-  function updateConfirmability() {
-    err.textContent = '';
-    if (mode === 'stats') {
-      confirmBtn.disabled = !(statA && statB && statA !== statB);
-    } else {
-      confirmBtn.disabled = !pickedCabId;
-    }
-  }
-
-  function renderStatPills() {
-    statPills.innerHTML = _STAT_KEYS.map(s => {
-      const val = char[s] ?? 0;
-      const picked = (s === statA || s === statB);
-      return `<span class="lvlup-stat-pill ${picked ? 'picked' : ''}" data-stat="${s}">
-        ${s.slice(0,3).toUpperCase()} <span style="opacity:0.7;margin-left:4px">${val} → ${picked ? val + 1 : val}</span>
-      </span>`;
-    }).join('');
-    statPills.querySelectorAll('.lvlup-stat-pill').forEach(p => {
-      p.addEventListener('click', () => {
-        const s = p.dataset.stat;
-        if (s === statA) { statA = null; }
-        else if (s === statB) { statB = null; }
-        else if (!statA) { statA = s; }
-        else if (!statB) { statB = s; }
-        else { statA = statB; statB = s; }  // rotate: FIFO replace
-        renderStatPills();
-        updateConfirmability();
+  // Load abilities into select
+  (async () => {
+    try {
+      const abs = await api.get(`/api/characters/${CHAR_ID}/abilities`);
+      abs.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.character_ability_id;
+        opt.textContent = `${a.name} (Lv.${a.ability_level || 0})`;
+        abilitySelect.appendChild(opt);
       });
-    });
-  }
+    } catch {}
+  })();
 
-  function renderFeatureList() {
-    if (!abilitiesData || !abilitiesData.length) {
-      featList.innerHTML = '<span class="text-muted" style="font-size:0.78rem">You have no features yet.</span>';
-      return;
+  overlay.querySelectorAll('.lvlup-choice').forEach(card => {
+    card.addEventListener('click', () => {
+      mode = card.dataset.mode;
+      overlay.querySelectorAll('.lvlup-choice').forEach(c => c.classList.toggle('selected', c === card));
+      abilityArea.style.display = mode === 'ability' ? 'block' : 'none';
+    });
+  });
+
+  overlay.querySelector('#lvlup-confirm').addEventListener('click', async () => {
+    if (mode === 'ability') {
+      selectedAbilityId = parseInt(abilitySelect.value);
+      if (!selectedAbilityId) {
+        err.textContent = 'Please select an ability to upgrade';
+        return;
+      }
     }
-    featList.innerHTML = abilitiesData.map(a => {
-      const r = (a.rarity || 'common').toLowerCase();
-      const isLegendary = _RARITY_ORDER.indexOf(r) >= _RARITY_ORDER.length - 1;
-      const nextR = !isLegendary ? _RARITY_ORDER[_RARITY_ORDER.indexOf(r) + 1] : null;
-      return `<div class="lvlup-feature-row ${isLegendary ? 'legendary' : ''} ${pickedCabId === a.character_ability_id ? 'picked' : ''}"
-                   data-cab-id="${a.character_ability_id}">
-        <span style="font-size:1rem">${a.icon || '⚡'}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:0.85rem">${a.name}</div>
-          <div style="font-size:0.7rem;color:var(--text-muted)">${a.flavor_text || a.description || ''}</div>
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Rolling…';
+    const payload = { choice: mode };
+    if (mode === 'ability') payload.ability_id = selectedAbilityId;
+
+    try {
+      const res = await api.post(`/api/characters/${CHAR_ID}/level-up`, payload);
+
+      const rolls = (res.chosen?.hp_rolls || []).join(' + ');
+      const total = res.chosen?.hp_gained ?? '?';
+      const spiritRolls = (res.chosen?.spirit_hp_rolls || []).join(' + ');
+      const spiritTotal = res.chosen?.spirit_gained ?? '?';
+      const abilityName = res.chosen?.ability_name || '';
+
+      overlay.innerHTML = `
+        <div class="modal-content" style="max-width:480px;text-align:center">
+          <h2 style="margin-top:0">${res.chosen?.rank_promoted ? '⭐ Rank Up!' : '🎉 Level Up!'}</h2>
+          <div style="font-size:2rem;font-weight:800;color:var(--accent-green);margin:8px 0">+${total} HP</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
+            ${res.chosen?.hp_dice_count}d${res.chosen?.hp_die}: ${rolls || '?'}
+          </div>
+          <div style="font-size:1.2rem;font-weight:700;color:#a855f7;margin:4px 0">+${spiritTotal} Spiritual HP</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
+            ${res.chosen?.spirit_hp_dice_count}d${res.chosen?.spirit_hp_die}: ${spiritRolls || '?'}
+          </div>
+          <div style="font-size:1rem;font-weight:600;color:#60a5fa;margin:4px 0">+${res.chosen?.mana_gained ?? 0} Mana</div>
+          ${mode === 'attributes'
+            ? `<div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">+1 Attribute Point</div>`
+            : `<div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">⚡ ${abilityName} +1 Level</div>`}
+          ${res.chosen?.rank_promoted ? `<div style="font-size:1rem;font-weight:600;color:#f472b6;margin:4px 0">⭐ Promoted to ${res.rank}!</div>` : ''}
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
+            Level ${res.level} · ${res.rank} · Next: <strong>${res.xp_to_next}</strong> XP
+          </div>
+          <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
+        </div>`;
+      overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
+      addLog(`⬆ Level ${res.level} · +${total} HP · ${res.rank}`);
+
+      loadChar();
+    } catch (e) {
+      err.textContent = e.message || 'Level-up failed';
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '⚔ Confirm';
+    }
+  });
+}
+
+  const rank = (char.rank || 'common').toLowerCase();
+  const rankIdx = _RANK_ORDER.indexOf(rank);
+  const isMaxRank = rankIdx >= _RANK_ORDER.length - 1;
+  const nextRank = isMaxRank ? null : _RANK_ORDER[rankIdx + 1];
+
+  // Race HP die copy (if no race, backend defaults to 1d8)
+  const hpCount = char.race?.hp_dice_count || char.hp_dice_count || 1;
+  const hpDie   = char.race?.hp_die       || char.hp_die       || 8;
+  const hpDieStr = `${hpCount}d${hpDie}`;
+
+  let mode = 'attributes';  // 'attributes' | 'rank'
+
+  const overlay = document.createElement('div');
+  overlay.id = 'levelup-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:520px">
+      <h2 style="margin:0 0 4px">⬆ Level ${level}</h2>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
+        Current: <strong>${rank}</strong> rank · Level ${level} · ${xp} XP
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="lvlup-choice ${mode==='attributes'?'selected':''}" data-mode="attributes">
+          <div class="lc-title">📈 Gain Attribute Point</div>
+          <div class="lc-sub">
+            Roll ${hpDieStr} for HP + mana + gain <strong>2 attribute points</strong><br>
+            Level: ${level} → ${level + 1}
+          </div>
         </div>
-        <span class="rarity-chip rarity-${r}">${r}</span>
-        ${nextR ? `<span style="font-size:0.66rem;color:var(--text-muted)">→</span><span class="rarity-chip rarity-${nextR}">${nextR}</span>`
-                : `<span style="font-size:0.66rem;color:var(--text-muted)">max</span>`}
-      </div>`;
-    }).join('');
-    featList.querySelectorAll('.lvlup-feature-row:not(.legendary)').forEach(row => {
-      row.addEventListener('click', () => {
-        pickedCabId = parseInt(row.dataset.cabId);
-        featList.querySelectorAll('.lvlup-feature-row').forEach(r => r.classList.toggle('picked', r === row));
-        updateConfirmability();
-      });
-    });
-  }
+        <div class="lvlup-choice ${mode==='rank'?'selected':''} ${isMaxRank ? 'disabled' : ''}" data-mode="rank"
+             ${isMaxRank ? 'title="Already at maximum rank (divine)"' : ''}>
+          <div class="lc-title">⭐ Promote Rank</div>
+          <div class="lc-sub">
+            ${isMaxRank ? 'Already at maximum rank' : `${rank} → ${nextRank}`}<br>
+            Level stays at ${level} · No HP or Mana increase
+          </div>
+        </div>
+      </div>
+
+      <div id="lvlup-error" class="error-msg" style="color:var(--accent-red);font-size:0.78rem;min-height:14px;margin-bottom:6px"></div>
+
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="lvlup-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="lvlup-confirm">⚔ Confirm</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#lvlup-cancel').addEventListener('click', () => overlay.remove());
+
+  const err = overlay.querySelector('#lvlup-error');
+  const confirmBtn = overlay.querySelector('#lvlup-confirm');
 
   overlay.querySelectorAll('.lvlup-choice').forEach(card => {
     card.addEventListener('click', () => {
       if (card.classList.contains('disabled')) return;
       mode = card.dataset.mode;
       overlay.querySelectorAll('.lvlup-choice').forEach(c => c.classList.toggle('selected', c === card));
-      statsPane.style.display = mode === 'stats' ? '' : 'none';
-      featPane .style.display = mode === 'upgrade_feature' ? '' : 'none';
-      updateConfirmability();
     });
   });
 
-  renderStatPills();
-  renderFeatureList();
-  updateConfirmability();
-
   overlay.querySelector('#lvlup-confirm').addEventListener('click', async () => {
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Rolling…';
+    confirmBtn.textContent = mode === 'attributes' ? 'Rolling…' : 'Promoting…';
     const payload = { choice: mode };
-    if (mode === 'stats') { payload.stat_a = statA; payload.stat_b = statB; }
-    else                  { payload.character_ability_id = pickedCabId; }
 
     try {
       const res = await api.post(`/api/characters/${CHAR_ID}/level-up`, payload);
-      const rolls = (res.chosen?.hp_rolls || []).join(' + ');
-      const total = res.chosen?.hp_gained ?? '?';
-      overlay.innerHTML = `
-        <div class="modal-content" style="max-width:480px;text-align:center">
-          <h2 style="margin-top:0">🎉 Level ${res.level} achieved!</h2>
-          <div style="font-size:2rem;font-weight:800;color:var(--accent-green);margin:8px 0">+${total} HP</div>
-          <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
-            ${res.chosen?.hp_dice_count}d${res.chosen?.hp_die}: ${rolls || '?'}
-          </div>
-          ${res.chosen?.choice === 'stats'
-            ? `<div style="font-size:0.86rem">+1 <strong>${res.chosen.stat_a}</strong> · +1 <strong>${res.chosen.stat_b}</strong></div>`
-            : `<div style="font-size:0.86rem">Upgraded to <span class="rarity-chip rarity-${res.chosen.new_rarity}">${res.chosen.new_rarity}</span> — rolled d${res.chosen.d_size} = ${res.chosen.d_rolled}</div>`}
-          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
-            Next threshold: <strong>${res.xp_to_next}</strong> XP
-          </div>
-          <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
-        </div>`;
-      overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
-      addLog(`⬆ Level ${res.level} · +${total} HP · ${res.chosen?.choice === 'stats' ? `+${res.chosen.stat_a}/${res.chosen.stat_b}` : `upgrade → ${res.chosen.new_rarity}`}`);
+
+      if (mode === 'attributes') {
+        const rolls = (res.chosen?.hp_rolls || []).join(' + ');
+        const total = res.chosen?.hp_gained ?? '?';
+        const spiritRolls = (res.chosen?.spirit_hp_rolls || []).join(' + ');
+        const spiritTotal = res.chosen?.spirit_gained ?? '?';
+        overlay.innerHTML = `
+          <div class="modal-content" style="max-width:480px;text-align:center">
+            <h2 style="margin-top:0">🎉 Level ${res.level} achieved!</h2>
+            <div style="font-size:2rem;font-weight:800;color:var(--accent-green);margin:8px 0">+${total} HP</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
+              ${res.chosen?.hp_dice_count}d${res.chosen?.hp_die}: ${rolls || '?'}
+            </div>
+            <div style="font-size:1.2rem;font-weight:700;color:#a855f7;margin:4px 0">+${spiritTotal} Spiritual HP</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
+              ${res.chosen?.spirit_hp_dice_count}d${res.chosen?.spirit_hp_die}: ${spiritRolls || '?'}
+            </div>
+            <div style="font-size:1rem;font-weight:600;color:#60a5fa;margin:4px 0">+${res.chosen?.mana_gained ?? 0} Mana</div>
+            <div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">+1 Attribute Point</div>
+            ${res.chosen?.rank_promoted ? `<div style="font-size:1rem;font-weight:600;color:#f472b6;margin:4px 0">⭐ Promoted to ${res.rank}!</div>` : ''}
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
+              Available points: <strong>${res.attribute_points_available}</strong> · Next threshold: <strong>${res.xp_to_next}</strong> XP
+            </div>
+            <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
+          </div>`;
+        overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
+        addLog(`⬆ Level ${res.level} · +${total} HP · +1 point · ${res.rank}`);
+      } else {
+        // Rank promotion
+        overlay.innerHTML = `
+          <div class="modal-content" style="max-width:480px;text-align:center">
+            <h2 style="margin-top:0">⭐ Rank Promoted!</h2>
+            <div style="font-size:1.5rem;font-weight:700;color:#fbbf24;margin:8px 0">${res.chosen?.previous_rank} → ${res.rank}</div>
+            <div style="font-size:0.86rem;color:var(--text-muted);margin:4px 0">
+              Level stays at ${res.level}
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
+              Next threshold: <strong>${res.xp_to_next}</strong> XP
+            </div>
+            <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
+          </div>`;
+        overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
+        addLog(`⭐ ${c.name || 'Character'} promoted to ${res.rank} (level ${res.level})`);
+      }
       await loadChar();
       await loadAbilities();
     } catch (e) {

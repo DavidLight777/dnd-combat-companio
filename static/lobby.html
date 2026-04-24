@@ -317,6 +317,30 @@
         <div class="error-msg hidden" id="step6-error"></div>
       </div>
 
+      <!-- ─── STEP 7 — HP Reroll (optional) ───────────────────── -->
+      <div id="join-step-7" style="display:none">
+        <h3 style="font-size:0.85rem;margin-bottom:4px">Reroll HP (Optional)</h3>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px">
+          You may reroll your physical HP, spiritual HP, or both once before entering the game.
+        </p>
+        <div id="step7-options">
+          <div style="margin-bottom:12px">
+            <label style="font-size:0.72rem;color:var(--text-muted)">What to reroll:</label>
+            <select id="step7-reroll-type" style="width:100%;margin-top:4px;padding:6px;background:var(--bg-surface-2);border:1px solid var(--border-active);color:var(--text);border-radius:var(--r-sm)">
+              <option value="physical">Physical HP only</option>
+              <option value="spiritual">Spiritual HP only</option>
+              <option value="both">Both HP types</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="btn-reroll-hp" style="flex:1">🎲 Reroll</button>
+            <button class="btn btn-ghost" id="btn-skip-reroll" style="flex:1">Skip →</button>
+          </div>
+        </div>
+        <div id="step7-summary" style="display:none"></div>
+        <div class="error-msg hidden" id="step7-error"></div>
+      </div>
+
       <div class="error-msg hidden" id="join-error"></div>
     </div>
 
@@ -366,15 +390,15 @@
     // ── 6-step join wizard state ─────────────────────────────
     let races = [];
     let selectedRaceId = null;
-    let joinedCharacterId = null;
-    let joinedSessionCode = null;
-    let joinedPlayerToken = null;
+    let joinedCharacterId = sessionStorage.getItem('character_id') ? parseInt(sessionStorage.getItem('character_id')) : null;
+    let joinedSessionCode = sessionStorage.getItem('session_code') || null;
+    let joinedPlayerToken = sessionStorage.getItem('player_token') || null;
     let rolledRarity = null;
     let statChoice = null;        // 'accept' | 'decline'
     let declinedStats = false;
 
     function showStep(n) {
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= 7; i++) {
         const el = $(`#join-step-${i}`);
         if (el) el.style.display = i === n ? '' : 'none';
       }
@@ -668,28 +692,64 @@
         const fin  = (ws.data && ws.data.finalize) || {};
         const ch   = await (await fetch(`/api/characters/${joinedCharacterId}`)).json();
         const rolls = (fin.hp_rolls || []).join(' + ');
+        const spiritRolls = (fin.spirit_hp_rolls || []).join(' + ');
         $('#step6-pre-roll').style.display = 'none';
         $('#step6-summary').style.display = '';
         $('#step6-summary').innerHTML = `
-          <div class="summary-row"><span>HP roll</span><strong>${fin.race_hp_count}d${fin.race_hp_die} → ${rolls} = ${fin.hp_rolls?.reduce((a,b)=>a+b,0) || '?'}</strong></div>
+          <div class="summary-row"><span>Physical HP roll</span><strong>${fin.race_hp_count}d${fin.race_hp_die} → ${rolls} = ${fin.hp_rolls?.reduce((a,b)=>a+b,0) || '?'}</strong></div>
+          <div class="summary-row"><span>Spiritual HP roll</span><strong>${fin.race_spirit_hp_count || 1}d${fin.race_spirit_hp_die || 4} → ${spiritRolls || '?'} = ${(fin.spirit_hp_rolls || []).reduce((a,b)=>a+b,0) || fin.spirit_max_hp || '?'}</strong></div>
           <div class="summary-row"><span>Max HP</span><strong>${ch.max_hp}</strong></div>
+          <div class="summary-row"><span>Spiritual Max HP</span><strong>${ch.spiritual_max_hp ?? fin.spirit_max_hp ?? '?'}</strong></div>
           <div class="summary-row"><span>Mana</span><strong>${ch.mana_current} / ${ch.mana_max}</strong></div>
           <div class="summary-row"><span>Armor Class</span><strong>${ch.armor_class}</strong></div>
           <div class="summary-row"><span>Inventory Slots</span><strong>${ch.max_inventory_slots}</strong></div>
           <div class="summary-row"><span>Stats</span><strong>${declinedStats ? 'All 0 (declined — advantage applied)' : 'All 1'}</strong></div>
-          <div style="margin-top:10px;padding:8px;background:rgba(192,138,42,0.08);border-radius:var(--r-sm);font-size:0.72rem;color:var(--text-muted)">
-            Your starting item is <strong>awaiting GM approval</strong>. You'll see a banner in-game until it lands in your inventory.
-          </div>
+          <button class="btn btn-primary" id="btn-to-step7" style="width:100%;margin-top:10px">Next: Reroll HP (Optional) →</button>
+        `;
+        $('#btn-to-step7').addEventListener('click', () => showStep(7));
+      } catch (e) {
+        errBox('#step6-error', e.message);
+        $('#btn-finalize').disabled = false;
+        $('#btn-finalize').textContent = '🎲 Roll HP & Enter Game';
+      }
+    });
+
+    // ── STEP 7 — HP Reroll (optional) ───────────────────────────
+    $('#btn-reroll-hp').addEventListener('click', async () => {
+      errBox('#step7-error', '');
+      if (!joinedCharacterId) { errBox('#step7-error', 'Character not found. Please restart the wizard.'); return; }
+      $('#btn-reroll-hp').disabled = true;
+      $('#btn-reroll-hp').textContent = 'Rerolling…';
+      try {
+        const rerollType = $('#step7-reroll-type').value;
+        const res = await fetch(`/api/wizard/${joinedCharacterId}/reroll-hp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reroll_type: rerollType })
+        });
+        if (!res.ok) throw new Error(await readErr(res));
+        const result = await res.json();
+        $('#step7-options').style.display = 'none';
+        $('#step7-summary').style.display = '';
+        $('#step7-summary').innerHTML = `
+          <div class="summary-row"><span>Physical HP</span><strong>${result.hp_rolls.join(' + ')} = ${result.hp_rolls.reduce((a,b)=>a+b,0)}</strong></div>
+          <div class="summary-row"><span>Spiritual HP</span><strong>${result.spirit_hp_rolls.join(' + ')} = ${result.spirit_hp_rolls.reduce((a,b)=>a+b,0)}</strong></div>
+          <div class="summary-row"><span>New Max HP</span><strong>${result.max_hp}</strong></div>
+          <div class="summary-row"><span>New Spiritual Max HP</span><strong>${result.spiritual_max_hp}</strong></div>
           <button class="btn btn-primary" id="btn-enter-game" style="width:100%;margin-top:10px">Enter the Game →</button>
         `;
         $('#btn-enter-game').addEventListener('click', () => {
           window.location.href = `/player?code=${joinedSessionCode}`;
         });
       } catch (e) {
-        errBox('#step6-error', e.message);
-        $('#btn-finalize').disabled = false;
-        $('#btn-finalize').textContent = '🎲 Roll HP & Enter Game';
+        errBox('#step7-error', e.message);
+        $('#btn-reroll-hp').disabled = false;
+        $('#btn-reroll-hp').textContent = '🎲 Reroll';
       }
+    });
+
+    $('#btn-skip-reroll').addEventListener('click', () => {
+      window.location.href = `/player?code=${joinedSessionCode}`;
     });
 
     // ── Keyboard UX ──────────────────────────────────────────

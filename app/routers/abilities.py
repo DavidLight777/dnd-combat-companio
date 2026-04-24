@@ -11,7 +11,7 @@ from app.database import get_session
 from app.models import (
     Ability, CharacterAbility, Character, CharacterStatusEffect,
     StatusEffectTemplate, StatModifier, AttackModifier, DamageModifier,
-    Session,
+    Session, AbilityLevelConfig, AbilityRankConfig,
 )
 
 router = APIRouter(prefix="/api", tags=["abilities"])
@@ -201,6 +201,8 @@ async def get_character_abilities(char_id: int, db: AsyncSession = Depends(get_s
         # Rework v2: uses counter + provenance
         d["current_uses"] = ca.current_uses
         d["granted_from"] = ca.granted_from
+        d["ability_level"] = ca.ability_level or 0
+        d["ability_rank"] = ca.ability_rank or "common"
         out.append(d)
     return out
 
@@ -845,4 +847,147 @@ async def _apply_ability_damage_only(
         "target_hp_after": target_char.current_hp,
         "target_downed": target_char.current_hp <= 0,
         "mana_current": char.mana_current,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# ABILITY LEVEL / RANK CONFIGS
+# ══════════════════════════════════════════════════════════════
+@router.get("/abilities/{ability_id}/level-configs")
+async def list_ability_level_configs(ability_id: int, db: AsyncSession = Depends(get_session)):
+    a = await db.get(Ability, ability_id)
+    if not a:
+        raise HTTPException(404, "Ability not found")
+    result = await db.execute(
+        select(AbilityLevelConfig).where(AbilityLevelConfig.ability_id == ability_id).order_by(AbilityLevelConfig.level)
+    )
+    return [{"id": c.id, "ability_id": c.ability_id, "level": c.level, "config_json": json.loads(c.config_json) if c.config_json else {}} for c in result.scalars().all()]
+
+
+@router.post("/abilities/{ability_id}/level-configs")
+async def create_ability_level_config(ability_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    a = await db.get(Ability, ability_id)
+    if not a:
+        raise HTTPException(404, "Ability not found")
+    level = int(body.get("level", 0))
+    config = body.get("config", {})
+    # Upsert
+    result = await db.execute(
+        select(AbilityLevelConfig).where(
+            AbilityLevelConfig.ability_id == ability_id,
+            AbilityLevelConfig.level == level,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.config_json = json.dumps(config)
+    else:
+        existing = AbilityLevelConfig(ability_id=ability_id, level=level, config_json=json.dumps(config))
+        db.add(existing)
+    await db.commit()
+    await db.refresh(existing)
+    return {"id": existing.id, "ability_id": existing.ability_id, "level": existing.level, "config_json": json.loads(existing.config_json) if existing.config_json else {}}
+
+
+@router.delete("/abilities/{ability_id}/level-configs/{config_id}")
+async def delete_ability_level_config(ability_id: int, config_id: int, db: AsyncSession = Depends(get_session)):
+    c = await db.get(AbilityLevelConfig, config_id)
+    if not c or c.ability_id != ability_id:
+        raise HTTPException(404, "Config not found")
+    await db.delete(c)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/abilities/{ability_id}/rank-configs")
+async def list_ability_rank_configs(ability_id: int, db: AsyncSession = Depends(get_session)):
+    a = await db.get(Ability, ability_id)
+    if not a:
+        raise HTTPException(404, "Ability not found")
+    result = await db.execute(
+        select(AbilityRankConfig).where(AbilityRankConfig.ability_id == ability_id).order_by(AbilityRankConfig.rank)
+    )
+    return [{"id": c.id, "ability_id": c.ability_id, "rank": c.rank, "config_json": json.loads(c.config_json) if c.config_json else {}, "notes": c.notes} for c in result.scalars().all()]
+
+
+@router.post("/abilities/{ability_id}/rank-configs")
+async def create_ability_rank_config(ability_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    a = await db.get(Ability, ability_id)
+    if not a:
+        raise HTTPException(404, "Ability not found")
+    rank = str(body.get("rank", "")).lower()
+    config = body.get("config", {})
+    notes = body.get("notes", "")
+    result = await db.execute(
+        select(AbilityRankConfig).where(
+            AbilityRankConfig.ability_id == ability_id,
+            AbilityRankConfig.rank == rank,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.config_json = json.dumps(config)
+        existing.notes = notes
+    else:
+        existing = AbilityRankConfig(ability_id=ability_id, rank=rank, config_json=json.dumps(config), notes=notes)
+        db.add(existing)
+    await db.commit()
+    await db.refresh(existing)
+    return {"id": existing.id, "ability_id": existing.ability_id, "rank": existing.rank, "config_json": json.loads(existing.config_json) if existing.config_json else {}, "notes": existing.notes}
+
+
+@router.delete("/abilities/{ability_id}/rank-configs/{config_id}")
+async def delete_ability_rank_config(ability_id: int, config_id: int, db: AsyncSession = Depends(get_session)):
+    c = await db.get(AbilityRankConfig, config_id)
+    if not c or c.ability_id != ability_id:
+        raise HTTPException(404, "Config not found")
+    await db.delete(c)
+    await db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════
+# GM MANUAL ABILITY RANK PROMOTION
+# ══════════════════════════════════════════════════════════════
+@router.post("/characters/{char_id}/abilities/{char_ability_id}/promote-rank")
+async def promote_ability_rank(char_id: int, char_ability_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
+    """GM manually promotes an ability's rank (e.g. common → uncommon)."""
+    from app.game_mechanics import RANK_ORDER
+    ca = await db.get(CharacterAbility, char_ability_id)
+    if not ca or ca.character_id != char_id:
+        raise HTTPException(404, "Ability not found on this character")
+
+    cur_rank = (ca.ability_rank or "common").lower()
+    try:
+        idx = RANK_ORDER.index(cur_rank)
+    except ValueError:
+        raise HTTPException(400, "Invalid current rank")
+
+    if idx + 1 >= len(RANK_ORDER):
+        raise HTTPException(400, "Already at maximum rank (divine)")
+
+    ca.ability_rank = RANK_ORDER[idx + 1]
+    await db.commit()
+    await db.refresh(ca)
+
+    # WS broadcast
+    try:
+        from app.websocket_manager import manager as _ws
+        sess = await db.get(Session, ca.character_id)
+        if sess:
+            await _ws.broadcast_to_session(sess.code, "ability.rank_promoted", {
+                "character_id": char_id,
+                "ability_id": ca.ability_id,
+                "ability_name": ca.ability.name if ca.ability else "Unknown",
+                "new_rank": ca.ability_rank,
+            })
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "character_id": char_id,
+        "ability_id": ca.ability_id,
+        "ability_rank": ca.ability_rank,
+        "ability_level": ca.ability_level,
     }

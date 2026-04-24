@@ -24,6 +24,9 @@ class Session(Base):
     play_timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     total_play_seconds: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Rank/Level system: GM-configurable XP thresholds
+    xp_threshold_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {"type":"formula","base":100,"increment":100} or {"type":"table","thresholds":[...]}
+
     characters: Mapped[list["Character"]] = relationship(
         back_populates="session", cascade="all, delete-orphan",
         foreign_keys="Character.session_id", lazy="selectin"
@@ -48,6 +51,9 @@ class Character(Base):
     armor_class: Mapped[int] = mapped_column(Integer, default=0)
     current_hp: Mapped[int] = mapped_column(Integer, default=0)
     max_hp: Mapped[int] = mapped_column(Integer, default=0)
+    # Spiritual HP: separate pool for spirit-based damage/healing
+    spiritual_hp: Mapped[int] = mapped_column(Integer, default=0)
+    spiritual_max_hp: Mapped[int] = mapped_column(Integer, default=0)
     # Rework v2: each stat value IS the bonus (STR 1 → +1 to hit/damage).
     # Default 1 for accept; Step 4 of the wizard may zero them out in
     # exchange for advantage on the feature roll.
@@ -124,6 +130,10 @@ class Character(Base):
     max_inventory_slots: Mapped[int] = mapped_column(Integer, default=12)
     # Rework v2: did the player decline stats for an advantage roll?
     declined_stats: Mapped[bool] = mapped_column(Boolean, default=False)
+    # FIX 1 + systems_overhaul Section 3: attribute points for stat distribution
+    attribute_points_available: Mapped[int] = mapped_column(Integer, default=0)
+    # Fix 4: XP awarded to player who deals killing blow to this NPC
+    kill_xp_reward: Mapped[int] = mapped_column(Integer, default=0)
 
     session: Mapped["Session"] = relationship(
         back_populates="characters", foreign_keys=[session_id]
@@ -689,6 +699,9 @@ class Race(Base):
     # Rework v2: race defines the HP die rolled at creation + every level-up.
     hp_die: Mapped[int] = mapped_column(Integer, default=8)           # d4/d6/d8/d10/d12
     hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)    # usually 1
+    # Spiritual HP: separate pool for spirit-based damage/healing
+    spiritual_hp_die: Mapped[int] = mapped_column(Integer, default=4)
+    spiritual_hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)
 
     rank_configs: Mapped[list["RaceRankConfig"]] = relationship(
         back_populates="race", cascade="all, delete-orphan", lazy="selectin"
@@ -700,8 +713,8 @@ class RaceRankConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     race_id: Mapped[int] = mapped_column(ForeignKey("races.id", ondelete="CASCADE"), nullable=False)
-    rank: Mapped[str] = mapped_column(String(10), nullable=False)  # E, D, C, B, A, S, SS, SSS
-    rank_plus: Mapped[int] = mapped_column(Integer, default=0)  # 1-5 for + variants, 0 for base
+    rank: Mapped[str] = mapped_column(String(20), nullable=False)  # common, uncommon, rare, epic, legendary, mythic, divine
+    rank_plus: Mapped[int] = mapped_column(Integer, default=0)  # reserved for future sub-tiers
     physical_hp_die: Mapped[int] = mapped_column(Integer, default=4)  # d4/d6/d8/d10/d12
     physical_hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)
     spiritual_hp_die: Mapped[int] = mapped_column(Integer, default=4)
@@ -760,6 +773,8 @@ class NpcTemplate(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     is_merchant: Mapped[bool] = mapped_column(Boolean, default=False)
     max_hp: Mapped[int] = mapped_column(Integer, default=20)
+    spiritual_max_hp: Mapped[int] = mapped_column(Integer, default=10)
+    mana_max: Mapped[int] = mapped_column(Integer, default=0)
     armor_class: Mapped[int] = mapped_column(Integer, default=10)
     # NPC template defaults stay at 2 — NPCs are not bound by the
     # level-0 player baseline and the GM tunes them freely.
@@ -804,6 +819,8 @@ class QuestTemplate(Base):
     reward_item_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
     reward_description: Mapped[str] = mapped_column(Text, default="")
     reward_is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Fix 3: structured rewards (XP + currency + items)
+    structured_rewards: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {"xp": 500, "currency": {...}, "items": [...]}
     stages: Mapped[str] = mapped_column(Text, default="[]")  # JSON: [{order, title, description}]
     is_multi_stage: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -825,6 +842,8 @@ class CharacterQuest(Base):
     reward_description: Mapped[str] = mapped_column(Text, default="")
     reward_is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     reward_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Fix 3: structured rewards snapshot at assignment time
+    structured_rewards: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -936,6 +955,44 @@ class Ability(Base):
     is_conditional: Mapped[bool] = mapped_column(Boolean, default=False)
     conditional_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    level_configs: Mapped[list["AbilityLevelConfig"]] = relationship(
+        back_populates="ability", cascade="all, delete-orphan", lazy="selectin"
+    )
+    rank_configs: Mapped[list["AbilityRankConfig"]] = relationship(
+        back_populates="ability", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class AbilityLevelConfig(Base):
+    __tablename__ = "ability_level_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ability_id: Mapped[int] = mapped_column(ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, default="{}")  # JSON override for this level
+
+    ability: Mapped["Ability"] = relationship(back_populates="level_configs")
+
+    __table_args__ = (
+        UniqueConstraint("ability_id", "level", name="uq_ability_level"),
+    )
+
+
+class AbilityRankConfig(Base):
+    __tablename__ = "ability_rank_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ability_id: Mapped[int] = mapped_column(ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False)
+    rank: Mapped[str] = mapped_column(String(20), nullable=False)  # common, uncommon, rare, epic, legendary, mythic, divine
+    config_json: Mapped[str] = mapped_column(Text, default="{}")  # JSON override for this rank
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    ability: Mapped["Ability"] = relationship(back_populates="rank_configs")
+
+    __table_args__ = (
+        UniqueConstraint("ability_id", "rank", name="uq_ability_rank"),
+    )
+
 
 class CharacterAbility(Base):
     __tablename__ = "character_abilities"
@@ -949,6 +1006,9 @@ class CharacterAbility(Base):
     current_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Rework v2: provenance — tells UI whether this came from the wizard.
     granted_from: Mapped[str] = mapped_column(String(20), default="gm")  # gm / wizard / level_up
+    # Rank/Level system: ability level tracks upgrades from level-up choices.
+    ability_level: Mapped[int] = mapped_column(Integer, default=0)
+    ability_rank: Mapped[str] = mapped_column(String(20), default="common")
 
     ability: Mapped["Ability"] = relationship(lazy="selectin")
 
@@ -1043,5 +1103,52 @@ class CharacterWizardState(Base):
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     data: Mapped[str] = mapped_column(Text, default="{}")  # JSON: step-by-step inputs
     gm_approved: Mapped[bool] = mapped_column(Boolean, default=False)  # final step approval
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════
+# FIX 2 — CARD LIBRARY & CHESTS
+# ══════════════════════════════════════════════════════════════
+class CardLibrary(Base):
+    __tablename__ = "card_library"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    card_type: Mapped[str] = mapped_column(String(20), default="character")  # character / location / item / custom
+    card_data: Mapped[str] = mapped_column(Text, default="{}")  # JSON extra fields
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class Chest(Base):
+    __tablename__ = "chests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, default="Chest")
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
+    map_x: Mapped[float] = mapped_column(Float, default=0.0)
+    map_y: Mapped[float] = mapped_column(Float, default=0.0)
+    icon: Mapped[str] = mapped_column(Text, default="chest")
+
+    items: Mapped[list["ChestItem"]] = relationship(
+        back_populates="chest", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class ChestItem(Base):
+    __tablename__ = "chest_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chest_id: Mapped[int] = mapped_column(ForeignKey("chests.id", ondelete="CASCADE"), nullable=False)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+
+    chest: Mapped["Chest"] = relationship(back_populates="items")
+    item: Mapped["Item"] = relationship(lazy="selectin")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
