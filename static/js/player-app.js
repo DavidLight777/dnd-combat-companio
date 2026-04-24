@@ -5230,7 +5230,7 @@ function openLevelUpModal() {
       err.textContent = typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || e.message || 'Level-up failed');
     }
   });
-}
+
 
 // Wire the Level-up CTA once at load.
 document.addEventListener('click', e => {
