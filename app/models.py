@@ -690,6 +690,27 @@ class Race(Base):
     hp_die: Mapped[int] = mapped_column(Integer, default=8)           # d4/d6/d8/d10/d12
     hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)    # usually 1
 
+    rank_configs: Mapped[list["RaceRankConfig"]] = relationship(
+        back_populates="race", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class RaceRankConfig(Base):
+    __tablename__ = "race_rank_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    race_id: Mapped[int] = mapped_column(ForeignKey("races.id", ondelete="CASCADE"), nullable=False)
+    rank: Mapped[str] = mapped_column(String(10), nullable=False)  # E, D, C, B, A, S, SS, SSS
+    rank_plus: Mapped[int] = mapped_column(Integer, default=0)  # 1-5 for + variants, 0 for base
+    physical_hp_die: Mapped[int] = mapped_column(Integer, default=4)  # d4/d6/d8/d10/d12
+    physical_hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)
+    spiritual_hp_die: Mapped[int] = mapped_column(Integer, default=4)
+    spiritual_hp_dice_count: Mapped[int] = mapped_column(Integer, default=1)
+    mana_per_level: Mapped[int] = mapped_column(Integer, default=2)
+    notes: Mapped[str] = mapped_column(Text, default="")  # Special properties, e.g., "+1d6 regen at B+"
+
+    race: Mapped["Race"] = relationship(back_populates="rank_configs")
+
 
 class CharacterClass(Base):
     __tablename__ = "classes"

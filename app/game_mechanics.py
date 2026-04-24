@@ -864,3 +864,75 @@ def calculate_combat_damage(
         chosen_index=adv.chosen_index,
         advantage_breakdown=adv_breakdown,
     )
+
+
+# ══════════════════════════════════════════════════════════════
+# RACE RANK HP/MANA CALCULATION
+# ══════════════════════════════════════════════════════════════
+@dataclass
+class RaceHPCalculationResult:
+    """Result of calculating HP and mana based on race rank config."""
+    max_hp: int
+    mana_max: int
+    physical_hp_per_level: str
+    spiritual_hp_per_level: str | None
+    mana_per_level: int
+    used_fallback: bool  # True if no rank config found, used race defaults
+
+
+def calculate_race_hp_for_level(
+    race_hp_die: int,
+    race_hp_dice_count: int,
+    rank_config: dict | None,
+    level: int = 1,
+) -> RaceHPCalculationResult:
+    """
+    Calculate max HP and mana based on race rank configuration.
+
+    Args:
+        race_hp_die: Base HP die size from race (e.g., 8 for d8)
+        race_hp_dice_count: Base HP dice count from race (usually 1)
+        rank_config: RaceRankConfig dict or None. If None, falls back to race defaults.
+            Expected keys: physical_hp_die, physical_hp_dice_count,
+                           spiritual_hp_die, spiritual_hp_dice_count, mana_per_level
+        level: Character level (default 1)
+
+    Returns:
+        RaceHPCalculationResult with calculated HP and mana values.
+    """
+    if rank_config:
+        # Use rank-specific configuration
+        phys_die = rank_config.get("physical_hp_die", 4)
+        phys_count = rank_config.get("physical_hp_dice_count", 1)
+        spirit_die = rank_config.get("spiritual_hp_die", 4)
+        spirit_count = rank_config.get("spiritual_hp_dice_count", 1)
+        mana_per_lvl = rank_config.get("mana_per_level", 2)
+
+        # Calculate per-level HP (use max possible for deterministic NPC creation)
+        physical_hp_per_level = phys_count * phys_die  # max roll: d6 = 6, etc.
+        spiritual_hp_per_level = spirit_count * spirit_die
+        total_hp = (physical_hp_per_level + spiritual_hp_per_level) * level
+        total_mana = 10 + mana_per_lvl * (level - 1)
+
+        return RaceHPCalculationResult(
+            max_hp=total_hp,
+            mana_max=total_mana,
+            physical_hp_per_level=f"{phys_count}d{phys_die}",
+            spiritual_hp_per_level=f"{spirit_count}d{spirit_die}",
+            mana_per_level=mana_per_lvl,
+            used_fallback=False,
+        )
+    else:
+        # Fallback to base race values
+        hp_per_level = race_hp_dice_count * race_hp_die  # max roll
+        total_hp = hp_per_level * level
+        total_mana = 10 + 2 * (level - 1)  # Default 2 mana per level
+
+        return RaceHPCalculationResult(
+            max_hp=total_hp,
+            mana_max=total_mana,
+            physical_hp_per_level=f"{race_hp_dice_count}d{race_hp_die}",
+            spiritual_hp_per_level=None,
+            mana_per_level=2,
+            used_fallback=True,
+        )

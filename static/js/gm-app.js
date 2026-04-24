@@ -5496,6 +5496,16 @@ function openRCEditorModal(kind, existing) {
           <label class="toggle-switch"><input type="checkbox" id="rc-ed-available" ${data.is_available?'checked':''}><span class="slider"></span></label>
           <span style="font-size:0.8rem">Available to players</span>
         </div>
+        ${kind === 'race' && isEdit ? `
+        <div class="form-group" style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <label style="margin:0">🏆 Rank Configurations</label>
+            <button class="btn btn-ghost btn-xs" id="rc-ed-add-rank">+ Add Rank</button>
+          </div>
+          <div id="rc-ed-rank-configs" style="max-height:200px;overflow:auto">
+            <p class="text-muted" style="font-size:0.75rem">Loading...</p>
+          </div>
+        </div>` : ''}
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" id="rc-ed-cancel">Cancel</button>
@@ -5566,6 +5576,170 @@ function openRCEditorModal(kind, existing) {
     abilities.push('New ability');
     renderAbilities();
   });
+
+  // Rank Config management for races
+  if (kind === 'race' && isEdit) {
+    const rankConfigsContainer = overlay.querySelector('#rc-ed-rank-configs');
+    let rankConfigs = [];
+
+    async function loadRankConfigs() {
+      try {
+        rankConfigs = await api.get(`/api/races-classes/races/${existing.id}/rank-configs`);
+        renderRankConfigs();
+      } catch (e) {
+        rankConfigsContainer.innerHTML = '<p class="text-muted" style="font-size:0.75rem;color:var(--accent-red)">Failed to load</p>';
+      }
+    }
+
+    function renderRankConfigs() {
+      if (!rankConfigs.length) {
+        rankConfigsContainer.innerHTML = '<p class="text-muted" style="font-size:0.75rem">No rank configs yet. Click "+ Add Rank" to create one.</p>';
+        return;
+      }
+      const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+      const sorted = [...rankConfigs].sort((a, b) => {
+        const rankDiff = rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
+        if (rankDiff !== 0) return rankDiff;
+        return a.rank_plus - b.rank_plus;
+      });
+
+      rankConfigsContainer.innerHTML = `
+        <table style="width:100%;font-size:0.7rem;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);text-align:left">
+              <th style="padding:3px 4px">Rank</th>
+              <th style="padding:3px 4px">Phys HP</th>
+              <th style="padding:3px 4px">Spirit HP</th>
+              <th style="padding:3px 4px">Mana</th>
+              <th style="padding:3px 4px;width:50px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map(rc => `
+              <tr style="border-bottom:1px solid var(--border-dim)" data-rank-id="${rc.id}">
+                <td style="padding:4px"><b>${rc.rank}${rc.rank_plus > 0 ? '+' + rc.rank_plus : ''}</b></td>
+                <td style="padding:4px">${rc.physical_hp_dice_count}d${rc.physical_hp_die}</td>
+                <td style="padding:4px">${rc.spiritual_hp_dice_count}d${rc.spiritual_hp_die}</td>
+                <td style="padding:4px">+${rc.mana_per_level}/lvl</td>
+                <td style="padding:4px">
+                  <button class="btn btn-ghost btn-xs" data-edit-rank="${rc.id}" style="padding:2px 4px">✏️</button>
+                  <button class="btn btn-ghost btn-xs" data-del-rank="${rc.id}" style="padding:2px 4px;color:var(--accent-red)">🗑️</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      rankConfigsContainer.querySelectorAll('[data-edit-rank]').forEach(btn => {
+        btn.addEventListener('click', () => openRankConfigEditor(parseInt(btn.dataset.editRank)));
+      });
+      rankConfigsContainer.querySelectorAll('[data-del-rank]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this rank config?')) return;
+          const id = parseInt(btn.dataset.delRank);
+          try {
+            await api.delete(`/api/races-classes/races/${existing.id}/rank-configs/${id}`);
+            rankConfigs = rankConfigs.filter(rc => rc.id !== id);
+            renderRankConfigs();
+          } catch (e) { showToast('Failed to delete'); }
+        });
+      });
+    }
+
+    function openRankConfigEditor(rcId = null) {
+      const existingRc = rcId ? rankConfigs.find(r => r.id === rcId) : null;
+      const rcData = existingRc || { rank: 'E', rank_plus: 0, physical_hp_die: 4, physical_hp_dice_count: 1, spiritual_hp_die: 4, spiritual_hp_dice_count: 1, mana_per_level: 2, notes: '' };
+      const isEditing = !!existingRc;
+
+      const rcOverlay = document.createElement('div');
+      rcOverlay.className = 'modal-overlay';
+      rcOverlay.style.zIndex = '350';
+      rcOverlay.innerHTML = `
+        <div class="modal" style="max-width:420px">
+          <div class="modal-header"><h3>${isEditing ? 'Edit' : 'Add'} Rank Config</h3><button class="modal-close">&times;</button></div>
+          <div class="modal-body">
+            <div class="form-group" style="display:flex;gap:10px">
+              <div style="flex:1">
+                <label>Rank</label>
+                <select id="rc-rank" style="width:100%">
+                  ${['E','D','C','B','A','S','SS','SSS'].map(r => `<option value="${r}"${rcData.rank===r?' selected':''}>${r}</option>`).join('')}
+                </select>
+              </div>
+              <div style="width:80px">
+                <label>Plus</label>
+                <select id="rc-rank-plus" style="width:100%">
+                  ${[0,1,2,3,4,5].map(p => `<option value="${p}"${rcData.rank_plus===p?' selected':''}>${p > 0 ? '+'+p : 'Base'}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="form-group" style="display:flex;gap:10px">
+              <div style="flex:1">
+                <label>Physical HP</label>
+                <div style="display:flex;gap:4px">
+                  <input type="number" id="rc-phys-count" min="1" max="5" value="${rcData.physical_hp_dice_count}" style="width:50px">
+                  <select id="rc-phys-die" style="flex:1">
+                    ${[4,6,8,10,12].map(d => `<option value="${d}"${rcData.physical_hp_die===d?' selected':''}>d${d}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+              <div style="flex:1">
+                <label>Spiritual HP</label>
+                <div style="display:flex;gap:4px">
+                  <input type="number" id="rc-spirit-count" min="1" max="5" value="${rcData.spiritual_hp_dice_count}" style="width:50px">
+                  <select id="rc-spirit-die" style="flex:1">
+                    ${[4,6,8,10,12].map(d => `<option value="${d}"${rcData.spiritual_hp_die===d?' selected':''}>d${d}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Mana per Level</label>
+              <input type="number" id="rc-mana" min="0" max="10" value="${rcData.mana_per_level}" style="width:100px">
+            </div>
+            <div class="form-group">
+              <label>Notes</label>
+              <input type="text" id="rc-notes" value="${rcData.notes}" placeholder="Special properties, e.g., +1d6 regen at B+" style="width:100%">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" id="rc-rank-cancel">Cancel</button>
+            <button class="btn btn-primary" id="rc-rank-save">${isEditing ? 'Save' : 'Create'}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(rcOverlay);
+
+      rcOverlay.querySelector('.modal-close').addEventListener('click', () => rcOverlay.remove());
+      rcOverlay.querySelector('#rc-rank-cancel').addEventListener('click', () => rcOverlay.remove());
+      rcOverlay.querySelector('#rc-rank-save').addEventListener('click', async () => {
+        const body = {
+          rank: rcOverlay.querySelector('#rc-rank').value,
+          rank_plus: parseInt(rcOverlay.querySelector('#rc-rank-plus').value),
+          physical_hp_dice_count: parseInt(rcOverlay.querySelector('#rc-phys-count').value) || 1,
+          physical_hp_die: parseInt(rcOverlay.querySelector('#rc-phys-die').value) || 4,
+          spiritual_hp_dice_count: parseInt(rcOverlay.querySelector('#rc-spirit-count').value) || 1,
+          spiritual_hp_die: parseInt(rcOverlay.querySelector('#rc-spirit-die').value) || 4,
+          mana_per_level: parseInt(rcOverlay.querySelector('#rc-mana').value) || 0,
+          notes: rcOverlay.querySelector('#rc-notes').value.trim(),
+        };
+        try {
+          if (isEditing) {
+            await api.put(`/api/races-classes/races/${existing.id}/rank-configs/${rcId}`, body);
+          } else {
+            await api.post(`/api/races-classes/races/${existing.id}/rank-configs`, body);
+          }
+          rcOverlay.remove();
+          await loadRankConfigs();
+        } catch (e) {
+          showToast(e?.body?.detail || 'Failed to save rank config');
+        }
+      });
+    }
+
+    overlay.querySelector('#rc-ed-add-rank')?.addEventListener('click', () => openRankConfigEditor());
+    loadRankConfigs();
+  }
 
   overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#rc-ed-cancel').addEventListener('click', () => overlay.remove());

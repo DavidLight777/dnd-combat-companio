@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Race, CharacterClass
+from app.models import Race, CharacterClass, RaceRankConfig
 
 router = APIRouter(prefix="/api/races-classes", tags=["races-classes"])
 
@@ -315,3 +315,180 @@ async def seed_races_classes(db: AsyncSession = Depends(get_session)):
 
     await db.commit()
     return {"races_added": races_added, "classes_added": classes_added}
+
+
+# ══════════════════════════════════════════════════════════════
+# RACE RANK CONFIGURATION SYSTEM
+# ══════════════════════════════════════════════════════════════
+class RaceRankConfigBody(BaseModel):
+    rank: str
+    rank_plus: int = 0
+    physical_hp_die: int = 4
+    physical_hp_dice_count: int = 1
+    spiritual_hp_die: int = 4
+    spiritual_hp_dice_count: int = 1
+    mana_per_level: int = 2
+    notes: str = ""
+
+
+class CalculateHPBody(BaseModel):
+    race_id: int
+    rank: str
+    rank_plus: int = 0
+    level: int = 1
+
+
+def _ser_rank_config(rc: RaceRankConfig) -> dict:
+    return {
+        "id": rc.id,
+        "race_id": rc.race_id,
+        "rank": rc.rank,
+        "rank_plus": rc.rank_plus,
+        "physical_hp_die": rc.physical_hp_die,
+        "physical_hp_dice_count": rc.physical_hp_dice_count,
+        "spiritual_hp_die": rc.spiritual_hp_die,
+        "spiritual_hp_dice_count": rc.spiritual_hp_dice_count,
+        "mana_per_level": rc.mana_per_level,
+        "notes": rc.notes,
+    }
+
+
+@router.get("/races/{race_id}/rank-configs")
+async def list_rank_configs(race_id: int, db: AsyncSession = Depends(get_session)):
+    """Get all rank configurations for a race."""
+    race = await db.get(Race, race_id)
+    if not race:
+        raise HTTPException(404, "Race not found")
+    result = await db.execute(
+        select(RaceRankConfig).where(RaceRankConfig.race_id == race_id).order_by(
+            RaceRankConfig.rank, RaceRankConfig.rank_plus
+        )
+    )
+    return [_ser_rank_config(rc) for rc in result.scalars().all()]
+
+
+@router.post("/races/{race_id}/rank-configs")
+async def create_rank_config(race_id: int, body: RaceRankConfigBody, db: AsyncSession = Depends(get_session)):
+    """Create a new rank configuration for a race."""
+    race = await db.get(Race, race_id)
+    if not race:
+        raise HTTPException(404, "Race not found")
+
+    # Check for duplicate rank+plus combination
+    existing = await db.execute(
+        select(RaceRankConfig).where(
+            (RaceRankConfig.race_id == race_id) &
+            (RaceRankConfig.rank == body.rank) &
+            (RaceRankConfig.rank_plus == body.rank_plus)
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(409, f"Rank config for {body.rank}+{body.rank_plus} already exists")
+
+    rc = RaceRankConfig(
+        race_id=race_id,
+        rank=body.rank,
+        rank_plus=max(0, min(5, body.rank_plus)),
+        physical_hp_die=max(1, int(body.physical_hp_die or 4)),
+        physical_hp_dice_count=max(1, int(body.physical_hp_dice_count or 1)),
+        spiritual_hp_die=max(1, int(body.spiritual_hp_die or 4)),
+        spiritual_hp_dice_count=max(1, int(body.spiritual_hp_dice_count or 1)),
+        mana_per_level=max(0, int(body.mana_per_level or 2)),
+        notes=body.notes,
+    )
+    db.add(rc)
+    await db.commit()
+    await db.refresh(rc)
+    return _ser_rank_config(rc)
+
+
+@router.put("/races/{race_id}/rank-configs/{config_id}")
+async def update_rank_config(race_id: int, config_id: int, body: RaceRankConfigBody, db: AsyncSession = Depends(get_session)):
+    """Update an existing rank configuration."""
+    rc = await db.get(RaceRankConfig, config_id)
+    if not rc or rc.race_id != race_id:
+        raise HTTPException(404, "Rank config not found")
+
+    # Check for duplicate if rank or rank_plus changed
+    if rc.rank != body.rank or rc.rank_plus != body.rank_plus:
+        existing = await db.execute(
+            select(RaceRankConfig).where(
+                (RaceRankConfig.race_id == race_id) &
+                (RaceRankConfig.rank == body.rank) &
+                (RaceRankConfig.rank_plus == body.rank_plus) &
+                (RaceRankConfig.id != config_id)
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(409, f"Rank config for {body.rank}+{body.rank_plus} already exists")
+
+    rc.rank = body.rank
+    rc.rank_plus = max(0, min(5, body.rank_plus))
+    rc.physical_hp_die = max(1, int(body.physical_hp_die or 4))
+    rc.physical_hp_dice_count = max(1, int(body.physical_hp_dice_count or 1))
+    rc.spiritual_hp_die = max(1, int(body.spiritual_hp_die or 4))
+    rc.spiritual_hp_dice_count = max(1, int(body.spiritual_hp_dice_count or 1))
+    rc.mana_per_level = max(0, int(body.mana_per_level or 2))
+    rc.notes = body.notes
+    await db.commit()
+    await db.refresh(rc)
+    return _ser_rank_config(rc)
+
+
+@router.delete("/races/{race_id}/rank-configs/{config_id}")
+async def delete_rank_config(race_id: int, config_id: int, db: AsyncSession = Depends(get_session)):
+    """Delete a rank configuration."""
+    rc = await db.get(RaceRankConfig, config_id)
+    if not rc or rc.race_id != race_id:
+        raise HTTPException(404, "Rank config not found")
+    await db.delete(rc)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/calculate-hp")
+async def calculate_hp(body: CalculateHPBody, db: AsyncSession = Depends(get_session)):
+    """Calculate HP and mana based on race rank config for a given level."""
+    race = await db.get(Race, body.race_id)
+    if not race:
+        raise HTTPException(404, "Race not found")
+
+    # Find matching rank config
+    result = await db.execute(
+        select(RaceRankConfig).where(
+            (RaceRankConfig.race_id == body.race_id) &
+            (RaceRankConfig.rank == body.rank) &
+            (RaceRankConfig.rank_plus == body.rank_plus)
+        )
+    )
+    rc = result.scalar_one_or_none()
+
+    if not rc:
+        # Fall back to base race hp_die values
+        from app.game_mechanics import roll_dice
+        max_hp = roll_dice(race.hp_dice_count, race.hp_die) * body.level
+        mana_max = 10 + (body.level - 1) * 2
+        return {
+            "max_hp": max_hp,
+            "mana_max": mana_max,
+            "physical_hp_per_level": f"{race.hp_dice_count}d{race.hp_die}",
+            "spiritual_hp_per_level": None,
+            "mana_per_level": 2,
+            "used_fallback": True,
+        }
+
+    # Calculate HP based on rank config
+    from app.game_mechanics import roll_dice
+    physical_hp_per_level = roll_dice(rc.physical_hp_dice_count, rc.physical_hp_die)
+    spiritual_hp_per_level = roll_dice(rc.spiritual_hp_dice_count, rc.spiritual_hp_die)
+    total_hp = (physical_hp_per_level + spiritual_hp_per_level) * body.level
+    total_mana = 10 + rc.mana_per_level * (body.level - 1)
+
+    return {
+        "max_hp": total_hp,
+        "mana_max": total_mana,
+        "physical_hp_per_level": f"{rc.physical_hp_dice_count}d{rc.physical_hp_die}",
+        "spiritual_hp_per_level": f"{rc.spiritual_hp_dice_count}d{rc.spiritual_hp_die}",
+        "mana_per_level": rc.mana_per_level,
+        "used_fallback": False,
+    }
