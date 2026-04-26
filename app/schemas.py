@@ -82,6 +82,8 @@ class CharacterUpdate(BaseModel):
     experience: Optional[int] = None
     race_id: Optional[int] = None
     is_alive: Optional[bool] = None
+    map_x: Optional[float] = None
+    map_y: Optional[float] = None
     gm_notes: Optional[str] = None
     # Rework v2: identity (cosmetic) + inventory cap + decline state
     age: Optional[int] = None

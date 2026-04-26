@@ -11,7 +11,7 @@ from PIL import Image
 from app.database import get_session, DATA_DIR
 from app.models import (
     Session, Character, MapData, MapMarker, MapDrawing,
-    CombatEvent, CombatParticipant, MapObject, MapFloor, MapTrap,
+    CombatEvent, CombatParticipant, MapObject, MapFloor, MapTrap, MapTemplate,
 )
 from app.websocket_manager import manager
 
@@ -359,10 +359,45 @@ async def get_map_state(session_code: str, db: AsyncSession = Depends(get_sessio
 
     out: dict = {"has_map": False, "tokens": tokens}
 
-    if map_data:
+    # Map Builder v2: read visual data from the active MapFloor directly.
+    # MapData is now a thin pointer (active_floor_id) + session-level state
+    # (fog, tokens).  This removes the need to copy floor data into MapData.
+    active_floor = None
+    if map_data and map_data.active_floor_id:
+        active_floor = await db.get(MapFloor, map_data.active_floor_id)
+
+    if active_floor:
         out = {
             "has_map": True,
-            "image_url": map_data.image_url,
+            "image_url": active_floor.image_url or map_data.image_url or "",
+            "image_width": map_data.image_width,
+            "image_height": map_data.image_height,
+            "grid_size": active_floor.tile_size or map_data.grid_size or 50,
+            "grid_enabled": map_data.grid_enabled,
+            "grid_type": active_floor.grid_type or getattr(map_data, "grid_type", "square") or "square",
+            "fog_enabled": map_data.fog_enabled,
+            "remember_explored": map_data.remember_explored,
+            "revealed_cells": json.loads(map_data.revealed_cells),
+            "tokens": tokens,
+            "active_floor_id": active_floor.id,
+            "active_floor_name": active_floor.name,
+            "active_floor_tiles": json.loads(active_floor.tiles_json or "{}"),
+            "active_floor_grid_type": active_floor.grid_type or "square",
+            "active_floor_tile_size": active_floor.tile_size or 50,
+            "active_floor_cols": getattr(active_floor, "map_cols", 40) or 40,
+            "active_floor_rows": getattr(active_floor, "map_rows", 30) or 30,
+        }
+        # Include parent map info
+        if active_floor.map_id:
+            parent_map = await db.get(MapTemplate, active_floor.map_id)
+            if parent_map:
+                out["active_map_id"] = parent_map.id
+                out["active_map_name"] = parent_map.name
+    elif map_data:
+        # Fallback to legacy MapData fields (transition period)
+        out = {
+            "has_map": bool(map_data.image_url),
+            "image_url": map_data.image_url or "",
             "image_width": map_data.image_width,
             "image_height": map_data.image_height,
             "grid_size": map_data.grid_size,
@@ -374,21 +409,6 @@ async def get_map_state(session_code: str, db: AsyncSession = Depends(get_sessio
             "tokens": tokens,
         }
 
-    # Map Builder: include active floor tiles + metadata even when no image map
-    try:
-        active_floor = (await db.execute(
-            select(MapFloor).where(MapFloor.session_id == session.id).where(MapFloor.is_active == True)
-        )).scalar_one_or_none()
-        if active_floor:
-            out["active_floor_id"] = active_floor.id
-            out["active_floor_name"] = active_floor.name
-            out["active_floor_tiles"] = json.loads(active_floor.tiles_json or "{}")
-            out["active_floor_grid_type"] = active_floor.grid_type or "square"
-            out["active_floor_tile_size"] = active_floor.tile_size or 50
-            out["active_floor_cols"] = getattr(active_floor, "map_cols", 40) or 40
-            out["active_floor_rows"] = getattr(active_floor, "map_rows", 30) or 30
-    except Exception:
-        pass
     return out
 
 

@@ -39,6 +39,8 @@ class MapCanvas {
     this.onTokenClick = options.onTokenClick || null;
     this.onTokenRightClick = options.onTokenRightClick || null;
     this.onChestClick = options.onChestClick || null;
+    this.onMapChestClick = options.onMapChestClick || null;
+    this.onPortalClick = options.onPortalClick || null;
     this.onMapClick = options.onMapClick || null; // callback(nx, ny) for any click on empty map
     this.onEraseMarker = options.onEraseMarker || null;
     this.onEraseDrawing = options.onEraseDrawing || null;
@@ -73,6 +75,10 @@ class MapCanvas {
     this.traps = [];
     // Chests overlay
     this.chests = [];
+    // Map Builder tile-based chests (MapChest)
+    this.mapChests = [];
+    // Map Builder portals (MapPortal)
+    this.portals = [];
 
     // Transform
     this.offsetX = 0;
@@ -382,6 +388,16 @@ class MapCanvas {
 
   setChests(chests) {
     this.chests = chests || [];
+    this.render();
+  }
+
+  setMapChests(chests) {
+    this.mapChests = chests || [];
+    this.render();
+  }
+
+  setPortals(portals) {
+    this.portals = portals || [];
     this.render();
   }
 
@@ -1042,6 +1058,29 @@ class MapCanvas {
     return null;
   }
 
+  _hitMapChest(mx, my) {
+    if (!this.mapChests || !this.mapChests.length) return null;
+    const gs = this.gridSize;
+    for (let i = this.mapChests.length - 1; i >= 0; i--) {
+      const ch = this.mapChests[i];
+      if (this.role !== 'gm' && ch.is_hidden) continue;
+      const px = ch.col * gs, py = ch.row * gs;
+      if (mx >= px && mx <= px + gs && my >= py && my <= py + gs) return ch;
+    }
+    return null;
+  }
+
+  _hitPortal(mx, my) {
+    if (!this.portals || !this.portals.length) return null;
+    const gs = this.gridSize;
+    for (let i = this.portals.length - 1; i >= 0; i--) {
+      const p = this.portals[i];
+      const px = p.col * gs, py = p.row * gs;
+      if (mx >= px && mx <= px + gs && my >= py && my <= py + gs) return p;
+    }
+    return null;
+  }
+
   // ── Events ────────────────────────────────────────────────
   _bindEvents() {
     const c = this.canvas;
@@ -1321,6 +1360,12 @@ class MapCanvas {
       // Check chest click
       const chest = this._hitChest(m.x, m.y);
       if (chest && this.onChestClick) { this.onChestClick(chest); return; }
+      // Check mapChest click
+      const mapChest = this._hitMapChest(m.x, m.y);
+      if (mapChest && this.onMapChestClick) { this.onMapChestClick(mapChest); return; }
+      // Check portal click
+      const portal = this._hitPortal(m.x, m.y);
+      if (portal && this.onPortalClick) { this.onPortalClick(portal); return; }
       const token = this._hitToken(m.x, m.y);
       if (token && this.onTokenClick) { this.onTokenClick(token, e.shiftKey); return; }
       // If nothing was clicked, fire onMapClick with normalized coords
@@ -1420,6 +1465,33 @@ class MapCanvas {
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(t.is_triggered ? '💥' : t.is_disarmed ? '🔒' : '⚠', c.x, c.y);
       }
+      // MapChests in hex
+      for (const ch of (this.mapChests || [])) {
+        const c = _axialToPixel(ch.col, ch.row);
+        if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
+        if (this.role !== 'gm' && ch.is_hidden) continue;
+        ctx.fillStyle = 'rgba(139,69,19,0.75)';
+        _hexPath(c.x, c.y, size - 2);
+        ctx.fill();
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 1.5 / this.scale;
+        _hexPath(c.x, c.y, size - 2);
+        ctx.stroke();
+        ctx.font = `${gs * 0.4}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('📦', c.x, c.y);
+      }
+      // Portals in hex
+      for (const p of (this.portals || [])) {
+        const c = _axialToPixel(p.col, p.row);
+        if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
+        ctx.fillStyle = 'rgba(153,50,204,0.6)';
+        _hexPath(c.x, c.y, size - 2);
+        ctx.fill();
+        ctx.font = `${gs * 0.4}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🌀', c.x, c.y);
+      }
     } else {
       // Square grid
       for (const [key, type] of Object.entries(this.tiles)) {
@@ -1461,6 +1533,30 @@ class MapCanvas {
         ctx.font = `${gs * 0.5}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(t.is_triggered ? '💥' : t.is_disarmed ? '🔒' : '⚠', px + gs / 2, py + gs / 2);
+      }
+      // MapChests (square)
+      for (const ch of (this.mapChests || [])) {
+        const px = ch.col * gs, py = ch.row * gs;
+        if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
+        if (this.role !== 'gm' && ch.is_hidden) continue;
+        ctx.fillStyle = 'rgba(139,69,19,0.75)';
+        ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 1.5 / this.scale;
+        ctx.strokeRect(px + 1, py + 1, gs - 2, gs - 2);
+        ctx.font = `${gs * 0.5}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('📦', px + gs / 2, py + gs / 2);
+      }
+      // Portals (square)
+      for (const p of (this.portals || [])) {
+        const px = p.col * gs, py = p.row * gs;
+        if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
+        ctx.fillStyle = 'rgba(153,50,204,0.6)';
+        ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
+        ctx.font = `${gs * 0.5}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🌀', px + gs / 2, py + gs / 2);
       }
     }
   }

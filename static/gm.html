@@ -315,14 +315,13 @@
         <!-- ── Map ───────────────────────────────────────────── -->
         <div class="tab-content" id="tab-map">
           <div class="map-toolbar">
-            <label class="btn btn-primary btn-sm" style="cursor:pointer">📁 Upload Map<input type="file" id="map-upload" accept="image/*" style="display:none"></label>
+            <button class="btn btn-primary btn-sm" id="btn-map-load-library">📂 Load from Library</button>
             <button class="btn btn-danger btn-sm" id="btn-remove-map">🗑 Remove</button>
+            <div class="sep"></div>
+            <select id="map-floor-select" class="btn btn-ghost btn-sm" style="min-width:110px"></select>
             <div class="sep"></div>
             <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
             <button class="btn btn-ghost btn-xs" id="btn-grid-style">▢ Square</button>
-            <label style="font-size:0.65rem;color:var(--text-muted)">Size:</label>
-            <input type="range" id="grid-size-slider" min="20" max="100" value="50" style="width:74px">
-            <span id="grid-size-label" style="font-size:0.65rem;min-width:22px">50</span>
             <div class="sep"></div>
             <button class="btn btn-ghost btn-xs" id="btn-toggle-fog">Fog: OFF</button>
             <button class="btn btn-ghost btn-xs" id="btn-fog-paint">🖌 Reveal</button>
@@ -360,37 +359,94 @@
 
         <!-- ── Builder ───────────────────────────────────────── -->
         <div class="tab-content" id="tab-builder">
-          <div class="map-toolbar" id="builder-toolbar">
-            <select id="builder-floor-select" class="btn btn-ghost btn-sm" style="min-width:110px"></select>
-            <button id="btn-new-floor" class="btn btn-primary btn-sm">+ Floor</button>
-            <button id="btn-delete-floor" class="btn btn-danger btn-sm">🗑</button>
-            <button id="btn-activate-floor" class="btn btn-ghost btn-sm">▶ Activate</button>
-            <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs">▢ Square</button>
-            <div class="sep"></div>
-            <label style="font-size:0.65rem;color:var(--text-muted)">Size:</label>
-            <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:74px">
-            <span id="builder-tile-size-val" style="font-size:0.65rem;min-width:22px">50</span>
-            <label style="font-size:0.65rem;color:var(--text-muted)">Bounds:</label>
-            <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:44px">
-            <span style="font-size:0.65rem;color:var(--text-muted)">×</span>
-            <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:44px">
-            <div class="sep"></div>
-            <button class="btn btn-ghost btn-xs builder-brush active" data-brush="floor">⬜</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="wall">🧱</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="door">🚪</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="water">💧</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="pit">🕳</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_up">⬆</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_down">⬇</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="trap">⚠</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="erase">🧹</button>
-            <div class="sep"></div>
-            <button id="btn-clear-tiles" class="btn btn-ghost btn-xs">Clear</button>
-            <button id="btn-save-tiles" class="btn btn-primary btn-xs">💾 Save</button>
-            <button id="btn-place-trap" class="btn btn-danger btn-xs">⚠ Trap</button>
-          </div>
-          <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
-            <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
+          <div style="display:flex;flex:1;overflow:hidden">
+            <!-- Left sidebar: Tools -->
+            <div id="builder-sidebar" style="width:200px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto">
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Map</div>
+                <select id="builder-map-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
+                <div style="display:flex;gap:4px">
+                  <button id="btn-new-map" class="btn btn-primary btn-xs" style="flex:1" title="New Map">+ New Map</button>
+                  <button id="btn-delete-map" class="btn btn-danger btn-xs" title="Delete Map">🗑</button>
+                </div>
+                <button id="btn-activate-map" class="btn btn-ghost btn-xs" style="width:100%;margin-top:4px" title="Activate Map">▶ Activate Map</button>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Floor</div>
+                <select id="builder-floor-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
+                <div style="display:flex;gap:4px">
+                  <button id="btn-new-floor" class="btn btn-primary btn-xs" style="flex:1" title="New Floor">+ New</button>
+                  <button id="btn-delete-floor" class="btn btn-danger btn-xs" title="Delete Floor">🗑</button>
+                </div>
+                <button id="btn-activate-floor" class="btn btn-ghost btn-xs" style="width:100%;margin-top:4px" title="Activate on Map">▶ Activate Floor</button>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Grid</div>
+                <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs" style="width:100%;margin-bottom:6px">▢ Square Grid</button>
+                <label style="font-size:0.7rem;color:var(--text-muted)">Tile Size: <span id="builder-tile-size-val">50</span>px</label>
+                <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:100%;margin-bottom:6px">
+                <div style="display:flex;gap:4px;align-items:center">
+                  <label style="font-size:0.7rem;color:var(--text-muted)">W:</label>
+                  <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:50px;font-size:0.75rem" class="form-control">
+                  <label style="font-size:0.7rem;color:var(--text-muted)">H:</label>
+                  <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:50px;font-size:0.75rem" class="form-control">
+                </div>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Background</div>
+                <input type="file" id="builder-bg-upload" accept="image/*" style="display:none">
+                <button id="btn-builder-bg-upload" class="btn btn-ghost btn-xs" style="width:100%;margin-bottom:4px">🖼 Upload Image</button>
+                <button id="btn-builder-bg-remove" class="btn btn-ghost btn-xs" style="width:100%;color:var(--accent-red)">🗑 Remove Image</button>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Terrain</div>
+                <div class="builder-tool-grid">
+                  <button class="builder-brush active" data-brush="floor" title="Floor">⬜<span>Floor</span></button>
+                  <button class="builder-brush" data-brush="wall" title="Wall">🧱<span>Wall</span></button>
+                  <button class="builder-brush" data-brush="water" title="Water">💧<span>Water</span></button>
+                  <button class="builder-brush" data-brush="pit" title="Pit">🕳<span>Pit</span></button>
+                </div>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Objects</div>
+                <div class="builder-tool-grid">
+                  <button class="builder-brush" data-brush="door" title="Door">🚪<span>Door</span></button>
+                  <button class="builder-brush" data-brush="stairs_up" title="Stairs Up">⬆<span>Up</span></button>
+                  <button class="builder-brush" data-brush="stairs_down" title="Stairs Down">⬇<span>Down</span></button>
+                  <button class="builder-brush" data-brush="trap" title="Trap">⚠<span>Trap</span></button>
+                  <button class="builder-brush" data-brush="chest" title="Chest">📦<span>Chest</span></button>
+                  <button class="builder-brush" data-brush="portal" title="Portal">🌀<span>Portal</span></button>
+                </div>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Actions</div>
+                <div class="builder-tool-grid">
+                  <button class="builder-brush" data-brush="erase" title="Erase">🧹<span>Erase</span></button>
+                </div>
+                <button id="btn-clear-tiles" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All</button>
+              </div>
+
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Library</div>
+                <button id="btn-save-to-library" class="btn btn-primary btn-xs" style="width:100%;margin-bottom:4px">💾 Save to Library</button>
+                <button id="btn-open-library" class="btn btn-ghost btn-xs" style="width:100%">📂 Open Library</button>
+              </div>
+
+              <div style="padding:10px">
+                <button id="btn-save-tiles" class="btn btn-primary btn-sm" style="width:100%">💾 Save Floor</button>
+              </div>
+            </div>
+
+            <!-- Canvas area -->
+            <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
+              <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
+            </div>
           </div>
         </div>
 
@@ -705,38 +761,7 @@
 </div>
 
 <!-- ── CHEST MODAL ──────────────────────────────────────────── -->
-<div id="chest-modal" class="modal-overlay hidden">
-  <div class="modal-content" style="max-width:420px">
-    <div class="modal-header">
-      <h2 id="chest-modal-title">Chest</h2>
-      <button class="btn-icon" id="btn-close-chest-modal">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group"><label>Name</label><input type="text" id="chest-ed-name" placeholder="Chest name"></div>
-        <div class="form-group"><label>Icon</label><input type="text" id="chest-ed-icon" value="📦" style="width:56px"></div>
-      </div>
-      <div class="form-group" style="margin-top:10px"><label>Description</label><textarea id="chest-ed-desc" rows="2" placeholder="Description…"></textarea></div>
-      <div style="margin-top:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <h3 style="font-size:0.78rem;flex:1">Items inside</h3>
-          <button class="btn btn-ghost btn-xs" id="btn-chest-add-item">+ Add Item</button>
-        </div>
-        <div id="chest-item-list" style="display:flex;flex-direction:column;gap:4px"></div>
-      </div>
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" id="btn-chest-reveal">👁 Reveal</button>
-        <button class="btn btn-ghost btn-sm" id="btn-chest-hide">🙈 Hide</button>
-        <button class="btn btn-ghost btn-sm" id="btn-chest-give">🎁 Give to Player</button>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" id="btn-cancel-chest">Cancel</button>
-      <button class="btn btn-danger btn-sm" id="btn-delete-chest">Delete</button>
-      <button class="btn btn-primary btn-sm" id="btn-save-chest">Save Chest</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- ── DICE ROLL LOG ─────────────────────────────────────────── -->
 <div id="roll-log-panel">

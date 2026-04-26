@@ -11,7 +11,7 @@ from app.database import get_session
 from app.models import (
     Session, Character, CharacterEffect, StatModifier,
     AttackModifier, DamageModifier, TurnTimer, InventoryItem,
-    CharacterStatusEffect,
+    CharacterStatusEffect, Ability, CharacterAbility,
 )
 from app.schemas import CharacterCreate, CharacterUpdate, HpPatch, ModifierCreate, EffectCreate, TimerCreate
 from app.game_mechanics import get_all_active_bonuses, aggregate_status_penalties, apply_advantage, format_advantage_breakdown, resolve_advantage_mode
@@ -103,6 +103,8 @@ def _serialize_char(c: Character) -> dict:
         "attribute_points_available": getattr(c, "attribute_points_available", 0) or 0,
         "kill_xp_reward": getattr(c, "kill_xp_reward", 0) or 0,
         # Rework Phase 1: rank chain + Phase 4: multi-profession list
+        "map_x": getattr(c, "map_x", None),
+        "map_y": getattr(c, "map_y", None),
         "rank": getattr(c, "rank", "common") or "common",
         "professions": [
             {
@@ -313,20 +315,20 @@ async def grant_xp(char_id: int, body: dict, db: AsyncSession = Depends(get_sess
 
 @router.post("/characters/{char_id}/level-up")
 async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
-    """Level-up: HP/Mana always, then choose +1 attribute OR upgrade an ability.
+    """Level-up: HP/Mana always, then choose +1 attribute OR promote an ability rank.
     At max level (10) → rank-up: level resets to 0, rank increases, HP/Mana from new rank.
 
     Body:
       {
-        "choice": "attributes" | "ability",
-        "ability_id": 123,       # required if choice == "ability"
+        "choice": "attributes" | "rank",
+        "ability_id": 123,       # required if choice == "rank"
         "force": false           # optional GM bypass of the XP threshold
       }
     """
     import random
     from sqlalchemy import select as sa_select, func as sa_func
-    from app.models import Race, RaceRankConfig, CharacterAbility, AbilityLevelConfig
-    from app.game_mechanics import RANK_PROGRESSION
+    from app.models import Race, RaceRankConfig, CharacterAbility
+    from app.game_mechanics import RANK_PROGRESSION, RANK_ORDER
     from app.websocket_manager import manager as _ws
 
     body = body or {}
@@ -343,8 +345,8 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
         })
 
     choice = str(body.get("choice", "")).lower()
-    if choice not in ("attributes", "ability"):
-        raise HTTPException(400, "`choice` must be 'attributes' or 'ability'")
+    if choice not in ("attributes", "rank"):
+        raise HTTPException(400, "`choice` must be 'attributes' or 'rank'")
 
     result = {
         "choice": choice,
@@ -423,24 +425,58 @@ async def level_up(char_id: int, body: dict | None = None, db: AsyncSession = De
     # Consume XP
     c.experience = max(0, (c.experience or 0) - threshold)
 
-    # ── Choice: attribute point or ability upgrade ──
+    # ── Choice: attribute point or ability rank promotion ──
     if choice == "attributes":
         c.attribute_points_available = (c.attribute_points_available or 0) + 1
         result.update({
             "attribute_points_gained": 1,
         })
-    else:  # ability
+    else:  # rank — promote ability rank
         ca_id = body.get("ability_id")
         if not ca_id:
-            raise HTTPException(400, "ability_id is required when choice is 'ability'")
+            raise HTTPException(400, "ability_id is required when choice is 'rank'")
         ca = await db.get(CharacterAbility, ca_id)
         if not ca or ca.character_id != c.id:
             raise HTTPException(404, "Ability not found on this character")
-        ca.ability_level = (ca.ability_level or 0) + 1
+
+        # Load rank/level configs explicitly to avoid async lazy-load issues
+        from app.models import AbilityLevelConfig as _ALC, AbilityRankConfig as _ARC
+        lc_result = await db.execute(
+            select(_ALC).where(_ALC.ability_id == ca.ability_id)
+        )
+        rc_result = await db.execute(
+            select(_ARC).where(_ARC.ability_id == ca.ability_id)
+        )
+        level_configs = lc_result.scalars().all()
+        rank_configs = rc_result.scalars().all()
+
+        cur_ability_rank = (ca.ability_rank or "common").lower()
+        try:
+            idx = RANK_ORDER.index(cur_ability_rank)
+        except ValueError:
+            raise HTTPException(400, "Invalid ability rank")
+        if idx + 1 >= len(RANK_ORDER):
+            raise HTTPException(400, "Ability already at maximum rank (divine)")
+        ca.ability_rank = RANK_ORDER[idx + 1]
+        # Rework: reapply passive bonuses from resolved rank config
+        try:
+            from app.routers.abilities import _remove_passive_bonuses, _apply_resolved_passive_bonuses, _resolve_ability
+            await _remove_passive_bonuses(c.id, ca.ability, db)
+            resolved = _resolve_ability(
+                ca.ability,
+                ca.ability_level or 0,
+                ca.ability_rank,
+                level_configs=level_configs,
+                rank_configs=rank_configs,
+            )
+            await _apply_resolved_passive_bonuses(c.id, resolved, db)
+        except Exception:
+            pass  # Non-fatal — bonuses are best-effort
         result.update({
             "ability_id": ca.id,
             "ability_name": ca.ability.name if ca.ability else "Unknown",
-            "ability_level": ca.ability_level,
+            "ability_rank": ca.ability_rank,
+            "previous_ability_rank": cur_ability_rank,
         })
 
     result.update({

@@ -269,8 +269,12 @@ class MapData(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), unique=True)
-    image_path: Mapped[str] = mapped_column(Text, nullable=False)
-    image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    # Rework: MapData is now a thin pointer to the active MapFloor.
+    # All visual data (image_url, tiles, grid) is read from the floor directly.
+    active_floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="SET NULL"), nullable=True)
+    # Legacy fields kept for backward compat during transition
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     grid_size: Mapped[int] = mapped_column(Integer, default=50)
     grid_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Grid style toggle: "square" (king-move / Chebyshev distance) or
@@ -354,13 +358,25 @@ class MapObject(Base):
 
 
 # ══════════════════════════════════════════════════════════════
-# MAP BUILDER — Floors / Levels
+# MAP ARCHITECTURE — Maps (containers) → Floors → Tiles
 # ══════════════════════════════════════════════════════════════
+class MapTemplate(Base):
+    __tablename__ = "map_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Is this the currently active map for the session?
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class MapFloor(Base):
     __tablename__ = "map_floors"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    map_id: Mapped[int | None] = mapped_column(ForeignKey("map_templates.id", ondelete="CASCADE"), nullable=True)
     name: Mapped[str] = mapped_column(Text, default="Floor 1")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     # Tile grid size (matches MapData.grid_size at creation time)
@@ -376,6 +392,27 @@ class MapFloor(Base):
     # Map boundary in tile cells (GM-defined play area)
     map_cols: Mapped[int] = mapped_column(Integer, default=40)
     map_rows: Mapped[int] = mapped_column(Integer, default=30)
+    # Rework: background image for the floor (uploaded via builder)
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP LIBRARY — Saved map templates
+# ══════════════════════════════════════════════════════════════
+class MapLibrary(Base):
+    __tablename__ = "map_library"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    # JSON snapshot of the map: tiles, grid_type, tile_size, map_cols, map_rows, etc.
+    map_data_json: Mapped[str] = mapped_column(Text, default="{}")
+    # Preview image (screenshot or uploaded background)
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -387,27 +424,59 @@ class MapTrap(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
     floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
-    # Grid position (col,row) — snap to grid
     col: Mapped[int] = mapped_column(Integer, default=0)
     row: Mapped[int] = mapped_column(Integer, default=0)
     name: Mapped[str] = mapped_column(Text, default="Trap")
     description: Mapped[str] = mapped_column(Text, default="")
-    trap_type: Mapped[str] = mapped_column(String(20), default="mechanical")  # mechanical, magical, natural
-    trigger_type: Mapped[str] = mapped_column(String(20), default="pressure")  # pressure, proximity, tripwire, spell
-    # Difficulty classes
+    trap_type: Mapped[str] = mapped_column(String(20), default="mechanical")
+    trigger_type: Mapped[str] = mapped_column(String(20), default="pressure")
     dc_detect: Mapped[int] = mapped_column(Integer, default=10)
     dc_disarm: Mapped[int] = mapped_column(Integer, default=10)
-    # Damage on trigger
     damage_dice: Mapped[str] = mapped_column(Text, default="")
     damage_type: Mapped[str] = mapped_column(String(20), default="piercing")
-    # Status effect JSON on trigger
     status_effect_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # States
-    is_hidden: Mapped[bool] = mapped_column(Boolean, default=True)       # only GM sees
-    is_triggered: Mapped[bool] = mapped_column(Boolean, default=False)     # has gone off
-    is_disarmed: Mapped[bool] = mapped_column(Boolean, default=False)      # safely removed
-    # Which characters have spotted this trap
-    discovered_by_json: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of char ids
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_disarmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    discovered_by_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP CHESTS — placed on tiles in builder
+# ══════════════════════════════════════════════════════════════
+class MapChest(Base):
+    __tablename__ = "map_chests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
+    col: Mapped[int] = mapped_column(Integer, default=0)
+    row: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(Text, default="Chest")
+    # JSON: [{"item_id": 1, "quantity": 2}, ...]
+    items_json: Mapped[str] = mapped_column(Text, default="[]")
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_dc: Mapped[int] = mapped_column(Integer, default=10)
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP PORTALS — transitions between maps/floors
+# ══════════════════════════════════════════════════════════════
+class MapPortal(Base):
+    __tablename__ = "map_portals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="CASCADE"), nullable=True)
+    col: Mapped[int] = mapped_column(Integer, default=0)
+    row: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(Text, default="Portal")
+    target_map_id: Mapped[int | None] = mapped_column(ForeignKey("map_templates.id", ondelete="SET NULL"), nullable=True)
+    target_floor_id: Mapped[int | None] = mapped_column(ForeignKey("map_floors.id", ondelete="SET NULL"), nullable=True)
+    target_col: Mapped[int] = mapped_column(Integer, default=0)
+    target_row: Mapped[int] = mapped_column(Integer, default=0)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -963,13 +1032,61 @@ class Ability(Base):
     )
 
 
+# ── Typed config fields shared by level & rank configs ──
+# Every field is nullable so the resolver can distinguish "not set"
+# (inherit from previous tier / base ability) from "explicitly set".
+_AB_CONFIG_FIELDS = [
+    ("ability_type", String(20)),
+    ("target_type", String(20)),
+    ("aoe_radius", Integer),
+    ("damage_type", String(20)),
+    ("custom_damage_type", Text),
+    ("mana_cost", Integer),
+    ("hp_cost", Integer),
+    ("cooldown_turns", Integer),
+    ("requires_hit_roll", Boolean),
+    ("hit_stat", String(20)),
+    ("damage_stat", String(20)),
+    ("damage_dice_count", Integer),
+    ("damage_dice_type", Integer),
+    ("is_passive", Boolean),
+    ("passive_effect", Text),   # JSON
+    ("effect", Text),           # JSON
+    ("range_cells", Integer),
+    ("max_uses", Integer),
+    ("is_conditional", Boolean),
+    ("conditional_text", Text),
+]
+
+
 class AbilityLevelConfig(Base):
     __tablename__ = "ability_level_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ability_id: Mapped[int] = mapped_column(ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False)
     level: Mapped[int] = mapped_column(Integer, nullable=False)
-    config_json: Mapped[str] = mapped_column(Text, default="{}")  # JSON override for this level
+    # Typed fields (all nullable → inherit)
+    ability_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    aoe_radius: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    damage_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    custom_damage_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mana_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hp_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cooldown_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requires_hit_roll: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    hit_stat: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    damage_stat: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    damage_dice_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    damage_dice_type: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_passive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    passive_effect: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effect: Mapped[str | None] = mapped_column(Text, nullable=True)
+    range_cells: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_conditional: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    conditional_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
 
     ability: Mapped["Ability"] = relationship(back_populates="level_configs")
 
@@ -983,8 +1100,28 @@ class AbilityRankConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ability_id: Mapped[int] = mapped_column(ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False)
-    rank: Mapped[str] = mapped_column(String(20), nullable=False)  # common, uncommon, rare, epic, legendary, mythic, divine
-    config_json: Mapped[str] = mapped_column(Text, default="{}")  # JSON override for this rank
+    rank: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Same typed fields as level config
+    ability_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    aoe_radius: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    damage_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    custom_damage_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mana_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hp_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cooldown_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requires_hit_roll: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    hit_stat: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    damage_stat: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    damage_dice_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    damage_dice_type: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_passive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    passive_effect: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effect: Mapped[str | None] = mapped_column(Text, nullable=True)
+    range_cells: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_conditional: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    conditional_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
 
     ability: Mapped["Ability"] = relationship(back_populates="rank_configs")

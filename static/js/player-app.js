@@ -134,37 +134,42 @@ function confirmAction(msg) {
 // LOAD CHARACTER
 // ══════════════════════════════════════════════════════════════
 async function loadChar() {
-  char = await api.get(`/api/characters/${CHAR_ID}`);
-  charData = char;
-  $('#char-name').textContent = char.name;
-  document.title = `${char.name} — Combat Companion`;
-  renderAll();
-  renderCharSidebar();  // FIX 2
+  try {
+    char = await api.get(`/api/characters/${CHAR_ID}`);
+    charData = char;
+    $('#char-name').textContent = char.name;
+    document.title = `${char.name} — Combat Companion`;
+    renderAll();
+    renderCharSidebar();  // FIX 2
 
-  // Load race + profession badges (Rework Phase 4: multi-profession list)
-  const badges = [];
-  if (char.race_id) {
-    try { const r = await api.get(`/api/races-classes/races/${char.race_id}`); badges.push(r.name); } catch {}
+    // Load race + profession badges (Rework Phase 4: multi-profession list)
+    const badges = [];
+    if (char.race_id) {
+      try { const r = await api.get(`/api/races-classes/races/${char.race_id}`); badges.push(r.name); } catch {}
+    }
+    // Prefer the new professions array; fall back to legacy class_id
+    const profs = Array.isArray(char.professions) ? char.professions : [];
+    if (profs.length) {
+      badges.push(profs.map(p => `${p.name || 'Profession'} L${p.level}`).join(' / '));
+    }
+    // Rework v2: Character.class_id is gone; professions are the sole source of truth.
+    const rankLabel = (char.rank && char.rank !== 'common') ? ` · ${char.rank.charAt(0).toUpperCase()+char.rank.slice(1)}` : '';
+    const attrPoints = char.attribute_points_available || 0;
+    const attrLabel = attrPoints > 0 ? ` · ${attrPoints} point${attrPoints > 1 ? 's' : ''}` : '';
+    badges.push(`Lvl ${char.level ?? 0}${rankLabel}${attrLabel}`);
+    const el = $('#char-rc-badges');
+    if (el) el.textContent = badges.join(' · ');
+    // Update sidebar identity line with same info
+    const rcEl = $('#cs-rc');
+    if (rcEl) rcEl.textContent = badges.join(' · ');
+    // Render the dedicated Professions tab/panel
+    renderProfessionsPanel(profs);
+    // Rework Phase 7: check if the starting-item wizard is still open for this character
+    maybeShowStartingItemWizard();
+  } catch (e) {
+    console.error('loadChar failed:', e);
+    showToast('Failed to load character: ' + (e.message || 'unknown error'));
   }
-  // Prefer the new professions array; fall back to legacy class_id
-  const profs = Array.isArray(char.professions) ? char.professions : [];
-  if (profs.length) {
-    badges.push(profs.map(p => `${p.name || 'Profession'} L${p.level}`).join(' / '));
-  }
-  // Rework v2: Character.class_id is gone; professions are the sole source of truth.
-  const rankLabel = (char.rank && char.rank !== 'common') ? ` · ${char.rank.charAt(0).toUpperCase()+char.rank.slice(1)}` : '';
-  const attrPoints = char.attribute_points_available || 0;
-  const attrLabel = attrPoints > 0 ? ` · ${attrPoints} point${attrPoints > 1 ? 's' : ''}` : '';
-  badges.push(`Lvl ${char.level ?? 0}${rankLabel}${attrLabel}`);
-  const el = $('#char-rc-badges');
-  if (el) el.textContent = badges.join(' · ');
-  // Update sidebar identity line with same info
-  const rcEl = $('#cs-rc');
-  if (rcEl) rcEl.textContent = badges.join(' · ');
-  // Render the dedicated Professions tab/panel
-  renderProfessionsPanel(profs);
-  // Rework Phase 7: check if the starting-item wizard is still open for this character
-  maybeShowStartingItemWizard();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1659,6 +1664,8 @@ async function _applyMapStateTo(canvas, state) {
   // Map Builder: tiles + traps from state (if loaded via /api/map/{code})
   canvas.setTiles(state.active_floor_tiles || {}, state.active_floor_grid_type || 'square');
   canvas.setTraps((state._traps || []).filter(t => !t.is_hidden));
+  canvas.setMapChests(state._mapChests || []);
+  canvas.setPortals(state._portals || []);
   canvas.render();
 }
 
@@ -1713,6 +1720,22 @@ async function loadPlayerMapState() {
     state._markers  = [];
     state._objects  = [];
     state._traps    = [];
+  }
+  // Fetch builder entities for active floor
+  try {
+    const afid = state.active_floor_id;
+    if (afid) {
+      const allChests = await api.get(`/api/map-builder/${SESSION_CODE}/chests`);
+      state._mapChests = (allChests || []).filter(c => c.floor_id === afid && !c.is_hidden);
+      const allPortals = await api.get(`/api/map-builder/${SESSION_CODE}/portals`);
+      state._portals = (allPortals || []).filter(p => p.floor_id === afid);
+    } else {
+      state._mapChests = [];
+      state._portals = [];
+    }
+  } catch {
+    state._mapChests = [];
+    state._portals = [];
   }
   _lastMapState = state;
   // Update the empty-state overlay on the main grid.
@@ -1824,6 +1847,8 @@ function _playerCanvasOptions() {
       if (typeof updateTargetInfo === 'function') updateTargetInfo();
       if (typeof renderActionMenu === 'function') renderActionMenu();
     },
+    onMapChestClick: (chest) => openPlayerChestModal(chest),
+    onPortalClick: (portal) => openPlayerPortalModal(portal),
   };
 }
 
@@ -3190,6 +3215,129 @@ ws.on('map.trap_discovered', d => {
   showToast(`👁 Trap discovered!`);
   loadPlayerMapState();
 });
+ws.on('map.chest_added', () => loadPlayerMapState());
+ws.on('map.chest_updated', () => loadPlayerMapState());
+ws.on('map.chest_deleted', () => loadPlayerMapState());
+ws.on('map.portal_added', () => loadPlayerMapState());
+ws.on('map.portal_updated', () => loadPlayerMapState());
+ws.on('map.portal_deleted', () => loadPlayerMapState());
+
+// ══════════════════════════════════════════════════════════════
+// PLAYER CHEST & PORTAL INTERACTION
+// ══════════════════════════════════════════════════════════════
+async function openPlayerChestModal(chest) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:380px">
+      <h3>📦 ${chest.name || 'Chest'}</h3>
+      <div id="pc-chest-content" style="margin-top:8px">
+        <div style="text-align:center;padding:12px;color:var(--text-muted)">Loading...</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" id="pc-close">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#pc-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  try {
+    const data = await api.get(`/api/map-builder/chests/${chest.id}/items`);
+    const content = overlay.querySelector('#pc-chest-content');
+    const items = data.items || [];
+    
+    if (!items.length) {
+      content.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted)">Chest is empty</div>';
+      return;
+    }
+
+    if (data.is_locked) {
+      content.innerHTML = `
+        <div style="text-align:center;padding:12px">
+          <div style="font-size:1.5rem;margin-bottom:8px">🔒</div>
+          <div>This chest is locked</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">Lock DC: ${data.lock_dc}</div>
+        </div>`;
+      return;
+    }
+
+    content.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${items.map((it, i) => `
+          <label style="display:flex;align-items:center;gap:8px;background:var(--bg-surface-2);padding:8px;border-radius:var(--r-sm);cursor:pointer">
+            <input type="checkbox" class="pc-item-check" value="${i}" checked>
+            <span style="flex:1;font-size:0.8rem">${it.item_name || 'Unknown'} x${it.quantity || 1}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary btn-sm" id="pc-take-selected">Take Selected</button>
+        <button class="btn btn-ghost btn-sm" id="pc-take-all">Take All</button>
+      </div>`;
+
+    overlay.querySelector('#pc-take-selected').addEventListener('click', async () => {
+      const checked = Array.from(overlay.querySelectorAll('.pc-item-check:checked')).map(cb => parseInt(cb.value));
+      if (!checked.length) { showToast('Select items to take'); return; }
+      await takeChestItems(chest.id, checked, overlay);
+    });
+
+    overlay.querySelector('#pc-take-all').addEventListener('click', async () => {
+      await takeChestItems(chest.id, null, overlay);
+    });
+
+  } catch (e) {
+    console.error('Failed to load chest items', e);
+    overlay.querySelector('#pc-chest-content').innerHTML = '<div style="text-align:center;padding:12px;color:var(--accent-red)">Failed to load chest</div>';
+  }
+}
+
+async function takeChestItems(chestId, itemIndices, overlay) {
+  try {
+    const res = await api.post(`/api/map-builder/chests/${chestId}/take`, {
+      character_id: CHAR_ID,
+      item_indices: itemIndices,
+    });
+    showToast(`Taken ${res.taken?.length || 0} item(s)`);
+    overlay.remove();
+    loadPlayerMapState();
+    loadChar(); // refresh character data (inventory, currency)
+  } catch (e) {
+    showToast('Failed to take items');
+    console.error(e);
+  }
+}
+
+function openPlayerPortalModal(portal) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:320px;text-align:center">
+      <h3>🌀 ${portal.name || 'Portal'}</h3>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin:12px 0">Enter the portal?</p>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-ghost btn-sm" id="pp-cancel">Stay</button>
+        <button class="btn btn-primary btn-sm" id="pp-enter">Enter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#pp-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#pp-enter').addEventListener('click', async () => {
+    try {
+      const res = await api.post(`/api/map-builder/portals/${portal.id}/use`, { character_id: CHAR_ID });
+      showToast('Teleported!');
+      overlay.remove();
+      // If target floor changed, refresh map
+      if (res.target_floor_id) {
+        loadPlayerMapState();
+      }
+    } catch (e) {
+      showToast('Failed to use portal');
+      console.error(e);
+    }
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 // STAGE 10 — PLAYER ANNOUNCEMENTS
@@ -4680,7 +4828,7 @@ function renderAbilities() {
     const condTag = a.is_conditional
       ? `<span class="ab-cond" title="${(a.conditional_text || 'GM discretion').replace(/"/g,'&quot;')}">※ Conditional</span>`
       : '';
-    const rarity = a.rarity || 'common';
+    const rarity = a.ability_rank || a.rarity || 'common';
     const rarityChip = `<span class="rarity-chip rarity-${rarity}">${rarity}</span>`;
     const clickable = !onCd && a.ability_type !== 'passive' && !depleted;
     return `<div class="ability-card ${onCd ? 'on-cooldown' : ''} ${depleted ? 'depleted' : ''} ${a.ability_type === 'passive' ? 'passive' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${a.color||'#60a5fa'}">
@@ -4832,6 +4980,13 @@ ws.on('ability.cooldown_ready', d => {
     loadAbilities();
   }
 });
+ws.on('ability.rank_promoted', d => {
+  if (d.character_id == CHAR_ID) {
+    showToast(`⭐ ${d.ability_name} promoted to ${d.new_rank}!`);
+    loadAbilities();
+    loadChar();
+  }
+});
 ws.on('combat.attack_result', d => {
   if (d.target_id == CHAR_ID || d.attacker_id == CHAR_ID) {
     loadChar();
@@ -4975,7 +5130,7 @@ function openLevelUpModal() {
   const hpDie   = char.race?.hp_die       || char.hp_die       || 8;
   const hpDieStr = `${hpCount}d${hpDie}`;
 
-  let mode = 'attributes';  // 'attributes' | 'ability'
+  let mode = 'attributes';  // 'attributes' | 'rank'
   let selectedAbilityId = null;
 
   const overlay = document.createElement('div');
@@ -5000,16 +5155,16 @@ function openLevelUpModal() {
             Gain 1 attribute point to spend on any stat
           </div>
         </div>
-        <div class="lvlup-choice ${mode==='ability'?'selected':''}" data-mode="ability">
-          <div class="lc-title">⚡ Upgrade Ability</div>
+        <div class="lvlup-choice ${mode==='rank'?'selected':''}" data-mode="rank">
+          <div class="lc-title">⭐ Promote Ability Rank</div>
           <div class="lc-sub">
-            Increase level of one of your abilities
+            Increase rank of one of your abilities
           </div>
         </div>
       </div>
 
       <div id="ability-select-area" style="display:none;margin-bottom:12px">
-        <label style="font-size:0.78rem">Select ability to upgrade:</label>
+        <label style="font-size:0.78rem">Select ability to promote:</label>
         <select id="lvlup-ability-select" style="width:100%;font-size:0.78rem;margin-top:4px">
           <option value="">— Choose ability —</option>
         </select>
@@ -5035,10 +5190,16 @@ function openLevelUpModal() {
   (async () => {
     try {
       const abs = await api.get(`/api/characters/${CHAR_ID}/abilities`);
+      const _RANKS = ['common','uncommon','rare','epic','legendary','mythic','divine'];
       abs.forEach(a => {
+        const curRank = a.ability_rank || 'common';
+        const idx = _RANKS.indexOf(curRank);
+        const isMax = idx >= _RANKS.length - 1;
+        const nextRank = isMax ? null : _RANKS[idx + 1];
         const opt = document.createElement('option');
         opt.value = a.character_ability_id;
-        opt.textContent = `${a.name} (Lv.${a.ability_level || 0})`;
+        opt.textContent = `${a.name} (${curRank}${nextRank ? ' → ' + nextRank : ' — max'})`;
+        if (isMax) opt.disabled = true;
         abilitySelect.appendChild(opt);
       });
     } catch {}
@@ -5048,15 +5209,15 @@ function openLevelUpModal() {
     card.addEventListener('click', () => {
       mode = card.dataset.mode;
       overlay.querySelectorAll('.lvlup-choice').forEach(c => c.classList.toggle('selected', c === card));
-      abilityArea.style.display = mode === 'ability' ? 'block' : 'none';
+      abilityArea.style.display = mode === 'rank' ? 'block' : 'none';
     });
   });
 
   overlay.querySelector('#lvlup-confirm').addEventListener('click', async () => {
-    if (mode === 'ability') {
+    if (mode === 'rank') {
       selectedAbilityId = parseInt(abilitySelect.value);
       if (!selectedAbilityId) {
-        err.textContent = 'Please select an ability to upgrade';
+        err.textContent = 'Please select an ability to promote';
         return;
       }
     }
@@ -5064,7 +5225,7 @@ function openLevelUpModal() {
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Rolling…';
     const payload = { choice: mode };
-    if (mode === 'ability') payload.ability_id = selectedAbilityId;
+    if (mode === 'rank') payload.ability_id = selectedAbilityId;
 
     try {
       const res = await api.post(`/api/characters/${CHAR_ID}/level-up`, payload);
@@ -5074,6 +5235,8 @@ function openLevelUpModal() {
       const spiritRolls = (res.chosen?.spirit_hp_rolls || []).join(' + ');
       const spiritTotal = res.chosen?.spirit_gained ?? '?';
       const abilityName = res.chosen?.ability_name || '';
+      const prevAbilityRank = res.chosen?.previous_ability_rank || '';
+      const newAbilityRank = res.chosen?.ability_rank || '';
 
       overlay.innerHTML = `
         <div class="modal-content" style="max-width:480px;text-align:center">
@@ -5089,7 +5252,7 @@ function openLevelUpModal() {
           <div style="font-size:1rem;font-weight:600;color:#60a5fa;margin:4px 0">+${res.chosen?.mana_gained ?? 0} Mana</div>
           ${mode === 'attributes'
             ? `<div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">+1 Attribute Point</div>`
-            : `<div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">⚡ ${abilityName} +1 Level</div>`}
+            : `<div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">⭐ ${abilityName}<br>${prevAbilityRank} → ${newAbilityRank}</div>`}
           ${res.chosen?.rank_promoted ? `<div style="font-size:1rem;font-weight:600;color:#f472b6;margin:4px 0">⭐ Promoted to ${res.rank}!</div>` : ''}
           <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
             Level ${res.level} · ${res.rank} · Next: <strong>${res.xp_to_next}</strong> XP
@@ -5100,6 +5263,7 @@ function openLevelUpModal() {
       addLog(`⬆ Level ${res.level} · +${total} HP · ${res.rank}`);
 
       loadChar();
+      loadAbilities();
     } catch (e) {
       err.textContent = e.message || 'Level-up failed';
       confirmBtn.disabled = false;
@@ -5107,130 +5271,6 @@ function openLevelUpModal() {
     }
   });
 }
-
-  const rank = (char.rank || 'common').toLowerCase();
-  const rankIdx = _RANK_ORDER.indexOf(rank);
-  const isMaxRank = rankIdx >= _RANK_ORDER.length - 1;
-  const nextRank = isMaxRank ? null : _RANK_ORDER[rankIdx + 1];
-
-  // Race HP die copy (if no race, backend defaults to 1d8)
-  const hpCount = char.race?.hp_dice_count || char.hp_dice_count || 1;
-  const hpDie   = char.race?.hp_die       || char.hp_die       || 8;
-  const hpDieStr = `${hpCount}d${hpDie}`;
-
-  let mode = 'attributes';  // 'attributes' | 'rank'
-
-  const overlay = document.createElement('div');
-  overlay.id = 'levelup-modal';
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-content" style="max-width:520px">
-      <h2 style="margin:0 0 4px">⬆ Level ${level}</h2>
-      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
-        Current: <strong>${rank}</strong> rank · Level ${level} · ${xp} XP
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div class="lvlup-choice ${mode==='attributes'?'selected':''}" data-mode="attributes">
-          <div class="lc-title">📈 Gain Attribute Point</div>
-          <div class="lc-sub">
-            Roll ${hpDieStr} for HP + mana + gain <strong>2 attribute points</strong><br>
-            Level: ${level} → ${level + 1}
-          </div>
-        </div>
-        <div class="lvlup-choice ${mode==='rank'?'selected':''} ${isMaxRank ? 'disabled' : ''}" data-mode="rank"
-             ${isMaxRank ? 'title="Already at maximum rank (divine)"' : ''}>
-          <div class="lc-title">⭐ Promote Rank</div>
-          <div class="lc-sub">
-            ${isMaxRank ? 'Already at maximum rank' : `${rank} → ${nextRank}`}<br>
-            Level stays at ${level} · No HP or Mana increase
-          </div>
-        </div>
-      </div>
-
-      <div id="lvlup-error" class="error-msg" style="color:var(--accent-red);font-size:0.78rem;min-height:14px;margin-bottom:6px"></div>
-
-      <div style="display:flex;gap:6px;justify-content:flex-end">
-        <button class="btn btn-ghost btn-sm" id="lvlup-cancel">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="lvlup-confirm">⚔ Confirm</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('#lvlup-cancel').addEventListener('click', () => overlay.remove());
-
-  const err = overlay.querySelector('#lvlup-error');
-  const confirmBtn = overlay.querySelector('#lvlup-confirm');
-
-  overlay.querySelectorAll('.lvlup-choice').forEach(card => {
-    card.addEventListener('click', () => {
-      if (card.classList.contains('disabled')) return;
-      mode = card.dataset.mode;
-      overlay.querySelectorAll('.lvlup-choice').forEach(c => c.classList.toggle('selected', c === card));
-    });
-  });
-
-  overlay.querySelector('#lvlup-confirm').addEventListener('click', async () => {
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = mode === 'attributes' ? 'Rolling…' : 'Promoting…';
-    const payload = { choice: mode };
-
-    try {
-      const res = await api.post(`/api/characters/${CHAR_ID}/level-up`, payload);
-
-      if (mode === 'attributes') {
-        const rolls = (res.chosen?.hp_rolls || []).join(' + ');
-        const total = res.chosen?.hp_gained ?? '?';
-        const spiritRolls = (res.chosen?.spirit_hp_rolls || []).join(' + ');
-        const spiritTotal = res.chosen?.spirit_gained ?? '?';
-        overlay.innerHTML = `
-          <div class="modal-content" style="max-width:480px;text-align:center">
-            <h2 style="margin-top:0">🎉 Level ${res.level} achieved!</h2>
-            <div style="font-size:2rem;font-weight:800;color:var(--accent-green);margin:8px 0">+${total} HP</div>
-            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
-              ${res.chosen?.hp_dice_count}d${res.chosen?.hp_die}: ${rolls || '?'}
-            </div>
-            <div style="font-size:1.2rem;font-weight:700;color:#a855f7;margin:4px 0">+${spiritTotal} Spiritual HP</div>
-            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
-              ${res.chosen?.spirit_hp_dice_count}d${res.chosen?.spirit_hp_die}: ${spiritRolls || '?'}
-            </div>
-            <div style="font-size:1rem;font-weight:600;color:#60a5fa;margin:4px 0">+${res.chosen?.mana_gained ?? 0} Mana</div>
-            <div style="font-size:1rem;font-weight:600;color:#fbbf24;margin:4px 0">+1 Attribute Point</div>
-            ${res.chosen?.rank_promoted ? `<div style="font-size:1rem;font-weight:600;color:#f472b6;margin:4px 0">⭐ Promoted to ${res.rank}!</div>` : ''}
-            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
-              Available points: <strong>${res.attribute_points_available}</strong> · Next threshold: <strong>${res.xp_to_next}</strong> XP
-            </div>
-            <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
-          </div>`;
-        overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
-        addLog(`⬆ Level ${res.level} · +${total} HP · +1 point · ${res.rank}`);
-      } else {
-        // Rank promotion
-        overlay.innerHTML = `
-          <div class="modal-content" style="max-width:480px;text-align:center">
-            <h2 style="margin-top:0">⭐ Rank Promoted!</h2>
-            <div style="font-size:1.5rem;font-weight:700;color:#fbbf24;margin:8px 0">${res.chosen?.previous_rank} → ${res.rank}</div>
-            <div style="font-size:0.86rem;color:var(--text-muted);margin:4px 0">
-              Level stays at ${res.level}
-            </div>
-            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:8px">
-              Next threshold: <strong>${res.xp_to_next}</strong> XP
-            </div>
-            <button class="btn btn-primary btn-sm" id="lvlup-close" style="margin-top:14px">Continue</button>
-          </div>`;
-        overlay.querySelector('#lvlup-close').addEventListener('click', () => overlay.remove());
-        addLog(`⭐ ${c.name || 'Character'} promoted to ${res.rank} (level ${res.level})`);
-      }
-      await loadChar();
-      await loadAbilities();
-    } catch (e) {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = '⚔ Confirm & Roll';
-      const d = e?.body?.detail;
-      err.textContent = typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || e.message || 'Level-up failed');
-    }
-  });
-
 
 // Wire the Level-up CTA once at load.
 document.addEventListener('click', e => {
@@ -5240,22 +5280,38 @@ document.addEventListener('click', e => {
 // ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
-loadChar();
-loadInventory();
-loadCurrency();
-loadStatusEffects();
-// Rework v3 Phase 1: always-on battle grid in the Main tab.
-initPlayerMainGrid();
-loadCombatBanner();
-loadPlayerQuests();
-loadPlayerAnnouncements();
-loadPlayerNotes();
-loadPlayerTimer();
-restoreGmTimer();
-loadTableView();
-renderBonusesPenalties();
-loadAbilities();  // FIX 2: load early so Action Menu (Main tab) knows abilities
-initFreeRollWidget();  // FIX 4
+window.addEventListener('error', e => {
+  console.error('Global error:', e.error);
+  showToast('JS Error: ' + (e.error?.message || 'unknown'));
+});
+window.addEventListener('unhandledrejection', e => {
+  console.error('Unhandled rejection:', e.reason);
+  showToast('Async Error: ' + (e.reason?.message || 'unknown'));
+});
+
+(async function init() {
+  try {
+    await loadChar();
+    loadInventory();
+    loadCurrency();
+    loadStatusEffects();
+    // Rework v3 Phase 1: always-on battle grid in the Main tab.
+    initPlayerMainGrid();
+    loadCombatBanner();
+    loadPlayerQuests();
+    loadPlayerAnnouncements();
+    loadPlayerNotes();
+    loadPlayerTimer();
+    restoreGmTimer();
+    loadTableView();
+    renderBonusesPenalties();
+    loadAbilities();  // FIX 2: load early so Action Menu (Main tab) knows abilities
+    initFreeRollWidget();  // FIX 4
+  } catch (e) {
+    console.error('Init failed:', e);
+    showToast('Page init failed: ' + (e.message || 'unknown'));
+  }
+})();
 
 // FIX 1: WS listeners for Table View updates
 ws.on('table.updated', () => {

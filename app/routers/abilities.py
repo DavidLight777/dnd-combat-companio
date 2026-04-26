@@ -192,9 +192,35 @@ async def get_character_abilities(char_id: int, db: AsyncSession = Depends(get_s
     result = await db.execute(
         select(CharacterAbility).where(CharacterAbility.character_id == char_id)
     )
+    cas = result.scalars().all()
+    if not cas:
+        return []
+
+    # Batch-load rank/level configs to avoid async lazy-load issues
+    ability_ids = [ca.ability_id for ca in cas]
+    lc_result = await db.execute(
+        select(AbilityLevelConfig).where(AbilityLevelConfig.ability_id.in_(ability_ids))
+    )
+    rc_result = await db.execute(
+        select(AbilityRankConfig).where(AbilityRankConfig.ability_id.in_(ability_ids))
+    )
+    lc_map = {}
+    for lc in lc_result.scalars().all():
+        lc_map.setdefault(lc.ability_id, []).append(lc)
+    rc_map = {}
+    for rc in rc_result.scalars().all():
+        rc_map.setdefault(rc.ability_id, []).append(rc)
+
     out = []
-    for ca in result.scalars().all():
-        d = _ability_dict(ca.ability)
+    for ca in cas:
+        # Rework: resolve ability with level + rank configs applied
+        d = _resolve_ability(
+            ca.ability,
+            ca.ability_level or 0,
+            ca.ability_rank or "common",
+            level_configs=lc_map.get(ca.ability_id, []),
+            rank_configs=rc_map.get(ca.ability_id, []),
+        )
         d["character_ability_id"] = ca.id
         d["is_unlocked"] = ca.is_unlocked
         d["cooldown_remaining"] = ca.cooldown_remaining
@@ -373,6 +399,69 @@ async def _remove_passive_bonuses(char_id: int, ability: Ability, db: AsyncSessi
             await db.delete(m)
 
 
+async def _apply_resolved_passive_bonuses(char_id: int, resolved_ability: dict, db: AsyncSession):
+    """Apply passive bonuses from a resolved ability dict (after rank/level configs applied).
+    
+    Similar to _apply_passive_bonuses but works with a dict instead of ORM object.
+    """
+    pe = resolved_ability.get("passive_effect", {})
+    bonuses = pe.get("bonuses", []) if isinstance(pe, dict) else []
+    ability_name = resolved_ability.get("name", "Unknown Ability")
+    source_name = f"Ability: {ability_name}"
+    
+    # Load character once for direct-mutation bonuses.
+    char = await db.get(Character, char_id)
+    
+    for b in bonuses:
+        btype = b.get("bonus_type", "")
+        val = int(b.get("value", 0) or 0)
+        
+        if btype == "stat_bonus":
+            stat = b.get("stat", "strength")
+            db.add(StatModifier(
+                character_id=char_id, stat_name=stat,
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "attack_bonus":
+            db.add(AttackModifier(
+                character_id=char_id, name=source_name, value=val, is_active=True,
+            ))
+        elif btype == "damage_bonus":
+            db.add(DamageModifier(
+                character_id=char_id, name=source_name, value=val, is_active=True,
+            ))
+        elif btype in ("damage_reduction_flat", "damage_reduction_pct"):
+            db.add(StatModifier(
+                character_id=char_id, stat_name=btype,
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype in ("hp_die_bonus", "hp_die_count_bonus"):
+            db.add(StatModifier(
+                character_id=char_id, stat_name=btype,
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "max_hp_bonus" and char:
+            char.max_hp = (char.max_hp or 0) + val
+            char.current_hp = (char.current_hp or 0) + val
+            db.add(StatModifier(
+                character_id=char_id, stat_name="max_hp_bonus",
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "max_mana_bonus" and char:
+            char.mana_max = (char.mana_max or 0) + val
+            char.mana_current = (char.mana_current or 0) + val
+            db.add(StatModifier(
+                character_id=char_id, stat_name="max_mana_bonus",
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+        elif btype == "mana_regen_bonus" and char:
+            char.mana_regen_per_turn = (char.mana_regen_per_turn or 0) + val
+            db.add(StatModifier(
+                character_id=char_id, stat_name="mana_regen_bonus",
+                name=source_name, value=val, is_active=True, source="ability",
+            ))
+
+
 # ── Use ability ──────────────────────────────────────────────
 @router.post("/character-abilities/{ca_id}/use")
 async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = Depends(get_session)):
@@ -398,7 +487,24 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     if ca.cooldown_remaining > 0:
         raise HTTPException(400, f"Ability on cooldown ({ca.cooldown_remaining} turns remaining)")
 
-    ability = ca.ability
+    # Load rank/level configs explicitly to avoid async lazy-load issues
+    lc_result = await db.execute(
+        select(AbilityLevelConfig).where(AbilityLevelConfig.ability_id == ca.ability_id)
+    )
+    rc_result = await db.execute(
+        select(AbilityRankConfig).where(AbilityRankConfig.ability_id == ca.ability_id)
+    )
+    level_configs = lc_result.scalars().all()
+    rank_configs = rc_result.scalars().all()
+
+    # Rework: resolve ability with level + rank configs applied
+    ability = _resolve_ability(
+        ca.ability,
+        ca.ability_level or 0,
+        ca.ability_rank or "common",
+        level_configs=level_configs,
+        rank_configs=rank_configs,
+    )
     char = await db.get(Character, ca.character_id)
     if not char:
         raise HTTPException(404, "Character not found")
@@ -406,17 +512,17 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     # Rework v2: limited-use check. null = infinite, 0 = depleted.
     if ca.current_uses is not None and ca.current_uses <= 0:
         raise HTTPException(400, {"error": True, "code": "NO_USES_LEFT",
-                                  "message": f"{ability.name} has no uses left."})
+                                  "message": f"{ability['name']} has no uses left."})
 
     # Rework v2: conditional-only features have no mechanics — emit flavor log.
-    if ability.is_conditional:
+    if ability["is_conditional"]:
         if ca.current_uses is not None:
             ca.current_uses = max(0, ca.current_uses - 1)
         await db.commit()
         return {
             "ok": True,
-            "ability_name": ability.name,
-            "results": [ability.conditional_text or f"{ability.name} — GM call."],
+            "ability_name": ability["name"],
+            "results": [ability["conditional_text"] or f"{ability['name']} — GM call."],
             "character_id": char.id,
             "current_hp": char.current_hp,
             "mana_current": char.mana_current,
@@ -428,7 +534,7 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     hit_info = body.get("hit_roll") or None
     hit_ok = True
     is_crit = False
-    if ability.requires_hit_roll and hit_info is not None:
+    if ability["requires_hit_roll"] and hit_info is not None:
         hit_ok = bool(hit_info.get("hit", True))
         is_crit = bool(hit_info.get("critical", False))
 
@@ -441,36 +547,36 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
         return int(v) if (v is not None and int(v) > 0) else int(default_dt)
 
     results = []
-    if ability.requires_hit_roll and hit_info is not None:
+    if ability["requires_hit_roll"] and hit_info is not None:
         bd = hit_info.get("breakdown") or f"Total {hit_info.get('total','?')}"
         if not hit_ok:
-            results.append(f"✗ {ability.name} missed ({bd})")
+            results.append(f"✗ {ability['name']} missed ({bd})")
         elif is_crit:
-            results.append(f"✨ CRIT — {ability.name} ({bd})")
+            results.append(f"✨ CRIT — {ability['name']} ({bd})")
         else:
-            results.append(f"✓ {ability.name} hits ({bd})")
+            results.append(f"✓ {ability['name']} hits ({bd})")
 
     # Mana cost
-    if ability.mana_cost > 0:
+    if ability["mana_cost"] > 0:
         eff_max = get_effective_mana_max(char.mana_max)
-        mana_result = spend_mana(char.mana_current, eff_max, ability.mana_cost)
+        mana_result = spend_mana(char.mana_current, eff_max, ability["mana_cost"])
         if not mana_result["success"]:
             raise HTTPException(400, {"error": True, "code": "NOT_ENOUGH_MANA",
                                       "message": mana_result["message"]})
         char.mana_current = mana_result["mana_current"]
-        results.append(f"Spent {ability.mana_cost} mana")
+        results.append(f"Spent {ability['mana_cost']} mana")
 
     # HP cost
-    if ability.hp_cost > 0:
-        if char.current_hp <= ability.hp_cost:
+    if ability["hp_cost"] > 0:
+        if char.current_hp <= ability["hp_cost"]:
             raise HTTPException(400, {"error": True, "code": "NOT_ENOUGH_HP",
-                                      "message": f"Need {ability.hp_cost} HP but only have {char.current_hp}"})
-        char.current_hp -= ability.hp_cost
-        results.append(f"Spent {ability.hp_cost} HP")
+                                      "message": f"Need {ability['hp_cost']} HP but only have {char.current_hp}"})
+        char.current_hp -= ability["hp_cost"]
+        results.append(f"Spent {ability['hp_cost']} HP")
 
     # Parse effects
     try:
-        eff_data = json.loads(ability.effect) if isinstance(ability.effect, str) else ability.effect
+        eff_data = json.loads(ability["effect"]) if isinstance(ability["effect"], str) else ability["effect"]
         effects_list = eff_data.get("effects", []) if isinstance(eff_data, dict) else eff_data if isinstance(eff_data, list) else []
     except Exception:
         effects_list = []
@@ -486,14 +592,14 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     # the effects list doesn't already carry an explicit damage entry,
     # so manually-authored abilities stay untouched.
     if (
-        ability.damage_dice_count
-        and ability.damage_dice_type
+        ability["damage_dice_count"]
+        and ability["damage_dice_type"]
         and not any(isinstance(e, dict) and e.get("type") == "damage" for e in effects_list)
     ):
         effects_list = list(effects_list) + [{
             "type": "damage",
-            "dice_count": int(ability.damage_dice_count),
-            "dice_type":  int(ability.damage_dice_type),
+            "dice_count": int(ability["damage_dice_count"]),
+            "dice_type":  int(ability["damage_dice_type"]),
             "flat_bonus": 0,
             # Marker so we know in the damage branch below to also add
             # the caster's damage_stat modifier — matches what the
@@ -515,15 +621,15 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     _has_damage = any(
         isinstance(e, dict) and e.get("type") == "damage" for e in effects_list
     )
-    _is_offensive = bool(ability.requires_hit_roll) or _has_damage
+    _is_offensive = bool(ability["requires_hit_roll"]) or _has_damage
     if _is_offensive and (not target_id or int(target_id) == char.id):
         # target_type=='self' is an edge case — a self-damage ability
         # is legal, but any other target_type means the client forgot
         # to send target_id.
-        if ability.target_type not in ("self",):
+        if ability["target_type"] not in ("self",):
             raise HTTPException(400, {
                 "error": True, "code": "TARGET_REQUIRED",
-                "message": f"{ability.name} needs a target — pick an enemy.",
+                "message": f"{ability['name']} needs a target — pick an enemy.",
             })
     if target_id and int(target_id) != char.id:
         target_char = await db.get(Character, int(target_id))
@@ -538,13 +644,13 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     # `range_cells` in (None, 0) which encode "unlimited range".
     if target_char.id != char.id:
         from app.combat_range import check_range
-        _rc = await check_range(char, target_char, ability.range_cells, db)
+        _rc = await check_range(char, target_char, ability["range_cells"], db)
         if not _rc.ok:
             raise HTTPException(403, {
                 "error": True, "code": "OUT_OF_RANGE",
                 "message": (
                     f"Out of range — {target_char.name} is {_rc.distance_cells:g} cells away, "
-                    f"{ability.name} reaches {_rc.max_cells}."
+                    f"{ability['name']} reaches {_rc.max_cells}."
                 ),
                 "distance_cells": _rc.distance_cells,
                 "max_cells": _rc.max_cells,
@@ -555,7 +661,7 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     deferred_damage_effects = []
     needs_defense = False
     if (
-        ability.requires_hit_roll
+        ability["requires_hit_roll"]
         and hit_info is not None
         and hit_ok
         and not is_crit
@@ -644,7 +750,7 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
             dur = eff.get("duration_turns", 3)
             mod = StatModifier(
                 character_id=target_char.id, stat_name=stat,
-                name=f"{ability.name} boost", value=value,
+                name=f"{ability['name']} boost", value=value,
                 is_active=True, source="potion",
                 expires_at=datetime.now(timezone.utc) + timedelta(minutes=dur * 2),
             )
@@ -672,7 +778,7 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
                 results.append(f"Damage pending — waiting for defense reaction")
                 continue
             # Rework Phase 6: if a hit roll was required and it missed → skip damage entirely
-            if ability.requires_hit_roll and hit_info is not None and not hit_ok:
+            if ability["requires_hit_roll"] and hit_info is not None and not hit_ok:
                 results.append(f"Damage skipped — attack missed")
                 continue
             dc = _override_dc(eff.get("dice_count", 1))
@@ -692,9 +798,9 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
             results.append(f"Effect: {eff.get('description', '')}")
 
     # Start cooldown
-    if ability.cooldown_turns > 0:
-        ca.cooldown_remaining = ability.cooldown_turns
-        results.append(f"Cooldown: {ability.cooldown_turns} turns")
+    if ability["cooldown_turns"] > 0:
+        ca.cooldown_remaining = ability["cooldown_turns"]
+        results.append(f"Cooldown: {ability['cooldown_turns']} turns")
 
     # Rework v2: decrement the per-use counter when set.
     if ca.current_uses is not None:
@@ -731,14 +837,14 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
             critical=False,
             fumble=False,
             hit=True,
-            weapon_name=ability.name,
+            weapon_name=ability["name"],
             ability_context=ability_context,
         )
         await broadcast_defense_request(pd)
         await db.commit()
         return {
             "ok": True,
-            "ability_name": ability.name,
+            "ability_name": ability["name"],
             "results": results,
             "character_id": char.id,
             "current_hp": char.current_hp,
@@ -752,7 +858,7 @@ async def use_ability(ca_id: int, body: dict | None = None, db: AsyncSession = D
     await db.commit()
     return {
         "ok": True,
-        "ability_name": ability.name,
+        "ability_name": ability["name"],
         "results": results,
         "character_id": char.id,
         "current_hp": char.current_hp,
@@ -851,6 +957,62 @@ async def _apply_ability_damage_only(
 
 
 # ══════════════════════════════════════════════════════════════
+# ABILITY CONFIG HELPERS
+# ══════════════════════════════════════════════════════════════
+_CONFIG_SCALAR_FIELDS = [
+    "ability_type", "target_type", "aoe_radius",
+    "damage_type", "custom_damage_type",
+    "mana_cost", "hp_cost", "cooldown_turns",
+    "requires_hit_roll", "hit_stat", "damage_stat",
+    "damage_dice_count", "damage_dice_type",
+    "is_passive", "range_cells", "max_uses",
+    "is_conditional", "conditional_text", "notes",
+]
+_CONFIG_JSON_FIELDS = ["passive_effect", "effect"]
+
+
+def _config_to_dict(cfg) -> dict:
+    """Serialize a typed level/rank config to a flat dict."""
+    d = {"id": cfg.id, "ability_id": cfg.ability_id}
+    if hasattr(cfg, "level"):
+        d["level"] = cfg.level
+    if hasattr(cfg, "rank"):
+        d["rank"] = cfg.rank
+    for f in _CONFIG_SCALAR_FIELDS:
+        v = getattr(cfg, f, None)
+        # Don't emit nulls so the UI knows "not set / inherit"
+        if v is not None:
+            d[f] = v
+    for f in _CONFIG_JSON_FIELDS:
+        v = getattr(cfg, f, None)
+        if v:
+            try:
+                d[f] = json.loads(v)
+            except Exception:
+                d[f] = v
+    return d
+
+
+def _apply_config_body(cfg, body: dict):
+    """Write a request body into a typed config model."""
+    for f in _CONFIG_SCALAR_FIELDS:
+        if f in body:
+            v = body[f]
+            # Empty string / explicit null → unset (inherit)
+            if v is None or (isinstance(v, str) and v.strip() == ""):
+                setattr(cfg, f, None)
+            else:
+                setattr(cfg, f, v)
+    for f in _CONFIG_JSON_FIELDS:
+        if f in body:
+            v = body[f]
+            if v is None or v == "" or v == {} or v == []:
+                setattr(cfg, f, None)
+            else:
+                setattr(cfg, f, json.dumps(v) if isinstance(v, (dict, list)) else str(v))
+
+
+# ══════════════════════════════════════════════════════════════
 # ABILITY LEVEL / RANK CONFIGS
 # ══════════════════════════════════════════════════════════════
 @router.get("/abilities/{ability_id}/level-configs")
@@ -861,7 +1023,7 @@ async def list_ability_level_configs(ability_id: int, db: AsyncSession = Depends
     result = await db.execute(
         select(AbilityLevelConfig).where(AbilityLevelConfig.ability_id == ability_id).order_by(AbilityLevelConfig.level)
     )
-    return [{"id": c.id, "ability_id": c.ability_id, "level": c.level, "config_json": json.loads(c.config_json) if c.config_json else {}} for c in result.scalars().all()]
+    return [_config_to_dict(c) for c in result.scalars().all()]
 
 
 @router.post("/abilities/{ability_id}/level-configs")
@@ -870,8 +1032,6 @@ async def create_ability_level_config(ability_id: int, body: dict, db: AsyncSess
     if not a:
         raise HTTPException(404, "Ability not found")
     level = int(body.get("level", 0))
-    config = body.get("config", {})
-    # Upsert
     result = await db.execute(
         select(AbilityLevelConfig).where(
             AbilityLevelConfig.ability_id == ability_id,
@@ -880,13 +1040,14 @@ async def create_ability_level_config(ability_id: int, body: dict, db: AsyncSess
     )
     existing = result.scalar_one_or_none()
     if existing:
-        existing.config_json = json.dumps(config)
+        _apply_config_body(existing, body)
     else:
-        existing = AbilityLevelConfig(ability_id=ability_id, level=level, config_json=json.dumps(config))
+        existing = AbilityLevelConfig(ability_id=ability_id, level=level)
+        _apply_config_body(existing, body)
         db.add(existing)
     await db.commit()
     await db.refresh(existing)
-    return {"id": existing.id, "ability_id": existing.ability_id, "level": existing.level, "config_json": json.loads(existing.config_json) if existing.config_json else {}}
+    return _config_to_dict(existing)
 
 
 @router.delete("/abilities/{ability_id}/level-configs/{config_id}")
@@ -907,7 +1068,7 @@ async def list_ability_rank_configs(ability_id: int, db: AsyncSession = Depends(
     result = await db.execute(
         select(AbilityRankConfig).where(AbilityRankConfig.ability_id == ability_id).order_by(AbilityRankConfig.rank)
     )
-    return [{"id": c.id, "ability_id": c.ability_id, "rank": c.rank, "config_json": json.loads(c.config_json) if c.config_json else {}, "notes": c.notes} for c in result.scalars().all()]
+    return [_config_to_dict(c) for c in result.scalars().all()]
 
 
 @router.post("/abilities/{ability_id}/rank-configs")
@@ -916,8 +1077,6 @@ async def create_ability_rank_config(ability_id: int, body: dict, db: AsyncSessi
     if not a:
         raise HTTPException(404, "Ability not found")
     rank = str(body.get("rank", "")).lower()
-    config = body.get("config", {})
-    notes = body.get("notes", "")
     result = await db.execute(
         select(AbilityRankConfig).where(
             AbilityRankConfig.ability_id == ability_id,
@@ -926,14 +1085,14 @@ async def create_ability_rank_config(ability_id: int, body: dict, db: AsyncSessi
     )
     existing = result.scalar_one_or_none()
     if existing:
-        existing.config_json = json.dumps(config)
-        existing.notes = notes
+        _apply_config_body(existing, body)
     else:
-        existing = AbilityRankConfig(ability_id=ability_id, rank=rank, config_json=json.dumps(config), notes=notes)
+        existing = AbilityRankConfig(ability_id=ability_id, rank=rank)
+        _apply_config_body(existing, body)
         db.add(existing)
     await db.commit()
     await db.refresh(existing)
-    return {"id": existing.id, "ability_id": existing.ability_id, "rank": existing.rank, "config_json": json.loads(existing.config_json) if existing.config_json else {}, "notes": existing.notes}
+    return _config_to_dict(existing)
 
 
 @router.delete("/abilities/{ability_id}/rank-configs/{config_id}")
@@ -947,6 +1106,53 @@ async def delete_ability_rank_config(ability_id: int, config_id: int, db: AsyncS
 
 
 # ══════════════════════════════════════════════════════════════
+# RESOLVE ABILITY (effective stats after level + rank configs)
+# ══════════════════════════════════════════════════════════════
+def _resolve_ability(
+    ability: Ability,
+    level: int = 0,
+    rank: str = "common",
+    level_configs=None,
+    rank_configs=None,
+) -> dict:
+    """Return a flat dict of ability fields after applying level & rank configs.
+    Non-null fields on configs override base ability fields.
+    `level_configs` and `rank_configs` can be provided explicitly to avoid lazy-load issues in async sessions."""
+    base = _ability_dict(ability)
+    # Apply level config
+    _level_configs = level_configs if level_configs is not None else (ability.level_configs or [])
+    for lc in _level_configs:
+        if lc.level == level:
+            for f in _CONFIG_SCALAR_FIELDS + _CONFIG_JSON_FIELDS:
+                v = getattr(lc, f, None)
+                if v is not None:
+                    if f in _CONFIG_JSON_FIELDS:
+                        try:
+                            base[f] = json.loads(v)
+                        except Exception:
+                            base[f] = v
+                    else:
+                        base[f] = v
+            break
+    # Apply rank config
+    _rank_configs = rank_configs if rank_configs is not None else (ability.rank_configs or [])
+    for rc in _rank_configs:
+        if rc.rank == rank:
+            for f in _CONFIG_SCALAR_FIELDS + _CONFIG_JSON_FIELDS:
+                v = getattr(rc, f, None)
+                if v is not None:
+                    if f in _CONFIG_JSON_FIELDS:
+                        try:
+                            base[f] = json.loads(v)
+                        except Exception:
+                            base[f] = v
+                    else:
+                        base[f] = v
+            break
+    return base
+
+
+# ══════════════════════════════════════════════════════════════
 # GM MANUAL ABILITY RANK PROMOTION
 # ══════════════════════════════════════════════════════════════
 @router.post("/characters/{char_id}/abilities/{char_ability_id}/promote-rank")
@@ -956,6 +1162,16 @@ async def promote_ability_rank(char_id: int, char_ability_id: int, body: dict | 
     ca = await db.get(CharacterAbility, char_ability_id)
     if not ca or ca.character_id != char_id:
         raise HTTPException(404, "Ability not found on this character")
+
+    # Load rank/level configs explicitly to avoid async lazy-load issues
+    lc_result = await db.execute(
+        select(AbilityLevelConfig).where(AbilityLevelConfig.ability_id == ca.ability_id)
+    )
+    rc_result = await db.execute(
+        select(AbilityRankConfig).where(AbilityRankConfig.ability_id == ca.ability_id)
+    )
+    level_configs = lc_result.scalars().all()
+    rank_configs = rc_result.scalars().all()
 
     cur_rank = (ca.ability_rank or "common").lower()
     try:
@@ -967,6 +1183,19 @@ async def promote_ability_rank(char_id: int, char_ability_id: int, body: dict | 
         raise HTTPException(400, "Already at maximum rank (divine)")
 
     ca.ability_rank = RANK_ORDER[idx + 1]
+    # Rework: reapply passive bonuses from resolved rank config
+    try:
+        await _remove_passive_bonuses(char_id, ca.ability, db)
+        resolved = _resolve_ability(
+            ca.ability,
+            ca.ability_level or 0,
+            ca.ability_rank,
+            level_configs=level_configs,
+            rank_configs=rank_configs,
+        )
+        await _apply_resolved_passive_bonuses(char_id, resolved, db)
+    except Exception:
+        pass  # Non-fatal — bonuses are best-effort
     await db.commit()
     await db.refresh(ca)
 

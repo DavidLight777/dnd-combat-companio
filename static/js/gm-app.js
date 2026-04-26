@@ -47,6 +47,12 @@ const api = {
   async del(u) { const r = await fetch(u, { method:'DELETE' }); if (!r.ok) throw new Error(await r.text()); return r.json(); },
 };
 
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // ── Toast ────────────────────────────────────────────────────
 function showToast(msg) {
   const t = document.createElement('div');
@@ -2109,7 +2115,7 @@ function openGmLevelUpModal(character) {
   const hpDie = character.hp_die || 8;
   const hpDieStr = `${hpCount}d${hpDie}`;
 
-  let mode = 'attributes';  // 'attributes' | 'ability'
+  let mode = 'attributes';  // 'attributes' | 'rank'
   let selectedAbilityId = null;
 
   const overlay = document.createElement('div');
@@ -2133,10 +2139,10 @@ function openGmLevelUpModal(character) {
             Gain 1 attribute point
           </div>
         </div>
-        <div class="gm-lvlup-choice ${mode==='ability'?'selected':''}" data-mode="ability" style="padding:12px;border:2px solid var(--border);border-radius:var(--r-md);cursor:pointer;transition:all .15s">
-          <div style="font-weight:700;font-size:0.9rem;margin-bottom:4px">⚡ Upgrade Ability</div>
+        <div class="gm-lvlup-choice ${mode==='rank'?'selected':''}" data-mode="rank" style="padding:12px;border:2px solid var(--border);border-radius:var(--r-md);cursor:pointer;transition:all .15s">
+          <div style="font-weight:700;font-size:0.9rem;margin-bottom:4px">⭐ Promote Ability Rank</div>
           <div style="font-size:0.75rem;color:var(--text-muted)">
-            Increase ability level
+            Increase ability rank
           </div>
         </div>
       </div>
@@ -2169,10 +2175,16 @@ function openGmLevelUpModal(character) {
   (async () => {
     try {
       const abs = await api.get(`/api/characters/${character.id}/abilities`);
+      const _RANKS = ['common','uncommon','rare','epic','legendary','mythic','divine'];
       abs.forEach(a => {
+        const curRank = a.ability_rank || 'common';
+        const idx = _RANKS.indexOf(curRank);
+        const isMax = idx >= _RANKS.length - 1;
+        const nextRank = isMax ? null : _RANKS[idx + 1];
         const opt = document.createElement('option');
         opt.value = a.character_ability_id;
-        opt.textContent = `${a.name} (Lv.${a.ability_level || 0})`;
+        opt.textContent = `${a.name} (${curRank}${nextRank ? ' → ' + nextRank : ' — max'})`;
+        if (isMax) opt.disabled = true;
         abilitySelect.appendChild(opt);
       });
     } catch {}
@@ -2186,7 +2198,7 @@ function openGmLevelUpModal(character) {
         c.style.borderColor = c === card ? 'var(--accent)' : 'var(--border)';
         c.style.background = c === card ? 'rgba(96,165,250,0.08)' : '';
       });
-      abilityArea.style.display = mode === 'ability' ? 'block' : 'none';
+      abilityArea.style.display = mode === 'rank' ? 'block' : 'none';
     });
   });
 
@@ -2198,10 +2210,10 @@ function openGmLevelUpModal(character) {
   }
 
   confirmBtn.addEventListener('click', async () => {
-    if (mode === 'ability') {
+    if (mode === 'rank') {
       selectedAbilityId = parseInt(abilitySelect.value);
       if (!selectedAbilityId) {
-        err.textContent = 'Select an ability to upgrade';
+        err.textContent = 'Select an ability to promote';
         return;
       }
     }
@@ -2909,6 +2921,8 @@ function initMapCanvas() {
     },
     onTokenRightClick: (token, cx, cy) => openTokenContextMenu(token, cx, cy),
     onChestClick: (chest) => openChestModal(chest),
+    onMapChestClick: (chest) => openBuilderChestModal(chest.col, chest.row, chest),
+    onPortalClick: (portal) => openBuilderPortalModal(portal.col, portal.row, portal),
     onMapClick: (nx, ny) => {
       if (placingChest) {
         handleMapClickForChest(nx, ny);
@@ -2942,7 +2956,15 @@ async function loadMapState() {
     initMapCanvas(); // ensure canvas object exists even if tab not yet open
     if (state.has_map) {
       await mapCanvas.loadImage(state.image_url);
-      mapCanvas.setGrid(state.grid_size, state.grid_enabled, state.grid_type || 'square');
+      const tsz = state.active_floor_tile_size || state.grid_size || 50;
+      const gtype = state.active_floor_grid_type || state.grid_type || 'square';
+      const cols = state.active_floor_cols || 40;
+      const rows = state.active_floor_rows || 30;
+      // Override natural image size with builder-defined play-area dimensions
+      // so the grid aligns to the builder's tile_size × cols/rows bounds.
+      mapCanvas.mapWidth = cols * tsz;
+      mapCanvas.mapHeight = rows * tsz;
+      mapCanvas.setGrid(tsz, state.grid_enabled, gtype);
       mapCanvas.setFog(state.fog_enabled, state.revealed_cells);
     } else {
       // No uploaded image — compute the play-area dimensions from the
@@ -2974,12 +2996,23 @@ async function loadMapState() {
     if (state.active_floor_tiles) {
       mapCanvas.setTiles(state.active_floor_tiles, state.active_floor_grid_type || 'square');
     }
+    // Load builder entities for the active floor
+    try {
+      const afid = state.active_floor_id;
+      if (afid) {
+        const allChests = await api.get(`/api/map-builder/${SESSION_CODE}/chests`);
+        mapCanvas.setMapChests((allChests || []).filter(c => c.floor_id === afid));
+        const allPortals = await api.get(`/api/map-builder/${SESSION_CODE}/portals`);
+        mapCanvas.setPortals((allPortals || []).filter(p => p.floor_id === afid));
+      } else {
+        mapCanvas.setMapChests([]);
+        mapCanvas.setPortals([]);
+      }
+    } catch {}
     mapGridEnabled = state.grid_enabled;
     mapFogEnabled = state.fog_enabled;
     $('#btn-toggle-grid').textContent = `Grid: ${mapGridEnabled ? 'ON' : 'OFF'}`;
     $('#btn-toggle-fog').textContent = `Fog: ${mapFogEnabled ? 'ON' : 'OFF'}`;
-    $('#grid-size-slider').value = state.grid_size;
-    $('#grid-size-label').textContent = state.grid_size;
     const styleBtn = $('#btn-grid-style');
     if (styleBtn) {
       const t = state.grid_type || 'square';
@@ -2988,24 +3021,26 @@ async function loadMapState() {
   } catch { /* no map yet */ }
 }
 
-// Map upload
-document.addEventListener('change', async e => {
-  if (e.target.id !== 'map-upload') return;
-  const file = e.target.files[0];
-  if (!file) return;
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await fetch(`/api/map/${SESSION_CODE}/upload`, { method: 'POST', body: fd });
-  if (!res.ok) { showToast('Upload failed'); return; }
-  const data = await res.json();
-  // Rework v3 Phase 1: the upload endpoint auto-seeds token positions
-  // for any character that had no placement yet, but we still need a
-  // full `loadMapState()` so `setTokens` runs — `loadImage` alone
-  // doesn't touch the tokens list, which is why the map appeared
-  // completely empty right after the first upload.
-  await loadMapState();
-  addLog('map', `Map uploaded: ${file.name}`);
-});
+let _mapFloorsCache = [];
+
+async function loadMapFloorsForTab() {
+  if (!SESSION_CODE) return;
+  try {
+    const state = await api.get(`/api/map/${SESSION_CODE}`);
+    const activeMapId = state.active_map_id;
+    if (!activeMapId) return;
+    const floors = await api.get(`/api/map-builder/maps/${activeMapId}/floors`);
+    _mapFloorsCache = floors;
+    const sel = document.getElementById('map-floor-select');
+    if (sel) {
+      sel.innerHTML = floors.map(f =>
+        `<option value="${f.id}" ${f.is_active ? 'selected' : ''}>${f.name}${f.is_active ? ' ★' : ''}</option>`
+      ).join('');
+    }
+  } catch (e) { console.error('loadMapFloorsForTab', e); }
+}
+
+
 // NOTE: the `ws.on('map.updated', ...)` listener used to live here,
 // but `ws` isn't declared until the WEBSOCKET section far below —
 // touching it at this point crashed the whole script with a ReferenceError
@@ -3059,16 +3094,6 @@ if (_gridStyleBtn) {
     } catch (e) { console.warn('grid_type save failed', e); }
   });
 }
-
-// Grid size slider
-$('#grid-size-slider').addEventListener('input', e => {
-  const v = parseInt(e.target.value);
-  $('#grid-size-label').textContent = v;
-  if (mapCanvas) mapCanvas.setGrid(v, mapGridEnabled, mapCanvas.gridType);
-});
-$('#grid-size-slider').addEventListener('change', async e => {
-  await api.patch(`/api/map/${SESSION_CODE}/settings`, { grid_size: parseInt(e.target.value) });
-});
 
 // Fog toggle
 $('#btn-toggle-fog').addEventListener('click', async () => {
@@ -3493,6 +3518,12 @@ ws.on('map.token_moved', d => {
   if (d.visible != null) t.visible = d.visible;
   mapCanvas.render();
 });
+ws.on('map.chest_added', () => { if (typeof loadMapState === 'function') loadMapState(); });
+ws.on('map.chest_updated', () => { if (typeof loadMapState === 'function') loadMapState(); });
+ws.on('map.chest_deleted', () => { if (typeof loadMapState === 'function') loadMapState(); });
+ws.on('map.portal_added', () => { if (typeof loadMapState === 'function') loadMapState(); });
+ws.on('map.portal_updated', () => { if (typeof loadMapState === 'function') loadMapState(); });
+ws.on('map.portal_deleted', () => { if (typeof loadMapState === 'function') loadMapState(); });
 
 ws.on('session.state', data => {
   const s = data.session;
@@ -7627,7 +7658,6 @@ function renderGmAbilities() {
       </div>
       <div style="display:flex;flex-direction:column;gap:2px;padding:4px;justify-content:center">
         <button class="btn btn-ghost btn-xs" data-edit-ability="${a.id}" title="Edit">✏️</button>
-        <button class="btn btn-ghost btn-xs" data-config-ability="${a.id}" title="Level / Rank Configs">⚙️</button>
         <button class="btn btn-ghost btn-xs" data-dup-ability="${a.id}" title="Duplicate">📋</button>
         <button class="btn btn-ghost btn-xs" data-assign-ability="${a.id}" title="Assign">👤</button>
         <button class="btn btn-ghost btn-xs" data-del-ability="${a.id}" style="color:var(--accent-red)" title="Delete">🗑️</button>
@@ -7639,12 +7669,6 @@ function renderGmAbilities() {
     btn.addEventListener('click', () => {
       const ab = gmAbilities.find(a => a.id == btn.dataset.editAbility);
       if (ab) showAbilityEditor(ab);
-    });
-  });
-  el.querySelectorAll('[data-config-ability]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const ab = gmAbilities.find(a => a.id == btn.dataset.configAbility);
-      if (ab) showAbilityConfigEditor(ab);
     });
   });
   el.querySelectorAll('[data-dup-ability]').forEach(btn => {
@@ -7678,8 +7702,18 @@ function renderGmAbilities() {
   });
 }
 
-function showAbilityEditor(existing = null) {
+async function showAbilityEditor(existing = null) {
   const d = existing || {};
+  let levelConfigs = [];
+  let rankConfigs = [];
+  const deletedLevelIds = [];
+  const deletedRankIds = [];
+
+  if (existing && existing.id) {
+    try { levelConfigs = await api.get(`/api/abilities/${existing.id}/level-configs`); } catch {}
+    try { rankConfigs = await api.get(`/api/abilities/${existing.id}/rank-configs`); } catch {}
+  }
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;justify-content:center;align-items:flex-start;padding:30px;overflow-y:auto';
@@ -7745,7 +7779,6 @@ function showAbilityEditor(existing = null) {
           <label style="font-size:0.72rem">Hit stat:</label>
           <select id="ab-hitstat" style="font-size:0.78rem">${_AB_STATS.map(s => `<option value="${s}" ${s===(d.hit_stat||'strength')?'selected':''}>${s.substring(0,3).toUpperCase()}</option>`).join('')}</select>
         </div>
-        <!-- Rework v3 Phase 7: battle-grid range. 1 = touch/adjacent; higher = reach/ranged. -->
         <div style="display:flex;gap:6px;align-items:center" title="Max distance in battle-grid cells (1 = touch)">
           <label style="font-size:0.72rem">📏 Range (cells)</label>
           <input id="ab-range-cells" type="number" value="${d.range_cells ?? 1}" min="1" max="40" style="width:56px">
@@ -7807,6 +7840,24 @@ function showAbilityEditor(existing = null) {
       <button class="btn btn-ghost btn-xs" id="ab-add-passive" style="margin-top:4px">+ Add Bonus</button>
     </fieldset>
 
+    <!-- Section 7: Presets -->
+    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
+      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">📈 Presets (Level / Rank)</legend>
+      <div id="ab-presets-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:0.72rem;min-height:20px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Save current config as preset:</label>
+        <select id="ab-preset-type" style="font-size:0.78rem">
+          <option value="">— None —</option>
+          <option value="level">Level</option>
+          <option value="rank">Rank</option>
+        </select>
+        <select id="ab-preset-value" style="font-size:0.78rem;display:none">
+          <option value="">— Choose —</option>
+        </select>
+        <span style="font-size:0.7rem;color:var(--text-muted)">Select a preset target, then Save</span>
+      </div>
+    </fieldset>
+
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn btn-ghost btn-sm" id="ab-cancel">Cancel</button>
       <button class="btn btn-primary btn-sm" id="ab-save">${existing ? 'Save Changes' : 'Create Ability'}</button>
@@ -7841,7 +7892,6 @@ function showAbilityEditor(existing = null) {
   overlay.querySelector('#ab-has-dmg').addEventListener('change', () => {
     overlay.querySelector('#ab-dmg-fields').style.display = overlay.querySelector('#ab-has-dmg').checked ? 'flex' : 'none';
   });
-  // Rework v2: conditional-text shown only when conditional is on
   overlay.querySelector('#ab-conditional').addEventListener('change', () => {
     overlay.querySelector('#ab-conditional-text').style.display = overlay.querySelector('#ab-conditional').checked ? '' : 'none';
   });
@@ -7858,7 +7908,6 @@ function showAbilityEditor(existing = null) {
       } else if (e.type === 'restore_mana') {
         fields = `Amount: <input type="number" data-ef="amount" value="${e.amount||0}" style="width:50px">`;
       } else if (e.type === 'restore_hp_by_die') {
-        // Rework v3: rolls caster's race HP die for healing. Only flat bonus is tunable.
         fields = `<span style="color:var(--text-muted)" title="Rolls the caster's race HP die">🎲 race die</span> + <input type="number" data-ef="flat_bonus" value="${e.flat_bonus||0}" style="width:40px" placeholder="bonus">`;
       } else if (e.type === 'apply_status') {
         fields = `Template ID: <input type="number" data-ef="template_id" value="${e.template_id||''}" style="width:50px"> Duration: <input type="number" data-ef="duration_turns" value="${e.duration_turns||3}" style="width:40px">t`;
@@ -7877,8 +7926,6 @@ function showAbilityEditor(existing = null) {
         <button class="btn btn-ghost btn-xs" data-rm-eff="${i}" style="color:var(--accent-red)">✕</button>
       </div>`;
     }).join('');
-
-    // Wire type change
     el.querySelectorAll('[data-ef-type]').forEach(sel => {
       sel.addEventListener('change', () => {
         const idx = parseInt(sel.closest('[data-eff-idx]').dataset.effIdx);
@@ -7886,7 +7933,6 @@ function showAbilityEditor(existing = null) {
         renderEffectsEditor();
       });
     });
-    // Wire field changes
     el.querySelectorAll('[data-ef]').forEach(inp => {
       inp.addEventListener('change', () => {
         const idx = parseInt(inp.closest('[data-eff-idx]').dataset.effIdx);
@@ -7895,7 +7941,6 @@ function showAbilityEditor(existing = null) {
         editorEffects[idx][key] = v;
       });
     });
-    // Wire remove
     el.querySelectorAll('[data-rm-eff]').forEach(btn => {
       btn.addEventListener('click', () => {
         editorEffects.splice(parseInt(btn.dataset.rmEff), 1);
@@ -7945,6 +7990,132 @@ function showAbilityEditor(existing = null) {
     renderPassiveEditor();
   });
 
+  // ── Presets helpers ──
+  function _collectFormBody() {
+    const hasDmg = overlay.querySelector('#ab-has-dmg').checked;
+    return {
+      ability_type: overlay.querySelector('[name="ab-type"]:checked')?.value || 'active',
+      target_type: overlay.querySelector('[name="ab-target"]:checked')?.value || 'single',
+      aoe_radius: overlay.querySelector('[name="ab-target"]:checked')?.value === 'aoe' ? (parseInt(overlay.querySelector('#ab-aoe').value)||3) : null,
+      damage_type: overlay.querySelector('#ab-dmgtype').value,
+      custom_damage_type: overlay.querySelector('#ab-dmgtype').value === 'custom' ? overlay.querySelector('#ab-custom-dmg').value : null,
+      mana_cost: parseInt(overlay.querySelector('#ab-mana').value) || 0,
+      hp_cost: parseInt(overlay.querySelector('#ab-hpcost').value) || 0,
+      cooldown_turns: parseInt(overlay.querySelector('#ab-cd').value) || 0,
+      requires_hit_roll: overlay.querySelector('#ab-hitroll').checked,
+      hit_stat: overlay.querySelector('#ab-hitstat').value,
+      range_cells: Math.max(1, parseInt(overlay.querySelector('#ab-range-cells').value) || 1),
+      damage_stat: hasDmg ? overlay.querySelector('#ab-dmgstat').value : 'strength',
+      damage_dice_count: hasDmg ? (parseInt(overlay.querySelector('#ab-ddc').value)||1) : null,
+      damage_dice_type: hasDmg ? (parseInt(overlay.querySelector('#ab-ddt').value)||6) : null,
+      is_passive: (overlay.querySelector('[name="ab-type"]:checked')?.value || 'active') === 'passive',
+      max_uses: (() => {
+        const v = overlay.querySelector('#ab-max-uses').value;
+        if (v === '' || v === null) return null;
+        const n = parseInt(v);
+        return (isNaN(n) || n <= 0) ? null : n;
+      })(),
+      is_conditional: overlay.querySelector('#ab-conditional').checked,
+      conditional_text: overlay.querySelector('#ab-conditional-text').value.trim() || null,
+      notes: overlay.querySelector('#ab-notes').value.trim() || null,
+    };
+  }
+
+  function _applyPresetToForm(cfg) {
+    if (cfg.ability_type) {
+      const r = overlay.querySelector(`[name="ab-type"][value="${cfg.ability_type}"]`);
+      if (r) { r.checked = true; overlay.querySelector('#ab-passive-section').style.display = cfg.ability_type === 'passive' ? 'block' : 'none'; }
+    }
+    if (cfg.target_type) {
+      const r = overlay.querySelector(`[name="ab-target"][value="${cfg.target_type}"]`);
+      if (r) { r.checked = true; overlay.querySelector('#ab-aoe-row').style.display = cfg.target_type === 'aoe' ? 'flex' : 'none'; }
+    }
+    if (cfg.aoe_radius != null) overlay.querySelector('#ab-aoe').value = cfg.aoe_radius;
+    if (cfg.damage_type) {
+      overlay.querySelector('#ab-dmgtype').value = cfg.damage_type;
+      overlay.querySelector('#ab-custom-dmg').style.display = cfg.damage_type === 'custom' ? '' : 'none';
+    }
+    if (cfg.custom_damage_type != null) overlay.querySelector('#ab-custom-dmg').value = cfg.custom_damage_type;
+    if (cfg.mana_cost != null) overlay.querySelector('#ab-mana').value = cfg.mana_cost;
+    if (cfg.hp_cost != null) overlay.querySelector('#ab-hpcost').value = cfg.hp_cost;
+    if (cfg.cooldown_turns != null) overlay.querySelector('#ab-cd').value = cfg.cooldown_turns;
+    if (cfg.requires_hit_roll != null) {
+      overlay.querySelector('#ab-hitroll').checked = cfg.requires_hit_roll;
+      overlay.querySelector('#ab-hitstat-row').style.display = cfg.requires_hit_roll ? 'flex' : 'none';
+    }
+    if (cfg.hit_stat) overlay.querySelector('#ab-hitstat').value = cfg.hit_stat;
+    if (cfg.range_cells != null) overlay.querySelector('#ab-range-cells').value = cfg.range_cells;
+    if (cfg.damage_dice_count != null) {
+      overlay.querySelector('#ab-has-dmg').checked = true;
+      overlay.querySelector('#ab-dmg-fields').style.display = 'flex';
+      overlay.querySelector('#ab-ddc').value = cfg.damage_dice_count;
+    }
+    if (cfg.damage_dice_type != null) overlay.querySelector('#ab-ddt').value = cfg.damage_dice_type;
+    if (cfg.damage_stat) overlay.querySelector('#ab-dmgstat').value = cfg.damage_stat;
+    if (cfg.max_uses != null) overlay.querySelector('#ab-max-uses').value = cfg.max_uses;
+    if (cfg.is_conditional != null) {
+      overlay.querySelector('#ab-conditional').checked = cfg.is_conditional;
+      overlay.querySelector('#ab-conditional-text').style.display = cfg.is_conditional ? '' : 'none';
+    }
+    if (cfg.conditional_text != null) overlay.querySelector('#ab-conditional-text').value = cfg.conditional_text;
+    if (cfg.notes != null) overlay.querySelector('#ab-notes').value = cfg.notes;
+  }
+
+  function renderPresets() {
+    const el = overlay.querySelector('#ab-presets-list');
+    const all = [
+      ...levelConfigs.map(c => ({ ...c, kind: 'level', label: `Lv.${c.level}` })),
+      ...rankConfigs.map(c => ({ ...c, kind: 'rank', label: c.rank })),
+    ];
+    if (!all.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No presets yet</span>'; return; }
+    el.innerHTML = all.map((c, i) => `
+      <button class="btn btn-ghost btn-xs" data-load-preset="${i}" style="text-transform:capitalize;font-size:0.72rem;padding:2px 8px">${c.label}</button>
+      <button class="btn btn-ghost btn-xs" data-del-preset="${i}" style="color:var(--accent-red);font-size:0.65rem;padding:2px 4px">✕</button>
+    `).join('');
+    el.querySelectorAll('[data-load-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.loadPreset);
+        _applyPresetToForm(all[idx]);
+        showToast(`Loaded ${all[idx].label}`);
+      });
+    });
+    el.querySelectorAll('[data-del-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.delPreset);
+        const item = all[idx];
+        if (item.kind === 'level') {
+          const arrIdx = levelConfigs.findIndex(x => x.level === item.level);
+          if (arrIdx > -1) { if (levelConfigs[arrIdx].id) deletedLevelIds.push(levelConfigs[arrIdx].id); levelConfigs.splice(arrIdx, 1); }
+        } else {
+          const arrIdx = rankConfigs.findIndex(x => x.rank === item.rank);
+          if (arrIdx > -1) { if (rankConfigs[arrIdx].id) deletedRankIds.push(rankConfigs[arrIdx].id); rankConfigs.splice(arrIdx, 1); }
+        }
+        renderPresets();
+      });
+    });
+  }
+
+  renderPresets();
+
+  const presetTypeSel = overlay.querySelector('#ab-preset-type');
+  const presetValueSel = overlay.querySelector('#ab-preset-value');
+  presetTypeSel.addEventListener('change', () => {
+    const t = presetTypeSel.value;
+    if (!t) { presetValueSel.style.display = 'none'; return; }
+    presetValueSel.style.display = '';
+    presetValueSel.innerHTML = '<option value="">— Choose —</option>' +
+      (t === 'level'
+        ? [1,2,3,4,5,6,7,8,9,10].map(n => {
+            const exists = levelConfigs.some(c => c.level === n);
+            return `<option value="${n}" ${exists ? 'style="color:var(--accent-green)"' : ''}>Level ${n}${exists ? ' (update)' : ''}</option>`;
+          }).join('')
+        : ['common','uncommon','rare','epic','legendary','mythic','divine'].map(r => {
+            const exists = rankConfigs.some(c => c.rank === r);
+            return `<option value="${r}" ${exists ? 'style="color:var(--accent-green)"' : ''}>${r}${exists ? ' (update)' : ''}</option>`;
+          }).join('')
+      );
+  });
+
   // ── Cancel / Save ──
   overlay.querySelector('#ab-cancel').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -7970,7 +8141,6 @@ function showAbilityEditor(existing = null) {
       cooldown_turns: parseInt(overlay.querySelector('#ab-cd').value) || 0,
       requires_hit_roll: overlay.querySelector('#ab-hitroll').checked,
       hit_stat: overlay.querySelector('#ab-hitstat').value,
-      // Rework v3 Phase 7: range in battle-grid cells (1 = touch / adjacent).
       range_cells: Math.max(1, parseInt(overlay.querySelector('#ab-range-cells').value) || 1),
       damage_stat: hasDmg ? overlay.querySelector('#ab-dmgstat').value : 'strength',
       damage_dice_count: hasDmg ? (parseInt(overlay.querySelector('#ab-ddc').value)||1) : null,
@@ -7978,7 +8148,6 @@ function showAbilityEditor(existing = null) {
       is_passive: (overlay.querySelector('[name="ab-type"]:checked')?.value || 'active') === 'passive',
       passive_effect: passiveBonuses.length ? { bonuses: passiveBonuses } : null,
       effect: { effects: editorEffects },
-      // Rework v2 — pool / rarity / uses / conditional
       rarity: overlay.querySelector('#ab-rarity').value || 'common',
       is_in_starting_pool: overlay.querySelector('#ab-starting-pool').checked,
       max_uses: (() => {
@@ -7991,157 +8160,40 @@ function showAbilityEditor(existing = null) {
       conditional_text: overlay.querySelector('#ab-conditional-text').value.trim() || null,
     };
 
+    let abilityId = existing ? existing.id : null;
     try {
       if (existing) {
         await api.put(`/api/abilities/${existing.id}`, body);
       } else {
-        await api.post('/api/abilities', body);
+        const res = await api.post('/api/abilities', body);
+        abilityId = res.id;
       }
-      overlay.remove();
-      loadGmAbilities();
-    } catch (e) { showToast('Save failed: ' + (e.message || '')); }
+    } catch (e) { showToast('Save failed: ' + (e.message || '')); return; }
+
+    // Save preset if selected
+    const pType = presetTypeSel.value;
+    const pVal = presetValueSel.value;
+    if (pType && pVal && abilityId) {
+      const cbody = _collectFormBody();
+      if (pType === 'level') {
+        cbody.level = parseInt(pVal);
+        api.post(`/api/abilities/${abilityId}/level-configs`, cbody).catch(() => {});
+      } else {
+        cbody.rank = pVal;
+        api.post(`/api/abilities/${abilityId}/rank-configs`, cbody).catch(() => {});
+      }
+    }
+    // Delete removed presets
+    for (const id of deletedLevelIds) {
+      api.del(`/api/abilities/${abilityId}/level-configs/${id}`).catch(() => {});
+    }
+    for (const id of deletedRankIds) {
+      api.del(`/api/abilities/${abilityId}/rank-configs/${id}`).catch(() => {});
+    }
+
+    overlay.remove();
+    loadGmAbilities();
   });
-}
-
-async function showAbilityConfigEditor(ability) {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;justify-content:center;align-items:flex-start;padding:30px;overflow-y:auto';
-
-  // Fetch existing configs
-  let levelConfigs = [];
-  let rankConfigs = [];
-  try {
-    levelConfigs = await api.get(`/api/abilities/${ability.id}/level-configs`);
-  } catch {}
-  try {
-    rankConfigs = await api.get(`/api/abilities/${ability.id}/rank-configs`);
-  } catch {}
-
-  overlay.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);width:520px;max-width:95vw;padding:20px;max-height:90vh;overflow-y:auto">
-    <h2 style="margin:0 0 12px;font-size:1rem">⚙️ ${ability.name} — Configs</h2>
-
-    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
-      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">📈 Level Configs</legend>
-      <div id="abl-config-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-      <button class="btn btn-ghost btn-xs" id="abl-add-lvl">+ Add Level</button>
-    </fieldset>
-
-    <fieldset style="border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:10px">
-      <legend style="font-size:0.78rem;font-weight:700;padding:0 6px">⭐ Rank Configs</legend>
-      <div id="abr-config-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
-      <button class="btn btn-ghost btn-xs" id="abl-add-rank">+ Add Rank</button>
-    </fieldset>
-
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-      <button class="btn btn-ghost btn-sm" id="abl-cfg-cancel">Close</button>
-    </div>
-  </div>`;
-
-  document.body.appendChild(overlay);
-
-  function renderLevelConfigs() {
-    const el = overlay.querySelector('#abl-config-list');
-    if (!levelConfigs.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No level configs</span>'; return; }
-    el.innerHTML = levelConfigs.map((c, i) => `
-      <div style="display:flex;gap:4px;align-items:center;font-size:0.72rem" data-lc-idx="${i}">
-        <span style="width:50px;font-weight:700">Lv.${c.level}</span>
-        <input type="text" class="abl-lc-json" value='${JSON.stringify(c.config_json)}' style="flex:1;font-size:0.72rem;font-family:monospace" placeholder='{"mana_cost":15}'>
-        <button class="btn btn-ghost btn-xs" data-save-lc="${c.id}" style="color:var(--accent-green)">💾</button>
-        <button class="btn btn-ghost btn-xs" data-del-lc="${c.id}" style="color:var(--accent-red)">✕</button>
-      </div>
-    `).join('');
-
-    el.querySelectorAll('[data-save-lc]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const row = btn.closest('[data-lc-idx]');
-        const idx = parseInt(row.dataset.lcIdx);
-        const jsonStr = row.querySelector('.abl-lc-json').value;
-        let config = {};
-        try { config = JSON.parse(jsonStr); } catch { showToast('Invalid JSON'); return; }
-        try {
-          await api.post(`/api/abilities/${ability.id}/level-configs`, { level: levelConfigs[idx].level, config });
-          showToast('Saved');
-          levelConfigs[idx].config_json = config;
-        } catch (e) { showToast('Save failed'); }
-      });
-    });
-    el.querySelectorAll('[data-del-lc]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const row = btn.closest('[data-lc-idx]');
-        const idx = parseInt(row.dataset.lcIdx);
-        if (!confirm('Delete level config?')) return;
-        try {
-          await api.del(`/api/abilities/${ability.id}/level-configs/${levelConfigs[idx].id}`);
-          levelConfigs.splice(idx, 1);
-          renderLevelConfigs();
-        } catch {}
-      });
-    });
-  }
-
-  function renderRankConfigs() {
-    const el = overlay.querySelector('#abr-config-list');
-    if (!rankConfigs.length) { el.innerHTML = '<span class="text-muted" style="font-size:0.72rem">No rank configs</span>'; return; }
-    el.innerHTML = rankConfigs.map((c, i) => `
-      <div style="display:flex;gap:4px;align-items:center;font-size:0.72rem;flex-wrap:wrap" data-rc-idx="${i}">
-        <span style="width:70px;font-weight:700;text-transform:capitalize">${c.rank}</span>
-        <input type="text" class="abl-rc-json" value='${JSON.stringify(c.config_json)}' style="flex:1;font-size:0.72rem;font-family:monospace" placeholder='{"damage_dice_count":2}'>
-        <input type="text" class="abl-rc-notes" value="${c.notes || ''}" style="width:100px;font-size:0.72rem" placeholder="Notes">
-        <button class="btn btn-ghost btn-xs" data-save-rc="${c.id}" style="color:var(--accent-green)">💾</button>
-        <button class="btn btn-ghost btn-xs" data-del-rc="${c.id}" style="color:var(--accent-red)">✕</button>
-      </div>
-    `).join('');
-
-    el.querySelectorAll('[data-save-rc]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const row = btn.closest('[data-rc-idx]');
-        const idx = parseInt(row.dataset.rcIdx);
-        const jsonStr = row.querySelector('.abl-rc-json').value;
-        let config = {};
-        try { config = JSON.parse(jsonStr); } catch { showToast('Invalid JSON'); return; }
-        const notes = row.querySelector('.abl-rc-notes').value;
-        try {
-          await api.post(`/api/abilities/${ability.id}/rank-configs`, { rank: rankConfigs[idx].rank, config, notes });
-          showToast('Saved');
-          rankConfigs[idx].config_json = config;
-          rankConfigs[idx].notes = notes;
-        } catch (e) { showToast('Save failed'); }
-      });
-    });
-    el.querySelectorAll('[data-del-rc]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const row = btn.closest('[data-rc-idx]');
-        const idx = parseInt(row.dataset.rcIdx);
-        if (!confirm('Delete rank config?')) return;
-        try {
-          await api.del(`/api/abilities/${ability.id}/rank-configs/${rankConfigs[idx].id}`);
-          rankConfigs.splice(idx, 1);
-          renderRankConfigs();
-        } catch {}
-      });
-    });
-  }
-
-  renderLevelConfigs();
-  renderRankConfigs();
-
-  overlay.querySelector('#abl-add-lvl').addEventListener('click', () => {
-    const level = parseInt(prompt('Level number (1-10):'));
-    if (!level || level < 1 || level > 10) return;
-    levelConfigs.push({ id: null, ability_id: ability.id, level, config_json: {} });
-    renderLevelConfigs();
-  });
-
-  overlay.querySelector('#abl-add-rank').addEventListener('click', () => {
-    const rank = prompt('Rank (common/uncommon/rare/epic/legendary/mythic/divine):');
-    if (!rank) return;
-    rankConfigs.push({ id: null, ability_id: ability.id, rank: rank.toLowerCase(), config_json: {}, notes: '' });
-    renderRankConfigs();
-  });
-
-  overlay.querySelector('#abl-cfg-cancel').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
 if ($('#btn-new-ability')) {
@@ -8770,6 +8822,8 @@ function _updateAllNpcPanels() {
 // MAP BUILDER
 // ══════════════════════════════════════════════════════════════
 let builderCanvas = null;
+let builderMaps = [];
+let currentMapId = null;
 let builderFloors = [];
 let currentFloorId = null;
 
@@ -8785,7 +8839,27 @@ class BuilderCanvas {
     this.gridType = 'square'; // 'square' | 'hex'
     this.mapCols = 40;
     this.mapRows = 30;
+    this.backgroundImage = null; // Loaded Image object
+    this.backgroundImageUrl = null;
     this._bindEvents(); this._resize();
+  }
+  setBackgroundImage(url) {
+    this.backgroundImageUrl = url;
+    if (!url) {
+      this.backgroundImage = null;
+      this.render();
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      this.backgroundImage = img;
+      this.render();
+    };
+    img.onerror = () => {
+      this.backgroundImage = null;
+      this.render();
+    };
+    img.src = url;
   }
   setBounds(cols, rows) {
     this.mapCols = Math.max(1, parseInt(cols) || 40);
@@ -8863,8 +8937,16 @@ class BuilderCanvas {
     const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
     ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, w, h);
     ctx.save(); ctx.translate(this.offsetX, this.offsetY); ctx.scale(this.scale, this.scale);
-    const colors = { floor:'#333', wall:'#666', door:'#8B4513', water:'#1a4a6e', pit:'#111', stairs_up:'#b8860b', stairs_down:'#cd853f', trap:'#8b0000' };
-    const icons = { door:'🚪', water:'💧', pit:'🕳', stairs_up:'⬆', stairs_down:'⬇', trap:'⚠' };
+    // Draw background image if loaded
+    if (this.backgroundImage) {
+      const img = this.backgroundImage;
+      const bw = this.mapCols * this.tileSize;
+      const bh = this.mapRows * this.tileSize;
+      // Scale image to fit the map bounds while maintaining aspect ratio or stretch
+      ctx.drawImage(img, 0, 0, bw, bh);
+    }
+    const colors = { floor:'#333', wall:'#666', door:'#8B4513', water:'#1a4a6e', pit:'#111', stairs_up:'#b8860b', stairs_down:'#cd853f', trap:'#8b0000', chest:'#d4a017', portal:'#9932cc' };
+    const icons = { door:'🚪', water:'💧', pit:'🕳', stairs_up:'⬆', stairs_down:'⬇', trap:'⚠', chest:'📦', portal:'🌀' };
 
     if (this.gridType === 'hex') {
       const size = this._hexSize();
@@ -8915,6 +8997,21 @@ class BuilderCanvas {
             ctx.restore();
           }
           if (icons[t]) {
+            if (t === 'chest') {
+              // Unified chest visual (matches MapCanvas)
+              ctx.fillStyle = 'rgba(139,69,19,0.75)';
+              this._hexPath(ctx, c.x, c.y, size - 2);
+              ctx.fill();
+              ctx.strokeStyle = '#FFD700';
+              ctx.lineWidth = 1.5 / this.scale;
+              this._hexPath(ctx, c.x, c.y, size - 2);
+              ctx.stroke();
+            } else if (t === 'portal') {
+              // Unified portal visual (matches MapCanvas)
+              ctx.fillStyle = 'rgba(153,50,204,0.6)';
+              this._hexPath(ctx, c.x, c.y, size - 2);
+              ctx.fill();
+            }
             ctx.font = `${this.tileSize * 0.45}px sans-serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(icons[t], c.x, c.y);
@@ -8922,7 +9019,8 @@ class BuilderCanvas {
         }
       }
       // Hex grid
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1 / this.scale;
+      ctx.strokeStyle = this.backgroundImage ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = this.backgroundImage ? 1.5 / this.scale : 1 / this.scale;
       for (let q = qMin; q <= qMax; q++) {
         for (let r = rMin; r <= rMax; r++) {
           const c = this._axialToPixel(q, r);
@@ -8961,7 +9059,8 @@ class BuilderCanvas {
           ctx.fillRect(x + 0.5, y + 0.5, this.tileSize - 1, this.tileSize - 1);
         }
       }
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1 / this.scale;
+      ctx.strokeStyle = this.backgroundImage ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = this.backgroundImage ? 1.5 / this.scale : 1 / this.scale;
       for (let c = startCol; c <= startCol + cols; c++) {
         ctx.beginPath(); ctx.moveTo(c * this.tileSize, startRow * this.tileSize);
         ctx.lineTo(c * this.tileSize, (startRow + rows) * this.tileSize); ctx.stroke();
@@ -8974,9 +9073,30 @@ class BuilderCanvas {
         for (let r = startRow; r < startRow + rows; r++) {
           const t = this.tiles[`${c},${r}`];
           if (!t || !icons[t]) continue;
-          ctx.font = `${this.tileSize * 0.55}px sans-serif`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(icons[t], (c + 0.5) * this.tileSize, (r + 0.5) * this.tileSize);
+          const px = c * this.tileSize, py = r * this.tileSize;
+          const gs = this.tileSize;
+          if (t === 'chest') {
+            // Unified chest visual (matches MapCanvas)
+            ctx.fillStyle = 'rgba(139,69,19,0.75)';
+            ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 1.5 / this.scale;
+            ctx.strokeRect(px + 1, py + 1, gs - 2, gs - 2);
+            ctx.font = `${gs * 0.5}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('📦', px + gs / 2, py + gs / 2);
+          } else if (t === 'portal') {
+            // Unified portal visual (matches MapCanvas)
+            ctx.fillStyle = 'rgba(153,50,204,0.6)';
+            ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
+            ctx.font = `${gs * 0.5}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('🌀', px + gs / 2, py + gs / 2);
+          } else {
+            ctx.font = `${this.tileSize * 0.55}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(icons[t], (c + 0.5) * this.tileSize, (r + 0.5) * this.tileSize);
+          }
         }
       }
       // Boundary rectangle (play area)
@@ -9008,8 +9128,8 @@ class BuilderCanvas {
   _bindEvents() {
     const c = this.canvas;
     c.addEventListener('mousedown', e => {
-      if (e.button === 0) { this.isPainting = true; this._paintAt(e.offsetX, e.offsetY); }
-      else { this.isDragging = true; this.dragStart = { x: e.offsetX - this.offsetX, y: e.offsetY - this.offsetY }; }
+      if (e.button === 0 && !['trap','chest','portal'].includes(this.brush)) { this.isPainting = true; this._paintAt(e.offsetX, e.offsetY); }
+      else if (e.button !== 0) { this.isDragging = true; this.dragStart = { x: e.offsetX - this.offsetX, y: e.offsetY - this.offsetY }; }
     });
     c.addEventListener('mousemove', e => {
       if (this.isPainting) this._paintAt(e.offsetX, e.offsetY);
@@ -9017,6 +9137,19 @@ class BuilderCanvas {
     });
     c.addEventListener('mouseup', () => { this.isPainting = false; this.isDragging = false; });
     c.addEventListener('mouseleave', () => { this.isPainting = false; this.isDragging = false; });
+    c.addEventListener('click', e => {
+      if (!['trap','chest','portal'].includes(this.brush)) return;
+      const tile = this._screenToTile(e.offsetX, e.offsetY);
+      if (!this._inBounds(tile.key)) return;
+      // paint the entity tile for visual feedback
+      this.tiles[tile.key] = this.brush;
+      this.render();
+      const col = tile.col != null ? tile.col : tile.q;
+      const row = tile.row != null ? tile.row : tile.r;
+      if (this.brush === 'trap') openBuilderTrapModal(col, row);
+      else if (this.brush === 'chest') openBuilderChestModal(col, row);
+      else if (this.brush === 'portal') openBuilderPortalModal(col, row);
+    });
     c.addEventListener('wheel', e => {
       e.preventDefault();
       const zoom = e.deltaY < 0 ? 1.1 : 0.9;
@@ -9030,10 +9163,8 @@ class BuilderCanvas {
 }
 
 async function loadBuilder() {
-  try { builderFloors = await api.get(`/api/map-builder/${SESSION_CODE}/floors`); } catch { builderFloors = []; }
-  renderBuilderFloorSelect();
-  if (builderFloors.length && !currentFloorId) currentFloorId = builderFloors[0].id;
-  if (currentFloorId) await loadBuilderFloor(currentFloorId);
+  await loadBuilderMaps();
+  if (currentMapId) await loadBuilderMapFloors();
 }
 
 function renderBuilderFloorSelect() {
@@ -9055,12 +9186,13 @@ async function loadBuilderFloor(floorId) {
     builderCanvas.setGridType(f.grid_type || 'square');
     builderCanvas.tileSize = f.tile_size || 50;
     builderCanvas.setBounds(f.map_cols || 40, f.map_rows || 30);
+    builderCanvas.setBackgroundImage(f.image_url || null);
     builderCanvas.render();
     builderCanvas._resize();
   }
   // Update toggle button text
   const gtBtn = document.getElementById('btn-builder-grid-type');
-  if (gtBtn) gtBtn.textContent = (f.grid_type === 'hex') ? '⬡ Hex' : '▢ Square';
+  if (gtBtn) gtBtn.textContent = (f.grid_type === 'hex') ? '⬡ Hex Grid' : '▢ Square Grid';
   // Update size slider to match saved tile_size
   const szInp = document.getElementById('builder-tile-size');
   const szLbl = document.getElementById('builder-tile-size-val');
@@ -9073,13 +9205,85 @@ async function loadBuilderFloor(floorId) {
   renderBuilderFloorSelect();
 }
 
+async function loadBuilderMaps() {
+  try { builderMaps = await api.get(`/api/map-builder/${SESSION_CODE}/maps`); } catch { builderMaps = []; }
+  // Set currentMapId BEFORE rendering so the select shows the right map as active
+  if (builderMaps.length && !currentMapId) currentMapId = builderMaps[0].id;
+  renderBuilderMapSelect();
+}
+
+function renderBuilderMapSelect() {
+  const sel = document.getElementById('builder-map-select');
+  if (!sel) return;
+  sel.innerHTML = builderMaps.map(m =>
+    `<option value="${m.id}" ${m.id === currentMapId ? 'selected' : ''}>${m.name}${m.is_active ? ' ★' : ''}</option>`
+  ).join('');
+}
+
+async function loadBuilderMapFloors() {
+  if (!currentMapId) return;
+  try {
+    builderFloors = await api.get(`/api/map-builder/maps/${currentMapId}/floors`);
+  } catch {
+    builderFloors = [];
+  }
+  renderBuilderFloorSelect();
+  if (builderFloors.length && !currentFloorId) currentFloorId = builderFloors[0].id;
+  if (currentFloorId) await loadBuilderFloor(currentFloorId);
+}
+
+async function createBuilderMap() {
+  const name = prompt('Map name:', 'New Map');
+  if (!name) return;
+  try {
+    const m = await api.post(`/api/map-builder/${SESSION_CODE}/maps`, { name });
+    builderMaps.push(m); currentMapId = m.id;
+    renderBuilderMapSelect();
+    // Clear old floors and reset state for the new map
+    builderFloors = [];
+    currentFloorId = null;
+    // Create first floor automatically
+    await createBuilderFloor(false);
+  } catch (e) {
+    showToast('Create map failed: ' + (e.message || 'unknown'));
+  }
+}
+
+async function deleteBuilderMap() {
+  if (!currentMapId) return;
+  if (!confirm('Delete this map and all its floors?')) return;
+  try {
+    await api.del(`/api/map-builder/maps/${currentMapId}`);
+    builderMaps = builderMaps.filter(m => m.id !== currentMapId);
+    currentMapId = builderMaps.length ? builderMaps[0].id : null;
+    renderBuilderMapSelect();
+    if (currentMapId) await loadBuilderMapFloors();
+  } catch (e) {
+    showToast('Delete map failed');
+  }
+}
+
+async function activateBuilderMap() {
+  if (!currentMapId) { showToast('No map selected'); return; }
+  try {
+    await api.post(`/api/map-builder/maps/${currentMapId}/activate`);
+    builderMaps.forEach(m => m.is_active = (m.id === currentMapId));
+    renderBuilderMapSelect();
+    showToast('✅ Map activated');
+  } catch (e) {
+    showToast('Activate failed');
+  }
+}
+
 async function createBuilderFloor(promptUser = true) {
   const name = promptUser
     ? prompt('Floor name:', 'Floor ' + (builderFloors.length + 1))
     : 'Floor ' + (builderFloors.length + 1);
   if (!name) return null;
   try {
-    const f = await api.post(`/api/map-builder/${SESSION_CODE}/floors`, { name, sort_order: builderFloors.length });
+    const payload = { name, sort_order: builderFloors.length };
+    if (currentMapId) payload.map_id = currentMapId;
+    const f = await api.post(`/api/map-builder/${SESSION_CODE}/floors`, payload);
     builderFloors.push(f); currentFloorId = f.id;
     renderBuilderFloorSelect(); await loadBuilderFloor(f.id);
     return f;
@@ -9174,6 +9378,8 @@ function _fitMapToTiles(canvas) {
   canvas.render();
 }
 
+let _builderWsSuppressed = false;
+
 async function saveBuilderTiles() {
   if (!builderCanvas) { showToast('Builder not ready'); return; }
   // Auto-create a floor if user never made one
@@ -9182,18 +9388,16 @@ async function saveBuilderTiles() {
     const f = await createBuilderFloor(false);
     if (!f) return;
   }
+  _builderWsSuppressed = true;
   try {
-    // Persist metadata (bounds + tile_size + grid_type) FIRST so that
-    // the subsequent `map.tiles_updated` broadcast sees a fresh local
-    // cache — otherwise the WS handler can "reset" the bounds we just
-    // typed in with the stale floor record.
+    // Persist metadata (bounds + tile_size + grid_type)
     await api.patch(`/api/map-builder/floors/${currentFloorId}`, {
       grid_type: builderCanvas.gridType,
       tile_size: builderCanvas.tileSize,
       map_cols: builderCanvas.mapCols,
       map_rows: builderCanvas.mapRows,
     });
-    // Update local cache immediately (don't wait for WS echo).
+    // Update local cache immediately
     const f = builderFloors.find(x => x.id === currentFloorId);
     if (f) {
       f.grid_type = builderCanvas.gridType;
@@ -9201,12 +9405,131 @@ async function saveBuilderTiles() {
       f.map_cols  = builderCanvas.mapCols;
       f.map_rows  = builderCanvas.mapRows;
     }
-    await api.patch(`/api/map-builder/floors/${currentFloorId}/tiles`, { tiles: builderCanvas.getTiles() });
-    if (f) f.tiles_json = JSON.stringify(builderCanvas.getTiles());
+    // Save tiles
+    const tilesSnapshot = builderCanvas.getTiles();
+    const tilesJson = JSON.stringify(tilesSnapshot);
+    if (f) f.tiles_json = tilesJson;
+    await api.patch(`/api/map-builder/floors/${currentFloorId}/tiles`, { tiles: tilesSnapshot });
     showToast('💾 Saved. Click ▶ Activate to show on Map');
   } catch (e) {
     showToast('Save failed: ' + (e.message || 'unknown error'));
     console.error('saveBuilderTiles', e);
+  } finally {
+    _builderWsSuppressed = false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAP LIBRARY
+// ══════════════════════════════════════════════════════════════
+async function saveToLibrary() {
+  if (!builderFloors.length) { showToast('No floors to save'); return; }
+  if (!currentMapId) { showToast('No map selected'); return; }
+  const defaultName = builderFloors[0].name + ' Map';
+  const name = prompt('Save map to library. Name:', defaultName);
+  if (!name) return;
+    try {
+    await api.post(`/api/map-builder/${SESSION_CODE}/library`, {
+      name: name,
+      description: '',
+      map_id: currentMapId,
+    });
+    showToast('💾 Map saved to library: ' + name);
+  } catch (e) {
+    showToast('Save to library failed: ' + (e.message || 'error'));
+    console.error('saveToLibrary error:', e);
+  }
+}
+
+async function openLibraryModal(onSelectCallback) {
+  let items = [];
+  try {
+    items = await api.get(`/api/map-builder/${SESSION_CODE}/library`);
+  } catch (e) {
+    showToast('Failed to load library');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'library-modal-overlay';
+  const cards = items.map(m => `
+    <div class="library-card" data-id="${m.id}">
+      <div class="lib-actions">
+        <button class="btn btn-danger btn-xs lib-delete" data-id="${m.id}" title="Delete">🗑</button>
+      </div>
+      <div class="lib-thumb">${m.image_url ? `<img src="${m.image_url}" alt="">` : '🗺️'}</div>
+      <div class="lib-name">${escapeHtml(m.name)}</div>
+      <div class="lib-date">${m.created_at ? new Date(m.created_at).toLocaleDateString() : ''}</div>
+    </div>
+  `).join('');
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3>📂 Map Library</h3>
+        <button class="btn btn-ghost btn-xs" id="lib-close">✕</button>
+      </div>
+      <div class="library-grid" id="library-grid">
+        ${cards || '<div style="color:var(--text-muted);text-align:center;padding:20px">No saved maps yet.</div>'}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay || e.target.id === 'lib-close') overlay.remove();
+  });
+  // Load on card click
+  overlay.querySelectorAll('.library-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.lib-delete')) return;
+      const id = parseInt(card.dataset.id);
+      if (onSelectCallback) {
+        onSelectCallback(id);
+      } else {
+        loadLibraryMap(id);
+      }
+      overlay.remove();
+    });
+  });
+  // Delete
+  overlay.querySelectorAll('.lib-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.id);
+      if (!confirm('Delete this map from library?')) return;
+      try {
+        await api.del(`/api/map-builder/library/${id}`);
+        btn.closest('.library-card').remove();
+        showToast('🗑 Deleted from library');
+      } catch (err) {
+        showToast('Delete failed');
+      }
+    });
+  });
+}
+
+async function loadLibraryMap(libraryId) {
+  if (!SESSION_CODE || !SESSION_ID) return;
+  try {
+    const result = await api.post(`/api/map-builder/library/${libraryId}/load`, {
+      session_id: SESSION_ID,
+      name: null,
+    });
+    // Response: { floors: [...], count: N, map_id: id }
+    const newFloors = result.floors || [];
+    if (!newFloors.length) {
+      showToast('Library entry is empty');
+      return;
+    }
+    // Refresh map list and select the newly created map
+    await loadBuilderMaps();
+    if (result.map_id) {
+      currentMapId = result.map_id;
+      renderBuilderMapSelect();
+      await loadBuilderMapFloors();
+    }
+    showToast(`📂 Loaded ${newFloors.length} floor(s) from library`);
+  } catch (e) {
+    showToast('Load failed: ' + (e.message || 'error'));
+    console.error('loadLibraryMap', e);
   }
 }
 
@@ -9263,8 +9586,409 @@ function openBuilderTrapModal(col, row) {
   });
 }
 
+// ══════════════════════════════════════════════════════════════
+// UNIFIED CHEST MODAL (works for both legacy and builder chests)
+// ══════════════════════════════════════════════════════════════
+async function openUnifiedChestModal(chest, options = {}) {
+  const type = options.type || 'builder'; // 'legacy' | 'builder'
+  const isEdit = !!chest;
+  const isLegacy = type === 'legacy';
+  
+  // Normalize items
+  let chestItems = [];
+  if (isEdit) {
+    if (isLegacy) {
+      chestItems = (chest.items || []).map(ci => ({
+        _id: ci.id,
+        item_id: ci.item_id,
+        quantity: ci.quantity,
+        item_name: ci.item_name || 'Unknown',
+        item_type: 'item'
+      }));
+    } else {
+      try { chestItems = JSON.parse(chest.items_json || '[]'); } catch { chestItems = []; }
+    }
+  }
+  
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:420px;max-height:80vh;overflow-y:auto">
+      <div class="modal-header">
+        <h2>${isEdit ? '✏️ Edit' : '📦 New'} Chest</h2>
+        <button class="btn-icon" id="uc-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group"><label>Name</label><input type="text" id="uc-name" placeholder="Chest name" value="${isEdit ? chest.name : 'Chest'}"></div>
+          <div class="form-group"><label>Icon</label><input type="text" id="uc-icon" value="${isEdit ? (chest.icon || '📦') : '📦'}" style="width:56px"></div>
+        </div>
+        <div class="form-group" style="margin-top:10px"><label>Description</label><textarea id="uc-desc" rows="2" placeholder="Description…">${isEdit ? (chest.description || '') : ''}</textarea></div>
+        
+        <div style="display:flex;gap:12px;align-items:center;margin-top:10px">
+          <label style="font-size:0.72rem;color:var(--text-muted)"><input id="uc-hidden" type="checkbox" ${isEdit && (isLegacy ? !chest.is_revealed : chest.is_hidden) ? 'checked' : ''}> Hidden</label>
+          ${!isLegacy ? `<label style="font-size:0.72rem;color:var(--text-muted)"><input id="uc-locked" type="checkbox" ${isEdit && chest.is_locked ? 'checked' : ''}> Locked</label>` : ''}
+        </div>
+        ${!isLegacy ? `
+        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+          <label style="font-size:0.72rem;color:var(--text-muted)">Lock DC:</label>
+          <input id="uc-lock-dc" type="number" value="${isEdit ? (chest.lock_dc || 10) : 10}" style="width:60px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm)">
+        </div>` : ''}
+        
+        <div style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <h3 style="font-size:0.78rem;flex:1">Items inside</h3>
+          </div>
+          <div id="uc-items-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <select id="uc-item-select" style="flex:1;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm);font-size:0.75rem">
+              <option value="">-- Select item --</option>
+            </select>
+            <input id="uc-item-qty" type="number" value="1" min="1" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm)">
+            <button class="btn btn-ghost btn-xs" id="uc-add-item">+</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+            <select id="uc-currency-type" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm);font-size:0.75rem">
+              <option value="gold">Gold</option>
+              <option value="silver">Silver</option>
+              <option value="bronze">Bronze</option>
+            </select>
+            <input id="uc-currency-qty" type="number" value="10" min="1" style="width:60px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:var(--r-sm)">
+            <button class="btn btn-ghost btn-xs" id="uc-add-currency">+ Currency</button>
+          </div>
+        </div>
+        
+        ${isLegacy && isEdit ? `
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="uc-reveal">👁 Reveal</button>
+          <button class="btn btn-ghost btn-sm" id="uc-hide">🙈 Hide</button>
+          <button class="btn btn-ghost btn-sm" id="uc-give">🎁 Give to Player</button>
+        </div>` : ''}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="uc-cancel">Cancel</button>
+        ${isEdit ? `<button class="btn btn-danger btn-sm" id="uc-delete">Delete</button>` : ''}
+        <button class="btn btn-primary btn-sm" id="uc-save">${isEdit ? 'Save' : 'Create'} Chest</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  
+  // Load items dropdown
+  const itemSelect = overlay.querySelector('#uc-item-select');
+  try {
+    const items = await api.get('/api/items');
+    (items || []).forEach(it => {
+      const opt = document.createElement('option');
+      opt.value = it.id;
+      opt.textContent = it.name;
+      itemSelect.appendChild(opt);
+    });
+  } catch (e) { console.error('Failed to load items', e); }
+  
+  // Render items list
+  function renderItems() {
+    const list = overlay.querySelector('#uc-items-list');
+    if (!chestItems.length) {
+      list.innerHTML = '<div style="font-size:0.78rem;color:var(--text-muted);padding:4px 0">No items in this chest.</div>';
+      return;
+    }
+    list.innerHTML = chestItems.map((it, i) => `
+      <div style="display:flex;align-items:center;gap:6px;padding:4px;background:var(--bg-surface-3);border-radius:var(--r-sm)">
+        <span style="font-size:0.78rem;flex:1">${it.item_name || 'Unknown'} ×${it.quantity || 1}</span>
+        <button class="btn btn-ghost btn-xs" data-remove="${i}" style="color:var(--accent-red)">🗑</button>
+      </div>
+    `).join('');
+    list.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        chestItems.splice(parseInt(btn.dataset.remove), 1);
+        renderItems();
+      });
+    });
+  }
+  renderItems();
+  
+  // Add item
+  overlay.querySelector('#uc-add-item').addEventListener('click', () => {
+    const itemId = parseInt(itemSelect.value);
+    if (!itemId) return;
+    const itemName = itemSelect.options[itemSelect.selectedIndex].textContent;
+    const qty = parseInt(overlay.querySelector('#uc-item-qty').value) || 1;
+    chestItems.push({ item_id: itemId, quantity: qty, item_name: itemName, item_type: 'item' });
+    renderItems();
+  });
+  
+  // Add currency
+  overlay.querySelector('#uc-add-currency').addEventListener('click', () => {
+    const currencyType = overlay.querySelector('#uc-currency-type').value;
+    const qty = parseInt(overlay.querySelector('#uc-currency-qty').value) || 1;
+    chestItems.push({
+      item_type: 'currency',
+      currency_type: currencyType,
+      quantity: qty,
+      item_name: currencyType.charAt(0).toUpperCase() + currencyType.slice(1),
+    });
+    renderItems();
+  });
+  
+  // Close / Cancel
+  const close = () => overlay.remove();
+  overlay.querySelector('#uc-close').addEventListener('click', close);
+  overlay.querySelector('#uc-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  
+  // Legacy actions
+  if (isLegacy && isEdit) {
+    overlay.querySelector('#uc-reveal').addEventListener('click', async () => {
+      try {
+        await api.patch(`/api/chests/${chest.id}/reveal`);
+        showToast('Chest revealed');
+        loadChests();
+      } catch (e) { showToast('Error revealing chest'); }
+    });
+    overlay.querySelector('#uc-hide').addEventListener('click', async () => {
+      try {
+        await api.patch(`/api/chests/${chest.id}/hide`);
+        showToast('Chest hidden');
+        loadChests();
+      } catch (e) { showToast('Error hiding chest'); }
+    });
+    overlay.querySelector('#uc-give').addEventListener('click', async () => {
+      const playerId = prompt('Enter player character ID:');
+      if (!playerId) return;
+      try {
+        const res = await api.post(`/api/chests/${chest.id}/give-to-player`, { player_id: parseInt(playerId) });
+        showToast(`Gave ${res.transferred.length} items to player`);
+        loadChests();
+        refreshChars();
+      } catch (e) { showToast('Error: ' + (e.message || 'Failed to transfer')); }
+    });
+  }
+  
+  // Delete
+  if (isEdit) {
+    overlay.querySelector('#uc-delete').addEventListener('click', async () => {
+      if (!confirm('Delete this chest?')) return;
+      try {
+        if (isLegacy) {
+          await api.del(`/api/chests/${chest.id}`);
+          loadChests();
+        } else {
+          await api.del(`/api/map-builder/chests/${chest.id}`);
+          if (builderCanvas) {
+            builderCanvas.setMapChests((builderCanvas.mapChests || []).filter(c => c.id !== chest.id));
+            builderCanvas.render();
+          }
+        }
+        showToast('Chest deleted');
+        close();
+      } catch (e) { showToast('Failed to delete chest'); }
+    });
+  }
+  
+  // Save
+  overlay.querySelector('#uc-save').addEventListener('click', async () => {
+    const name = overlay.querySelector('#uc-name').value.trim() || 'Chest';
+    const icon = overlay.querySelector('#uc-icon').value || '📦';
+    const description = overlay.querySelector('#uc-desc').value || '';
+    const isHidden = overlay.querySelector('#uc-hidden').checked;
+    
+    try {
+      if (isLegacy) {
+        // Legacy chest
+        if (isEdit) {
+          await api.put(`/api/chests/${chest.id}`, {
+            name, description, icon,
+            map_x: chest.map_x, map_y: chest.map_y
+          });
+          // Sync items: remove old, add new
+          const oldItems = chest.items || [];
+          const newItems = chestItems.filter(it => it.item_type === 'item');
+          // Remove items not in new list
+          for (const old of oldItems) {
+            const stillThere = newItems.find(ni => ni.item_id === old.item_id && ni.quantity === old.quantity);
+            if (!stillThere) {
+              await api.del(`/api/chest-items/${old.id}`);
+            }
+          }
+          // Add new items
+          for (const it of newItems) {
+            const exists = oldItems.find(oi => oi.item_id === it.item_id && oi.quantity === it.quantity);
+            if (!exists) {
+              await api.post(`/api/chests/${chest.id}/items`, { item_id: it.item_id, quantity: it.quantity });
+            }
+          }
+          showToast('Chest updated');
+          loadChests();
+        } else {
+          const newChest = await api.post(`/api/map/${SESSION_CODE}/chests`, {
+            name, description, icon, map_x: 0.5, map_y: 0.5
+          });
+          for (const it of chestItems.filter(it => it.item_type === 'item')) {
+            await api.post(`/api/chests/${newChest.id}/items`, { item_id: it.item_id, quantity: it.quantity });
+          }
+          showToast('Chest placed');
+          loadChests();
+        }
+      } else {
+        // Builder chest
+        const payload = {
+          name, items: chestItems,
+          is_hidden: isHidden,
+          visible_to_players: !isHidden,
+          is_locked: overlay.querySelector('#uc-locked')?.checked || false,
+          lock_dc: parseInt(overlay.querySelector('#uc-lock-dc')?.value) || 10,
+        };
+        if (isEdit) {
+          await api.patch(`/api/map-builder/chests/${chest.id}`, payload);
+          showToast('Chest updated');
+        } else {
+          await api.post(`/api/map-builder/${SESSION_CODE}/chests`, {
+            ...payload,
+            floor_id: currentFloorId,
+            col: options.col || 0,
+            row: options.row || 0,
+          });
+          showToast('Chest placed');
+        }
+        // Refresh builder canvas
+        if (builderCanvas) {
+          try {
+            const chests = await api.get(`/api/map-builder/${SESSION_CODE}/chests`);
+            builderCanvas.setMapChests((chests || []).filter(c => c.floor_id === currentFloorId));
+            builderCanvas.render();
+          } catch (e) { console.error('Failed to refresh chests', e); }
+        }
+      }
+      close();
+    } catch (e) { showToast('Failed to save chest: ' + (e.message || '')); }
+  });
+}
+
+// Wrapper for builder chests
+async function openBuilderChestModal(col, row, existingChest = null) {
+  await openUnifiedChestModal(existingChest, { type: 'builder', col, row });
+}
+
+// Wrapper for legacy chests
+function openChestModal(chest = null) {
+  openUnifiedChestModal(chest, { type: 'legacy' });
+}
+
+async function openBuilderPortalModal(col, row, existingPortal = null) {
+  const isEdit = !!existingPortal;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const mapOptions = (builderMaps || []).map(m => `<option value="${m.id}" ${isEdit && existingPortal.target_map_id == m.id ? 'selected' : ''}>${m.name}</option>`).join('');
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:360px">
+      <h3>${isEdit ? '✏️ Edit' : '🌀 Place'} Portal</h3>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        <input id="bp-name" placeholder="Portal name" value="${isEdit ? existingPortal.name : 'Portal'}" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:var(--r-sm)">
+        <label style="font-size:0.72rem;color:var(--text-muted)">Target Map</label>
+        <select id="bp-target-map" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:var(--r-sm)">
+          <option value="">None</option>
+          ${mapOptions}
+        </select>
+        <label style="font-size:0.72rem;color:var(--text-muted)">Target Floor</label>
+        <select id="bp-target-floor" style="background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:var(--r-sm)">
+          <option value="">None</option>
+        </select>
+        <div style="display:flex;gap:6px">
+          <input id="bp-target-col" type="number" placeholder="Target Col" value="${isEdit ? existingPortal.target_col || 0 : 0}" style="flex:1;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:var(--r-sm)">
+          <input id="bp-target-row" type="number" placeholder="Target Row" value="${isEdit ? existingPortal.target_row || 0 : 0}" style="flex:1;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:var(--r-sm)">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          ${isEdit ? `<button class="btn btn-danger btn-sm" id="bp-delete">Delete</button>` : ''}
+          <button class="btn btn-ghost btn-sm" id="bp-cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="bp-save">${isEdit ? 'Update' : 'Save'} Portal</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const targetMapSel = overlay.querySelector('#bp-target-map');
+  const targetFloorSel = overlay.querySelector('#bp-target-floor');
+  
+  // Load target floors if editing
+  if (isEdit && existingPortal.target_map_id) {
+    try {
+      const floors = await api.get(`/api/map-builder/maps/${existingPortal.target_map_id}/floors`);
+      (floors || []).forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.name;
+        if (existingPortal.target_floor_id == f.id) opt.selected = true;
+        targetFloorSel.appendChild(opt);
+      });
+    } catch (e) { console.error('Failed to load target floors', e); }
+  }
+  
+  targetMapSel.addEventListener('change', async () => {
+    const mapId = parseInt(targetMapSel.value) || 0;
+    targetFloorSel.innerHTML = '<option value="">None</option>';
+    if (!mapId) return;
+    try {
+      const floors = await api.get(`/api/map-builder/maps/${mapId}/floors`);
+      (floors || []).forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.name;
+        targetFloorSel.appendChild(opt);
+      });
+    } catch (e) { console.error('Failed to load target floors', e); }
+  });
+  
+  overlay.querySelector('#bp-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  
+  if (isEdit) {
+    overlay.querySelector('#bp-delete').addEventListener('click', async () => {
+      if (!confirm('Delete this portal?')) return;
+      try {
+        await api.del(`/api/map-builder/portals/${existingPortal.id}`);
+        showToast('Portal deleted');
+        overlay.remove();
+      } catch (e) { showToast('Failed to delete portal'); }
+    });
+  }
+  
+  overlay.querySelector('#bp-save').addEventListener('click', async () => {
+    const payload = {
+      floor_id: currentFloorId, col, row,
+      name: overlay.querySelector('#bp-name').value || 'Portal',
+      target_map_id: parseInt(targetMapSel.value) || null,
+      target_floor_id: parseInt(targetFloorSel.value) || null,
+      target_col: parseInt(overlay.querySelector('#bp-target-col').value) || 0,
+      target_row: parseInt(overlay.querySelector('#bp-target-row').value) || 0,
+    };
+    try {
+      if (isEdit) {
+        await api.patch(`/api/map-builder/portals/${existingPortal.id}`, payload);
+        showToast('Portal updated');
+      } else {
+        await api.post(`/api/map-builder/${SESSION_CODE}/portals`, payload);
+        showToast('Portal placed');
+      }
+      overlay.remove();
+    } catch (e) { showToast('Failed to save portal'); }
+  });
+}
+
 // Builder wiring
 document.addEventListener('DOMContentLoaded', () => {
+  // Map selector
+  const mapSel = document.getElementById('builder-map-select');
+  if (mapSel) mapSel.addEventListener('change', e => {
+    currentMapId = parseInt(e.target.value);
+    loadBuilderMapFloors();
+  });
+  const newMapBtn = document.getElementById('btn-new-map');
+  if (newMapBtn) newMapBtn.addEventListener('click', createBuilderMap);
+  const delMapBtn = document.getElementById('btn-delete-map');
+  if (delMapBtn) delMapBtn.addEventListener('click', deleteBuilderMap);
+  const actMapBtn = document.getElementById('btn-activate-map');
+  if (actMapBtn) actMapBtn.addEventListener('click', activateBuilderMap);
+
+  // Floor selector
   const sel = document.getElementById('builder-floor-select');
   if (sel) sel.addEventListener('change', e => loadBuilderFloor(parseInt(e.target.value)));
   const newBtn = document.getElementById('btn-new-floor');
@@ -9283,18 +10007,6 @@ document.addEventListener('DOMContentLoaded', () => {
       b.classList.add('active');
       if (builderCanvas) builderCanvas.setBrush(b.dataset.brush);
     });
-  });
-  const trapBtn = document.getElementById('btn-place-trap');
-  if (trapBtn) trapBtn.addEventListener('click', () => {
-    if (!builderCanvas) return;
-    const c = builderCanvas.canvas;
-    const handler = async (e) => {
-      const tile = builderCanvas._screenToTile(e.offsetX, e.offsetY);
-      openBuilderTrapModal(tile.col, tile.row);
-      c.removeEventListener('click', handler);
-    };
-    c.addEventListener('click', handler);
-    showToast('Click a tile to place the trap');
   });
   // Tile size slider
   const szInp = document.getElementById('builder-tile-size');
@@ -9342,17 +10054,129 @@ document.addEventListener('DOMContentLoaded', () => {
       if (f) f.grid_type = next;
     }
   });
+  // Background image upload
+  const bgUploadInput = document.getElementById('builder-bg-upload');
+  const bgUploadBtn = document.getElementById('btn-builder-bg-upload');
+  if (bgUploadBtn && bgUploadInput) {
+    bgUploadBtn.addEventListener('click', () => bgUploadInput.click());
+    bgUploadInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      let fid = currentFloorId;
+      if (!fid && builderFloors.length) { fid = builderFloors[0].id; currentFloorId = fid; }
+      if (!fid) { showToast('No floor to upload image to'); return; }
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch(`/api/map-builder/floors/${fid}/upload-image`, { method: 'POST', body: formData });
+        if (!resp.ok) { throw new Error(await resp.text()); }
+        const data = await resp.json();
+        if (data.url) {
+          const f = builderFloors.find(x => x.id === fid);
+          if (f) { f.image_path = data.path; f.image_url = data.url; }
+          if (!builderCanvas) {
+            const el = document.getElementById('builder-canvas');
+            if (el) builderCanvas = new BuilderCanvas(el);
+          }
+          if (builderCanvas) {
+            builderCanvas.setBackgroundImage(data.url);
+            console.log('Builder background set to:', data.url);
+          } else {
+            console.error('Builder canvas not available after upload');
+          }
+          showToast('🖼 Background image uploaded');
+        }
+      } catch (err) {
+        showToast('Upload failed: ' + (err.message || 'error'));
+        console.error('upload image error:', err, 'floor_id:', fid);
+      }
+      bgUploadInput.value = '';
+    });
+  }
+  // Remove background image
+  const bgRemoveBtn = document.getElementById('btn-builder-bg-remove');
+  if (bgRemoveBtn) {
+    bgRemoveBtn.addEventListener('click', async () => {
+      if (!currentFloorId) return;
+      try {
+        await api.patch(`/api/map-builder/floors/${currentFloorId}/image`, {
+          image_path: null,
+          image_url: null,
+        });
+        const f = builderFloors.find(x => x.id === currentFloorId);
+        if (f) { f.image_path = null; f.image_url = null; }
+        if (builderCanvas) builderCanvas.setBackgroundImage(null);
+        showToast('🗑 Background image removed');
+      } catch (err) {
+        showToast('Remove failed: ' + (err.message || 'error'));
+      }
+    });
+  }
+  // Save to library
+  const saveLibBtn = document.getElementById('btn-save-to-library');
+  if (saveLibBtn) {
+    saveLibBtn.addEventListener('click', saveToLibrary);
+  }
+  // Open library
+  const openLibBtn = document.getElementById('btn-open-library');
+  if (openLibBtn) {
+    openLibBtn.addEventListener('click', openLibraryModal);
+  }
   // Tab switch hook
   $$('.gm-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       if (tab.dataset.tab === 'builder') {
         if (!builderCanvas) {
           const el = document.getElementById('builder-canvas');
-          if (el) { builderCanvas = new BuilderCanvas(el); loadBuilder(); }
-        } else { builderCanvas._resize(); }
+          if (el) builderCanvas = new BuilderCanvas(el);
+        }
+        loadBuilder().then(async () => {
+          if (!builderFloors.length) {
+            await createBuilderFloor(false);
+          }
+          if (builderCanvas) builderCanvas._resize();
+        });
       }
     });
   });
+  // Map tab floor switcher
+  const mapFloorSel = document.getElementById('map-floor-select');
+  if (mapFloorSel) {
+    mapFloorSel.addEventListener('change', async (e) => {
+      const fid = parseInt(e.target.value);
+      try {
+        await api.post(`/api/map-builder/floors/${fid}/activate`);
+        _mapFloorsCache.forEach(f => f.is_active = (f.id === fid));
+        await loadMapState();
+        showToast('🔄 Floor switched');
+      } catch (err) {
+        showToast('Switch floor failed');
+      }
+    });
+  }
+
+  // Map tab — Load from Library
+  const mapLibBtn = document.getElementById('btn-map-load-library');
+  if (mapLibBtn) {
+    mapLibBtn.addEventListener('click', () => {
+      openLibraryModal(async (libraryId) => {
+        try {
+          await loadLibraryMap(libraryId);
+          if (currentFloorId) {
+            await api.post(`/api/map-builder/floors/${currentFloorId}/activate`);
+            builderFloors.forEach(ff => ff.is_active = (ff.id === currentFloorId));
+            renderBuilderFloorSelect();
+          }
+          await loadMapState();
+          await loadMapFloorsForTab();
+          showToast('📂 Map loaded and activated');
+        } catch (e) {
+          showToast('Load failed: ' + (e.message || 'error'));
+          console.error('loadLibraryMap', e);
+        }
+      });
+    });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -9370,177 +10194,14 @@ async function loadChests() {
   } catch (e) { console.error('loadChests error:', e); }
 }
 
-function openChestModal(chest = null) {
-  editingChestId = chest ? chest.id : null;
-  const modal = $('#chest-modal');
-  modal.classList.remove('hidden');
-
-  if (chest) {
-    $('#chest-modal-title').textContent = 'Edit Chest';
-    $('#chest-ed-name').value = chest.name || '';
-    $('#chest-ed-icon').value = chest.icon || '📦';
-    $('#chest-ed-desc').value = chest.description || '';
-    renderChestItemList(chest.items || []);
-    $('#btn-delete-chest').classList.remove('hidden');
-  } else {
-    $('#chest-modal-title').textContent = 'New Chest';
-    $('#chest-ed-name').value = '';
-    $('#chest-ed-icon').value = '📦';
-    $('#chest-ed-desc').value = '';
-    renderChestItemList([]);
-    $('#btn-delete-chest').classList.add('hidden');
-  }
-}
-
-function closeChestModal() {
-  $('#chest-modal').classList.add('hidden');
-  editingChestId = null;
-  placingChest = false;
-}
-
-function renderChestItemList(items) {
-  const list = $('#chest-item-list');
-  if (!items.length) {
-    list.innerHTML = '<div style="font-size:0.78rem;color:var(--text-muted);padding:4px 0">No items in this chest.</div>';
-    return;
-  }
-  list.innerHTML = items.map(ci => `
-    <div style="display:flex;align-items:center;gap:6px;padding:4px;background:var(--bg-surface-3);border-radius:var(--r-sm)">
-      <span style="font-size:0.78rem;flex:1">${ci.item_name || 'Unknown'} ×${ci.quantity}</span>
-      <button class="btn btn-ghost btn-xs" data-remove-chest-item="${ci.id}">🗑</button>
-    </div>
-  `).join('');
-  list.querySelectorAll('[data-remove-chest-item]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const ciId = parseInt(btn.dataset.removeChestItem);
-      try {
-        await api.del(`/api/chest-items/${ciId}`);
-        showToast('Item removed');
-        if (editingChestId) {
-          const chest = allChests.find(c => c.id === editingChestId);
-          if (chest) {
-            chest.items = chest.items.filter(ci => ci.id !== ciId);
-            renderChestItemList(chest.items);
-          }
-        }
-      } catch (e) { showToast('Error removing item'); }
-    });
-  });
-}
-
-async function saveChest() {
-  const name = $('#chest-ed-name').value.trim();
-  if (!name) { showToast('Name is required'); return; }
-
-  const payload = {
-    name: name,
-    description: $('#chest-ed-desc').value,
-    icon: $('#chest-ed-icon').value,
-    map_x: 0.5,
-    map_y: 0.5,
-  };
-
-  try {
-    if (editingChestId) {
-      const chest = allChests.find(c => c.id === editingChestId);
-      if (chest) {
-        payload.map_x = chest.map_x;
-        payload.map_y = chest.map_y;
-      }
-      await api.put(`/api/chests/${editingChestId}`, payload);
-      showToast('Chest updated');
-    } else {
-      await api.post(`/api/map/${SESSION_CODE}/chests`, payload);
-      showToast('Chest placed');
-    }
-    closeChestModal();
-    loadChests();
-  } catch (e) {
-    showToast('Error: ' + (e.message || 'Failed to save chest'));
-  }
-}
-
-async function deleteChest() {
-  if (!editingChestId) return;
-  if (!confirm('Delete this chest?')) return;
-  try {
-    await api.del(`/api/chests/${editingChestId}`);
-    showToast('Chest deleted');
-    closeChestModal();
-    loadChests();
-  } catch (e) {
-    showToast('Error: ' + (e.message || 'Failed to delete chest'));
-  }
-}
-
-async function revealChest() {
-  if (!editingChestId) return;
-  try {
-    await api.patch(`/api/chests/${editingChestId}/reveal`);
-    showToast('Chest revealed');
-    loadChests();
-  } catch (e) { showToast('Error revealing chest'); }
-}
-
-async function hideChest() {
-  if (!editingChestId) return;
-  try {
-    await api.patch(`/api/chests/${editingChestId}/hide`);
-    showToast('Chest hidden');
-    loadChests();
-  } catch (e) { showToast('Error hiding chest'); }
-}
-
-async function giveChestToPlayer() {
-  if (!editingChestId) return;
-  const playerId = prompt('Enter player character ID:');
-  if (!playerId) return;
-  try {
-    const res = await api.post(`/api/chests/${editingChestId}/give-to-player`, { player_id: parseInt(playerId) });
-    showToast(`Gave ${res.transferred.length} items to player`);
-    loadChests();
-    refreshChars();
-  } catch (e) { showToast('Error: ' + (e.message || 'Failed to transfer')); }
-}
-
-// Chest event listeners
+// Legacy chest button handlers
 $('#btn-place-chest').addEventListener('click', () => {
-  placingChest = true;
-  showToast('Click on the map to place a chest');
+  openUnifiedChestModal(null, { type: 'legacy' });
 });
 $('#btn-list-chests').addEventListener('click', () => {
-  openChestModalList();
-});
-$('#btn-close-chest-modal').addEventListener('click', closeChestModal);
-$('#btn-cancel-chest').addEventListener('click', closeChestModal);
-$('#btn-save-chest').addEventListener('click', saveChest);
-$('#btn-delete-chest').addEventListener('click', deleteChest);
-$('#btn-chest-reveal').addEventListener('click', revealChest);
-$('#btn-chest-hide').addEventListener('click', hideChest);
-$('#btn-chest-give').addEventListener('click', giveChestToPlayer);
-
-// Place chest on map click
-function handleMapClickForChest(nx, ny) {
-  if (!placingChest) return false;
-  placingChest = false;
-  const payload = {
-    name: 'Chest',
-    description: '',
-    icon: '📦',
-    map_x: nx,
-    map_y: ny,
-  };
-  api.post(`/api/map/${SESSION_CODE}/chests`, payload)
-    .then(() => { showToast('Chest placed'); loadChests(); })
-    .catch(e => showToast('Error: ' + (e.message || 'Failed to place chest')));
-  return true;
-}
-
-function openChestModalList() {
   if (!allChests.length) { showToast('No chests'); return; }
-  // Just open the first chest for now, or show a simple list
-  openChestModal(allChests[0]);
-}
+  openUnifiedChestModal(allChests[0], { type: 'legacy' });
+});
 
 // Chest WS handlers
 ws.on('chest.placed', () => loadChests());
@@ -9555,7 +10216,16 @@ ws.on('chest.items_transferred', d => {
 
 // Builder WS handlers
 ws.on('map.floor_added', d => { if (!builderFloors.find(f => f.id === d.id)) { builderFloors.push(d); renderBuilderFloorSelect(); } });
-ws.on('map.floor_updated', d => { const i = builderFloors.findIndex(f => f.id === d.id); if (i >= 0) builderFloors[i] = d; renderBuilderFloorSelect(); });
+ws.on('map.floor_updated', d => {
+  if (_builderWsSuppressed) return;
+  const i = builderFloors.findIndex(f => f.id === d.id);
+  if (i >= 0) {
+    // Merge — preserve local tiles_json because the server response
+    // may carry stale tiles if a separate /tiles PATCH is in-flight.
+    builderFloors[i] = { ...builderFloors[i], ...d, tiles_json: builderFloors[i].tiles_json };
+  }
+  renderBuilderFloorSelect();
+});
 ws.on('map.floor_deleted', d => { builderFloors = builderFloors.filter(f => f.id !== d.floor_id); if (currentFloorId === d.floor_id) { currentFloorId = builderFloors[0]?.id || null; if (currentFloorId) loadBuilderFloor(currentFloorId); } renderBuilderFloorSelect(); });
 ws.on('map.floor_activated', d => {
   builderFloors.forEach(f => f.is_active = (f.id === d.floor_id));
@@ -9565,14 +10235,19 @@ ws.on('map.floor_activated', d => {
   if (typeof loadMapState === 'function') loadMapState();
 });
 ws.on('map.tiles_updated', d => {
-  // Only refresh tiles, DON'T reload the whole floor — a reload would
-  // pull stale `map_cols` / `map_rows` / `tile_size` from the local
-  // `builderFloors` cache (which hasn't seen the newer floor PATCH
-  // response yet) and visually "reset" the bounds the user just set.
+  if (_builderWsSuppressed) return;
   if (!d || currentFloorId !== d.floor_id || !builderCanvas) return;
   const f = builderFloors.find(x => x.id === d.floor_id);
   if (!f) return;
-  try { builderCanvas.setTiles(JSON.parse(f.tiles_json || '{}')); } catch {}
+  try {
+    const parsed = JSON.parse(f.tiles_json || '{}');
+    // Avoid unnecessary re-render if local canvas already matches.
+    const currentKeys = Object.keys(builderCanvas.tiles).sort().join(',');
+    const parsedKeys = Object.keys(parsed).sort().join(',');
+    if (currentKeys !== parsedKeys) {
+      builderCanvas.setTiles(parsed);
+    }
+  } catch {}
 });
 ws.on('map.trap_added', d => { addLog('gm.map', `Trap added: ${d.name}`); });
 
