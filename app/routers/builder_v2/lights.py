@@ -8,6 +8,7 @@ from app.database import get_session
 from app.models import BV2Light, BV2Location, Character, Session
 from app.routers.builder_v2.common import (
     broadcast,
+    is_active_bv2_location,
     router,
     ser_light,
     session_code_for_location,
@@ -57,6 +58,10 @@ async def create_light(location_id: int, body: dict, db: AsyncSession = Depends(
             "location_id": location_id,
             "light": ser_light(li),
         })
+        if await is_active_bv2_location(location_id, db):
+            await broadcast(sess_code, "map.light_added", {
+                "light": ser_light(li),
+            })
     return ser_light(li)
 
 
@@ -92,6 +97,10 @@ async def update_light(light_id: int, body: dict, db: AsyncSession = Depends(get
             "location_id": li.location_id,
             "light": ser_light(li),
         })
+        if li.location_id and await is_active_bv2_location(li.location_id, db):
+            await broadcast(sess_code, "map.light_updated", {
+                "light": ser_light(li),
+            })
     return ser_light(li)
 
 
@@ -111,6 +120,10 @@ async def delete_light(light_id: int, db: AsyncSession = Depends(get_session)):
             "location_id": location_id,
             "light_id": light_id,
         })
+        if location_id and await is_active_bv2_location(location_id, db):
+            await broadcast(sess_code, "map.light_deleted", {
+                "light_id": light_id,
+            })
     return {"ok": True}
 
 

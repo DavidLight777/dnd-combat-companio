@@ -1098,5 +1098,95 @@ fixes added to `temp_fix.md` → fixes applied → checklist ticked →
 
 ---
 
+---
+
+## Phase 7 — Bridge + Hex + Drag — Fix List ✅ APPLIED on 2026-04-26
+
+No critical bugs were discovered during Phase 7 implementation.
+Two test-level adjustments were made:
+
+1. **NPC template test payload** — `session_id` must be an `int`, not
+   `None`, matching the `TemplateBody` Pydantic schema.
+2. **Chest bridge test** — chest must have `is_opened=True` for items
+   to appear in the public player payload (by design in §4.7.7).
+
+Both were caught by the standard TDD run-before-fix protocol and
+required no code changes outside the test file.
+
+### Verification checklist
+
+- [x] Group A (typed entity tables): 6 new models, 5 router modules,
+      `props_json` dropped, S5 cleanup added, all 7 roundtrip tests green.
+- [x] Group B (bridge): `_build_state_from_bv2` in `map/files.py`,
+      legacy WS rebroadcast for tiles/entities/lights, 3 bridge tests green.
+- [x] Group C (hex + drag): odd-r offset fix in `20-mapview.js`,
+      E/S/SE drag handles with `bv2:bounds-resized-done` event.
+- [x] `.
+
+dev.ps1 check` green with **55** tests passing.
+- [x] Pre-phase grep S1 (Python + JS): zero matches.
+- [x] Pre-phase grep S5a + S5b: all incoming arrows have explicit cleanup.
+
+---
+
+## Phase 8 — Player Lighting + FOV + Edges + Negative Resize — Fix List ✅ APPLIED on 2026-04-26
+
+### Fix 8.1 — `setFog` string format mismatch (MEDIUM)
+
+**File:** `static/js/map-canvas.js`  
+**Function:** `setFog`
+
+The bv2 bridge returns `revealed_cells` as a list of `"col,row"` strings,
+but `setFog` destructured every element as `c[0],c[1]` assuming `[col,row]`
+arrays. Passing a string would produce `c[0]=="1"`, `c[1]==","`, breaking
+the Set and rendering zero revealed cells.
+
+**Fix.** Accept both formats:
+
+```javascript
+const cells = (revealedCells || []).map(c => {
+  if (typeof c === 'string') return c;
+  return `${c[0]},${c[1]}`;
+});
+this.revealedCells = new Set(cells);
+```
+
+### Fix 8.2 — `S.api.post` does not exist (LOW)
+
+**File:** `static/js/builder_v2/30-editor.js`
+
+`window.bv2.api` only exposes named methods (`createMap`, `patchTiles`,
+etc.). Calling `S.api.post` throws `TypeError: S.api.post is not a function`.
+
+**Fix.** Use the global `api.post` directly:
+
+```javascript
+await api.post(`/api/builder-v2/locations/${S.currentLocId}/shift`, { ... });
+```
+
+### Fix 8.3 — `_sendOwnTokenMove` missing `return` in catch block (LOW)
+
+**File:** `static/js/player/10-map.js`
+
+If the `PATCH /api/map/token` request threw (network failure), the catch
+block logged but did not return. Execution fell through to the Phase 8
+visit POST, which would run with stale/invalid coordinates.
+
+**Fix.** Add `return;` after `console.warn('token move failed:', e);`.
+
+### Verification checklist
+
+- [x] Bridge payload exposes `bv2_lights`, `bv2_edges`, and per-character
+      `revealed_cells` via optional `character_id` query param.
+- [x] `MapCanvas` renders lighting overlay (`destination-out` radial
+      gradients) and edge indicators for all sides.
+- [x] Player token drag triggers client-side FOV + `POST /visit` update.
+- [x] Negative-direction resize (N/W/NW) shifts content via new
+      `POST /locations/{id}/shift` endpoint before saving bounds.
+- [x] `ruff check app tests` green; `pytest tests/test_smoke.py` reports
+      **61** tests passing.
+
+---
+
 *End of file. New phases get appended above this standing-rules
 block; the rules block stays at the bottom as a permanent reference.*

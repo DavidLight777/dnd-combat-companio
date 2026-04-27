@@ -1,4 +1,5 @@
 import json
+import math
 import os
 
 from fastapi import Depends, File, HTTPException, UploadFile
@@ -9,7 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
+    BV2Chest,
+    BV2ChestItem,
+    BV2Edge,
+    BV2Entity,
+    BV2Light,
+    BV2Location,
+    BV2Map,
+    BV2Tile,
+    BV2Trap,
+    BV2VisitState,
     Character,
+    Item,
     MapData,
     MapFloor,
     MapTemplate,
@@ -139,6 +151,178 @@ async def delete_map(session_code: str, db: AsyncSession = Depends(get_session))
 
 
 
+# ── bv2 -> legacy bridge helpers (Phase 7) ──────────────────
+
+async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: int | None = None):
+    """Translate active bv2 location into the legacy map state shape
+    so the existing player canvas renders it without changes."""
+    tiles_q = await db.execute(select(BV2Tile).where(BV2Tile.location_id == loc.id))
+    tile_map = {
+        f"{t.col},{t.row}": {
+            "type": t.tile_type,
+            "blocks_movement": bool(t.blocks_movement),
+            "blocks_vision": bool(t.blocks_vision),
+        }
+        for t in tiles_q.scalars().all()
+    }
+
+    # Tokens: only characters whose current_location_id matches this location
+    tokens = []
+    cols = max(1, loc.cols)
+    rows = max(1, loc.rows)
+    for c in chars:
+        if c.current_location_id != loc.id:
+            continue
+        if loc.grid_type == "hex":
+            xpx = (c.col + 0.5) + (0.5 if c.row % 2 else 0.0)
+            x_norm = xpx / (cols + 0.5)
+            y_norm = (c.row + 0.5) * (math.sqrt(3) / 2) / (rows * math.sqrt(3) / 2)
+        else:
+            x_norm = (c.col + 0.5) / cols
+            y_norm = (c.row + 0.5) / rows
+        speed_total = await _effective_speed_cells(c, db)
+        tokens.append({
+            "character_id": c.id, "name": c.name, "is_npc": c.is_npc,
+            "x": x_norm, "y": y_norm,
+            "color": c.token_color, "visible": c.is_visible_on_map,
+            "current_hp": c.current_hp, "max_hp": c.max_hp, "is_alive": c.is_alive,
+            "vision_radius": c.vision_radius,
+            "sight_range_cells": c.sight_range_cells,
+            "speed_total": speed_total,
+            "movement_used": float(c.movement_used_this_turn or 0.0),
+            "movement_left": max(0.0, speed_total - float(c.movement_used_this_turn or 0.0)),
+            "token_image_url": c.token_image_url,
+            "bv2_location_id": c.current_location_id,
+            "bv2_col": c.col, "bv2_row": c.row,
+        })
+
+    # Chests (only visible ones for public payload)
+    ents_q = await db.execute(
+        select(BV2Entity).where(BV2Entity.location_id == loc.id)
+    )
+    entities = ents_q.scalars().all()
+    chests = []
+    for e in entities:
+        if e.entity_type != "chest":
+            continue
+        chest = await db.get(BV2Chest, e.id)
+        if not chest:
+            continue
+        if not e.visible_to_players:
+            continue
+        items = []
+        if chest.is_opened:
+            ci_q = await db.execute(
+                select(BV2ChestItem, Item)
+                .join(Item, BV2ChestItem.item_id == Item.id)
+                .where(BV2ChestItem.chest_entity_id == e.id)
+            )
+            for ci, it in ci_q.all():
+                items.append({"name": it.name, "quantity": ci.quantity})
+        chests.append({
+            "id": e.id,
+            "x": (e.col + 0.5) / cols,
+            "y": (e.row + 0.5) / rows,
+            "name": e.name or "Chest",
+            "icon": chest.icon,
+            "items": items,
+        })
+
+    # Traps
+    traps = []
+    for e in entities:
+        if e.entity_type != "trap":
+            continue
+        trap = await db.get(BV2Trap, e.id)
+        if not trap:
+            continue
+        if not e.visible_to_players:
+            continue
+        traps.append({
+            "id": e.id,
+            "x": (e.col + 0.5) / cols,
+            "y": (e.row + 0.5) / rows,
+            "is_hidden": not e.visible_to_players,
+            "damage_dice": trap.damage_dice,
+            "name": e.name or "Trap",
+        })
+
+    # Lights
+    lights_q = await db.execute(select(BV2Light).where(BV2Light.location_id == loc.id))
+    lights = [
+        {
+            "id": li.id,
+            "col": li.col,
+            "row": li.row,
+            "radius_cells": li.radius_cells,
+            "color_hex": li.color_hex,
+            "intensity": li.intensity,
+            "source_kind": li.source_kind,
+        }
+        for li in lights_q.scalars().all()
+    ]
+
+    # Edges
+    edges_q = await db.execute(select(BV2Edge).where(BV2Edge.location_id == loc.id))
+    edges = [
+        {
+            "id": e.id,
+            "side": e.side,
+            "range_start": e.range_start,
+            "range_end": e.range_end,
+            "target_location_id": e.target_location_id,
+        }
+        for e in edges_q.scalars().all()
+    ]
+
+    # Revealed cells from visit state
+    revealed_cells: list[str] = []
+    if character_id:
+        visit_q = await db.execute(
+            select(BV2VisitState)
+            .where(BV2VisitState.character_id == character_id)
+            .where(BV2VisitState.location_id == loc.id)
+        )
+        visit = visit_q.scalar_one_or_none()
+        if visit and visit.explored_tiles_json:
+            try:
+                tiles_list = json.loads(visit.explored_tiles_json)
+                revealed_cells = [f"{c},{r}" for c, r in tiles_list]
+            except Exception:
+                revealed_cells = []
+
+    return {
+        "has_map": True,
+        "image_url": loc.background_image_url or "",
+        "image_width": loc.cols * loc.tile_size,
+        "image_height": loc.rows * loc.tile_size,
+        "grid_size": loc.tile_size,
+        "grid_enabled": True,
+        "grid_type": loc.grid_type,
+        "fog_enabled": True,
+        "remember_explored": True,
+        "revealed_cells": revealed_cells,
+        "tokens": tokens,
+        "active_floor_id": None,
+        "active_floor_name": loc.name,
+        "active_floor_tiles": tile_map,
+        "active_floor_grid_type": loc.grid_type,
+        "active_floor_tile_size": loc.tile_size,
+        "active_floor_cols": loc.cols,
+        "active_floor_rows": loc.rows,
+        "active_map_id": bv2_map.id,
+        "active_map_name": bv2_map.name,
+        "_traps": traps,
+        "_mapChests": chests,
+        "bv2_active_location_id": loc.id,
+        "bv2_ambient_light": float(loc.ambient_light)
+                             if loc.ambient_light is not None else 1.0,
+        "bv2_is_indoor": bool(loc.is_indoor),
+        "bv2_lights": lights,
+        "bv2_edges": edges,
+    }
+
+
 # ── Serve map file ───────────────────────────────────────────
 @router.get("/file/{filename}")
 async def get_map_file(filename: str):
@@ -150,7 +334,7 @@ async def get_map_file(filename: str):
 
 # ── Get map state ────────────────────────────────────────────
 @router.get("/{session_code}")
-async def get_map_state(session_code: str, db: AsyncSession = Depends(get_session)):
+async def get_map_state(session_code: str, character_id: int | None = None, db: AsyncSession = Depends(get_session)):
     result = await db.execute(select(Session).where(Session.code == session_code))
     session = result.scalar_one_or_none()
     if not session:
@@ -200,6 +384,32 @@ async def get_map_state(session_code: str, db: AsyncSession = Depends(get_sessio
             "bv2_col": c.col,
             "bv2_row": c.row,
         })
+
+    # Phase 7: bv2 takes precedence when an active bv2 map exists.
+    bv2_map_q = await db.execute(
+        select(BV2Map)
+        .where(BV2Map.session_id == session.id)
+        .where(BV2Map.is_active == True)
+    )
+    bv2_map = bv2_map_q.scalar_one_or_none()
+    if bv2_map:
+        loc_q = await db.execute(
+            select(BV2Location)
+            .where(BV2Location.map_id == bv2_map.id)
+            .where(BV2Location.is_active == True)
+            .limit(1)
+        )
+        bv2_loc = loc_q.scalar_one_or_none()
+        if not bv2_loc:
+            loc_q = await db.execute(
+                select(BV2Location)
+                .where(BV2Location.map_id == bv2_map.id)
+                .order_by(BV2Location.sort_order)
+                .limit(1)
+            )
+            bv2_loc = loc_q.scalar_one_or_none()
+        if bv2_loc:
+            return await _build_state_from_bv2(session, bv2_map, bv2_loc, chars, db, character_id)
 
     out: dict = {"has_map": False, "tokens": tokens}
 

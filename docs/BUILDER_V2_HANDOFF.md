@@ -981,16 +981,58 @@ Before telling the user "done":
   legacy hook left is `static/js/gm/01-core.js` adding
   `'builder-v2'` to the flex-tab list.
 
-Last migration: `865bbdab5232_add_bv2_character_grid_position_fields.py`.  
-Tests in `tests/test_smoke.py`: 45 (24 are bv2).  
+### Phase 7 caveats
+
+- **`bv2_entities.props_json` is gone.** Every entity type now has a
+  dedicated typed detail table (`bv2_chests`, `bv2_traps`,
+  `bv2_portals`, `bv2_npc_spawns`, `bv2_cover_zones`). The generic
+  `POST /locations/{id}/entities` endpoint still works for trivial
+  types (`decor`, `waypoint`, `light_marker`, etc.) but typed entities
+  MUST be created through their dedicated endpoints. `ser_entity` in
+  `common.py` no longer emits a `props` key.
+- **Hex grid uses odd-r offset coordinates** (not axial). The
+  `_tileCenterPx` formula staggers every odd row by `+gs/2`. Existing
+  axial hex data in the DB will visually shift after this fix — that
+  is acceptable (user confirmed no production hex data to migrate).
+- **Builder -> Map bridge is server-side only.** `GET /api/map/{code}`
+  now checks `BV2Map.is_active` first; if active, it builds the legacy
+  payload from `bv2_tiles` / `bv2_entities` / `bv2_lights` instead of
+  `MapFloor`. WS rebroadcast emits both `bv2.*` and `map.*` events when
+  the edited location is the active one.
+
+### Phase 8 caveats
+
+- **Player-side lighting renderer is active.** `map-canvas.js` now
+  consumes `bv2_ambient_light`, `bv2_is_indoor`, and `bv2_lights`.
+  Darkness is drawn as a full-screen overlay with radial-gradient
+  cut-outs per light source using `destination-out` compositing. Only
+  the `player` role sees the overlay; GM canvases are unaffected.
+- **FOV overlay hooks player movement.** After a successful token drag,
+  `player/10-map.js` runs client-side shadowcasting (`MapCanvas.
+  computeVisibleCells`) and POSTs the result to `POST /locations/{id}/
+  visit`. `GET /api/map/{code}` accepts an optional `character_id`
+  query param and returns the stored `revealed_cells` from
+  `bv2_visit_state`.
+- **Edge visual indicators render on both GM and player canv.** Small
+  directional arrows are drawn on the boundary cells that host an edge
+  transition (`bv2_edges`).
+- **Negative-direction drag resize works with server-side shift.** The
+  builder now has N / W / NW handles. Expanding north or west shifts
+  all tiles, entities, lights, and edges via the new `POST /locations/
+  {id}/shift` endpoint, then updates bounds. Contraction (shrinking)
+  does **not** delete out-of-bounds content automatically — the server
+  endpoint will delete them if they fall outside the new bounds, but
+  the builder UI does not send a shift for negative delta.
+- **Legacy `revealed_cells` format updated.** `MapCanvas.setFog` now
+  accepts both `"col,row"` strings (bv2 bridge) and `[col,row]` arrays
+  (legacy MapData) so the same renderer works for both backends.
+
+Last migration: `d928752f9387_bv2_entity_detail_tables_and_drop_props_json.py`.  
+Tests in `tests/test_smoke.py`: 61 (38 are bv2).  
 Legacy code: not touched outside `static/js/gm/01-core.js` (single-line
 flex-tab addition) and `app/routers/map/files.py` +
 `app/routers/sessions.py` (one-field additions for `sight_range_cells`
 in Phase 3).
-
-**Recommended next step:** start Phase 4 with backend `lights.py` +
-smoke tests, **before** the frontend. When backend is green → move to
-frontend. That is my usual sequencing.
 
 Good luck. If anything is unclear — read the matching Phase 1 file as
 a reference.

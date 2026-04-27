@@ -13,6 +13,7 @@ from app.database import get_session
 from app.models import BV2Location, BV2Tile
 from app.routers.builder_v2.common import (
     broadcast,
+    is_active_bv2_location,
     router,
     ser_tile,
     session_code_for_location,
@@ -90,6 +91,10 @@ async def replace_tiles(location_id: int, body: dict, db: AsyncSession = Depends
             "location_id": location_id,
             "count": len(tiles),
         })
+        if await is_active_bv2_location(location_id, db):
+            await broadcast(sess_code, "map.tile_painted", {
+                "tiles": {f"{t['col']},{t['row']}": t for t in tiles},
+            })
     return {"ok": True, "count": len(tiles)}
 
 
@@ -184,4 +189,10 @@ async def patch_tiles(location_id: int, body: dict, db: AsyncSession = Depends(g
             "set": set_count,
             "erased": erase_count,
         })
+        if await is_active_bv2_location(location_id, db):
+            r = await db.execute(select(BV2Tile).where(BV2Tile.location_id == location_id))
+            tiles = [ser_tile(t) for t in r.scalars().all()]
+            await broadcast(sess_code, "map.tile_painted", {
+                "tiles": {f"{t['col']},{t['row']}": t for t in tiles},
+            })
     return {"ok": True, "set": set_count, "erased": erase_count}

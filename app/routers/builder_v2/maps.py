@@ -6,12 +6,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
+    BV2Chest,
+    BV2ChestItem,
+    BV2CoverCell,
+    BV2CoverZone,
     BV2Edge,
     BV2Entity,
     BV2Light,
     BV2Location,
     BV2Map,
+    BV2NPCSpawn,
+    BV2Portal,
     BV2Tile,
+    BV2Trap,
     BV2VisitState,
     Character,
     Session,
@@ -74,6 +81,7 @@ async def delete_map(map_id: int, db: AsyncSession = Depends(get_session)):
     explicitly: locations → (tiles, entities, lights, edges, visit-state).
     """
     from sqlalchemy import delete as sa_delete
+    from sqlalchemy import select as sa_select
     from sqlalchemy import update as sa_update
 
     m = await db.get(BV2Map, map_id)
@@ -93,6 +101,15 @@ async def delete_map(map_id: int, db: AsyncSession = Depends(get_session)):
             .where(Character.current_location_id.in_(loc_ids))
             .values(current_location_id=None)
         )
+        # Explicit detail cleanup before entity delete (SQLite ignores ondelete=CASCADE)
+        entity_subq = sa_select(BV2Entity.id).where(BV2Entity.location_id.in_(loc_ids))
+        await db.execute(sa_delete(BV2CoverCell).where(BV2CoverCell.zone_entity_id.in_(entity_subq)))
+        await db.execute(sa_delete(BV2CoverZone).where(BV2CoverZone.entity_id.in_(entity_subq)))
+        await db.execute(sa_delete(BV2ChestItem).where(BV2ChestItem.chest_entity_id.in_(entity_subq)))
+        await db.execute(sa_delete(BV2Chest).where(BV2Chest.entity_id.in_(entity_subq)))
+        await db.execute(sa_delete(BV2Trap).where(BV2Trap.entity_id.in_(entity_subq)))
+        await db.execute(sa_delete(BV2Portal).where(BV2Portal.entity_id.in_(entity_subq)))
+        await db.execute(sa_delete(BV2NPCSpawn).where(BV2NPCSpawn.entity_id.in_(entity_subq)))
         await db.execute(sa_delete(BV2Tile).where(BV2Tile.location_id.in_(loc_ids)))
         await db.execute(sa_delete(BV2Entity).where(BV2Entity.location_id.in_(loc_ids)))
         await db.execute(sa_delete(BV2Light).where(BV2Light.location_id.in_(loc_ids)))

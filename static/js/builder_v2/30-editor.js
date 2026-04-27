@@ -390,6 +390,25 @@
       queueSettingsSave({ grid_type: next });
     });
 
+    // Bounds resize from canvas drag handles
+    S.view.canvas.addEventListener('bv2:bounds-resized-done', async e => {
+      const { cols, rows, shift_col, shift_row } = e.detail;
+      document.getElementById('bv2-cols').value = cols;
+      document.getElementById('bv2-rows').value = rows;
+      // Phase 8: negative-direction resize requires server-side shift.
+      if (shift_col || shift_row) {
+        try {
+          await api.post(`/api/builder-v2/locations/${S.currentLocId}/shift`, {
+            delta_col: shift_col,
+            delta_row: shift_row,
+          });
+        } catch (err) {
+          console.error('bv2 shift failed', err);
+        }
+      }
+      queueSettingsSave({ cols, rows });
+    });
+
     // Hotkeys
     document.addEventListener('keydown', onHotkey);
 

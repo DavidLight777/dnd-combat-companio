@@ -54,7 +54,7 @@ async def _snapshot_map(db: AsyncSession, map_id: int) -> dict:
         ents_r = await db.execute(select(BV2Entity).where(BV2Entity.location_id == loc.id))
         loc_data["entities"] = [
             {"entity_type": e.entity_type, "col": e.col, "row": e.row,
-             "name": e.name or "", "props": _safe_json(e.props_json),
+             "name": e.name or "",
              "visible_to_players": bool(e.visible_to_players)}
             for e in ents_r.scalars().all()
         ]
@@ -238,7 +238,6 @@ async def load_as_map(snapshot_id: int, body: dict, db: AsyncSession = Depends(g
                 entity_type=str(e["entity_type"]).lower()[:32],
                 col=int(e.get("col", 0)), row=int(e.get("row", 0)),
                 name=str(e.get("name") or "")[:120],
-                props_json=json.dumps(e.get("props", {})),
                 visible_to_players=bool(e.get("visible_to_players", True)),
             ))
 

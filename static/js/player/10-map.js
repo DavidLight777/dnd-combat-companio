@@ -57,6 +57,11 @@ async function _applyMapStateTo(canvas, state) {
   canvas.setTraps((state._traps || []).filter(t => !t.is_hidden));
   canvas.setMapChests(state._mapChests || []);
   canvas.setPortals(state._portals || []);
+  // Phase 8: bv2 lighting + edges + ambient
+  canvas.setAmbientLight(state.bv2_ambient_light ?? 1.0);
+  canvas.setIndoor(state.bv2_is_indoor ?? false);
+  canvas.setLights(state.bv2_lights || []);
+  canvas.setEdges(state.bv2_edges || []);
   canvas.render();
 }
 
@@ -68,10 +73,13 @@ function _fitPlayerCanvasToTiles(canvas) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   if (canvas.tileGridType === 'hex') {
     for (const k of keys) {
-      const [q, r] = k.split(',').map(Number);
-      const x = gs * (q + r / 2), y = gs * (Math.sqrt(3) / 2 * r);
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      const [c, r] = k.split(',').map(Number);
+      // odd-r offset matching bv2 builder
+      const xOff = (r & 1) ? gs / 2 : 0;
+      const x = c * gs + xOff;
+      const y = r * gs * (Math.sqrt(3) / 2);
+      if (x < minX) minX = x; if (x > maxX) maxX = x + gs;
+      if (y < minY) minY = y; if (y > maxY) maxY = y + gs;
     }
   } else {
     for (const k of keys) {
@@ -95,7 +103,8 @@ function _fitPlayerCanvasToTiles(canvas) {
 async function loadPlayerMapState() {
   let state;
   try {
-    state = await api.get(`/api/map/${SESSION_CODE}`);
+    const charParam = (CHAR_ID != null) ? `?character_id=${CHAR_ID}` : '';
+    state = await api.get(`/api/map/${SESSION_CODE}${charParam}`);
   } catch {
     return;
   }
@@ -112,7 +121,9 @@ async function loadPlayerMapState() {
     state._objects  = [];
     state._traps    = [];
   }
-  // Fetch builder entities for active floor
+  // Phase 7: bv2 bridge already populated _mapChests / _portals
+  // when active_floor_id is null (bv2-sourced state). Only fetch
+  // legacy map-builder chests/portals when a legacy floor is active.
   try {
     const afid = state.active_floor_id;
     if (afid) {
@@ -120,13 +131,17 @@ async function loadPlayerMapState() {
       state._mapChests = (allChests || []).filter(c => c.floor_id === afid && !c.is_hidden);
       const allPortals = await api.get(`/api/map-builder/${SESSION_CODE}/portals`);
       state._portals = (allPortals || []).filter(p => p.floor_id === afid);
-    } else {
+    } else if (!state.bv2_active_location_id) {
+      // No legacy floor AND no bv2 source — clear them.
       state._mapChests = [];
       state._portals = [];
     }
+    // else: bv2-sourced; leave the bridge-provided arrays alone.
   } catch {
-    state._mapChests = [];
-    state._portals = [];
+    if (!state.bv2_active_location_id) {
+      state._mapChests = [];
+      state._portals = [];
+    }
   }
   _lastMapState = state;
   // Update the empty-state overlay on the main grid.
@@ -172,6 +187,39 @@ async function _sendOwnTokenMove(charId, x, y) {
     }
   } catch (e) {
     console.warn('token move failed:', e);
+    return;
+  }
+
+  // Phase 8: update FOV via bv2 visit endpoint after a successful move.
+  if (_lastMapState && _lastMapState.bv2_active_location_id && CHAR_ID != null) {
+    try {
+      const locId = _lastMapState.bv2_active_location_id;
+      const cols = _lastMapState.active_floor_cols || 1;
+      const rows = _lastMapState.active_floor_rows || 1;
+      const col = Math.min(cols - 1, Math.max(0, Math.floor(x * cols)));
+      const row = Math.min(rows - 1, Math.max(0, Math.floor(y * rows)));
+      const ownToken = (_lastMapState.tokens || []).find(t => t.character_id === CHAR_ID);
+      const sight = ownToken ? (ownToken.sight_range_cells ?? 8) : 8;
+      let visibleSet = new Set();
+      if (playerMainGrid && playerMainGrid.computeVisibleCells) {
+        visibleSet = playerMainGrid.computeVisibleCells(col, row, sight);
+      }
+      const visibleCells = Array.from(visibleSet).map(s => s.split(',').map(Number));
+      await fetch(`/api/builder-v2/locations/${locId}/visit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ character_id: CHAR_ID, visible_cells: visibleCells }),
+      });
+      // Merge into local revealedCells for instant UI feedback.
+      _eachMapCanvas(c => {
+        if (c.revealedCells) {
+          for (const key of visibleSet) c.revealedCells.add(key);
+          c.render();
+        }
+      });
+    } catch (e) {
+      console.warn('bv2 visit update failed:', e);
+    }
   }
 }
 
@@ -313,5 +361,13 @@ $('#btn-open-map').addEventListener('click', async () => {
 $('#btn-close-map').addEventListener('click', () => {
   $('#map-modal').style.display = 'none';
 });
+
+// Phase 7 bridge: refresh map when GM activates a bv2 map / location.
+// The legacy `map.updated` event already triggers loadPlayerMapState
+// elsewhere; we only add the bv2 events.
+if (typeof ws !== 'undefined' && ws && typeof ws.on === 'function') {
+  ws.on('bv2.map_activated',      () => { loadPlayerMapState(); });
+  ws.on('bv2.location_activated', () => { loadPlayerMapState(); });
+}
 
 // ══════════════════════════════════════════════════════════════

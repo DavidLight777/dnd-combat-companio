@@ -60,5 +60,35 @@
     saveSnapshot:  (body)         => api.post(`${BASE}/library/save-from-map`, body),
     loadSnapshot:  (id, body)     => api.post(`${BASE}/library/${id}/load-as-map`, body),
     deleteSnapshot:(id)           => api.del(`${BASE}/library/${id}`),
+
+    // Typed entities (Phase 7)
+    createChest:     (locId, body) => api.post(`${BASE}/locations/${locId}/chests`, body),
+    getChest:        (id)          => api.get(`${BASE}/chests/${id}`),
+    updateChest:     (id, body)    => api.patch(`${BASE}/chests/${id}`, body),
+    deleteChest:     (id)          => api.del(`${BASE}/chests/${id}`),
+    addChestItem:    (id, body)    => api.post(`${BASE}/chests/${id}/items`, body),
+    removeChestItem: (id, itemId)  => api.del(`${BASE}/chests/${id}/items/${itemId}`),
+
+    createTrap:      (locId, body) => api.post(`${BASE}/locations/${locId}/traps`, body),
+    getTrap:         (id)          => api.get(`${BASE}/traps/${id}`),
+    updateTrap:      (id, body)    => api.patch(`${BASE}/traps/${id}`, body),
+    deleteTrap:      (id)          => api.del(`${BASE}/traps/${id}`),
+
+    createPortal:    (locId, body) => api.post(`${BASE}/locations/${locId}/portals`, body),
+    getPortal:       (id)          => api.get(`${BASE}/portals/${id}`),
+    updatePortal:    (id, body)    => api.patch(`${BASE}/portals/${id}`, body),
+    deletePortal:    (id)          => api.del(`${BASE}/portals/${id}`),
+
+    createNpcSpawn:  (locId, body) => api.post(`${BASE}/locations/${locId}/npc-spawns`, body),
+    getNpcSpawn:     (id)          => api.get(`${BASE}/npc-spawns/${id}`),
+    updateNpcSpawn:  (id, body)    => api.patch(`${BASE}/npc-spawns/${id}`, body),
+    deleteNpcSpawn:  (id)          => api.del(`${BASE}/npc-spawns/${id}`),
+
+    createCoverZone: (locId, body) => api.post(`${BASE}/locations/${locId}/cover-zones`, body),
+    getCoverZone:    (id)          => api.get(`${BASE}/cover-zones/${id}`),
+    updateCoverZone: (id, body)    => api.patch(`${BASE}/cover-zones/${id}`, body),
+    deleteCoverZone: (id)          => api.del(`${BASE}/cover-zones/${id}`),
+    addCoverCell:    (id, body)    => api.post(`${BASE}/cover-zones/${id}/cells`, body),
+    removeCoverCell: (id, col, row)=> api.del(`${BASE}/cover-zones/${id}/cells/${col}/${row}`),
   };
 })();

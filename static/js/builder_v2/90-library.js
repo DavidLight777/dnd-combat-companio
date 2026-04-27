@@ -52,9 +52,24 @@
         const id = parseInt(btn.dataset.loadId, 10);
         if (!confirm('Load this snapshot as a new Map?')) return;
         try {
-          await S.api.loadSnapshot(id, { session_code: SESSION_CODE, name: 'Loaded Map' });
+          const resp = await S.api.loadSnapshot(id, { session_code: SESSION_CODE, name: 'Loaded Map' });
+          const newMapId = resp && resp.map_id;
           closeLibraryModal();
           if (typeof S.loadMaps === 'function') await S.loadMaps();
+          // Phase 7: auto-activate the loaded map and its first location
+          // so players see it immediately. Skip silently if the snapshot
+          // happened to be empty.
+          if (newMapId) {
+            try {
+              await S.api.activateMap(newMapId);
+              const locs = await S.api.listLocs(newMapId);
+              if (Array.isArray(locs) && locs.length > 0) {
+                await S.api.activateLoc(locs[0].id);
+              }
+            } catch (e2) {
+              console.error('bv2 auto-activate after load', e2);
+            }
+          }
         } catch (e) {
           console.error('bv2 loadSnapshot', e);
           alert('Failed to load snapshot');

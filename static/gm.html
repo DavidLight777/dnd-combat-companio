@@ -803,14 +803,14 @@
       <div class="form-grid">
         <div class="form-group"><label>Name</label><input type="text" id="bv2-ent-name" placeholder="Name"></div>
         <div class="form-group"><label>Type</label><input type="text" id="bv2-ent-type-display" readonly style="background:var(--bg-surface-2)"></div>
-        <div class="form-group" style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px">
           <div style="flex:1"><label>Col</label><input type="number" id="bv2-ent-col" min="0" style="width:100%"></div>
           <div style="flex:1"><label>Row</label><input type="number" id="bv2-ent-row" min="0" style="width:100%"></div>
         </div>
-        <div class="form-group" style="flex-direction:row;align-items:center;gap:8px">
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:8px">
           <label style="flex-direction:row;gap:4px"><input type="checkbox" id="bv2-ent-visible"> Visible to players</label>
         </div>
-        <div class="form-group"><label>Properties (JSON)</label><textarea id="bv2-ent-props" rows="4" placeholder='{"locked": true}'></textarea></div>
+        <!-- Typed entity fields injected here by 50-entities.js -->
       </div>
     </div>
     <div class="modal-footer">

@@ -53,6 +53,10 @@ ws.on('map.portal_added', () => { if (typeof loadMapState === 'function') loadMa
 ws.on('map.portal_updated', () => { if (typeof loadMapState === 'function') loadMapState(); });
 ws.on('map.portal_deleted', () => { if (typeof loadMapState === 'function') loadMapState(); });
 
+// Phase 7 bridge: refresh GM map when a bv2 map / location is activated.
+ws.on('bv2.map_activated',      () => { if (typeof loadMapState === 'function') loadMapState(); });
+ws.on('bv2.location_activated', () => { if (typeof loadMapState === 'function') loadMapState(); });
+
 ws.on('session.state', data => {
   const s = data.session;
   $('#session-name').textContent = s.name;

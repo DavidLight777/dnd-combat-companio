@@ -1,0 +1,208 @@
+"""Chest entity CRUD — typed detail table, no JSON."""
+
+from fastapi import Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_session
+from app.models import (
+    BV2Chest,
+    BV2ChestItem,
+    BV2Entity,
+    BV2Location,
+    Item,
+)
+from app.routers.builder_v2.common import (
+    broadcast,
+    router,
+    ser_entity,
+    session_code_for_location,
+)
+
+# ─────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────
+
+async def _get_chest_entity(entity_id: int, db: AsyncSession):
+    e = await db.get(BV2Entity, entity_id)
+    if not e or e.entity_type != "chest":
+        raise HTTPException(404, "Chest not found")
+    return e
+
+
+async def _chest_detail(entity_id: int, db: AsyncSession) -> dict:
+    """Full chest dict including items joined."""
+    e = await _get_chest_entity(entity_id, db)
+    chest = await db.get(BV2Chest, entity_id)
+    if not chest:
+        raise HTTPException(404, "Chest detail missing")
+    # Join items
+    items_r = await db.execute(
+        select(BV2ChestItem, Item)
+        .join(Item, BV2ChestItem.item_id == Item.id)
+        .where(BV2ChestItem.chest_entity_id == entity_id)
+    )
+    items = []
+    for ci, it in items_r.all():
+        items.append({
+            "id": ci.id,
+            "item_id": it.id,
+            "name": it.name,
+            "quantity": ci.quantity,
+        })
+    base = ser_entity(e)
+    base.update({
+        "is_locked": chest.is_locked,
+        "lock_dc": chest.lock_dc,
+        "icon": chest.icon,
+        "is_opened": chest.is_opened,
+        "items": items,
+    })
+    return base
+
+
+# ─────────────────────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/locations/{location_id}/chests")
+async def create_chest(location_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    loc = await db.get(BV2Location, location_id)
+    if not loc:
+        raise HTTPException(404, "Location not found")
+
+    col = max(0, min(loc.cols - 1, int(body.get("col", 0))))
+    row = max(0, min(loc.rows - 1, int(body.get("row", 0))))
+
+    e = BV2Entity(
+        location_id=location_id,
+        entity_type="chest",
+        col=col,
+        row=row,
+        name=str(body.get("name") or "")[:120],
+        visible_to_players=bool(body.get("visible_to_players", True)),
+    )
+    db.add(e)
+    await db.commit()
+    await db.refresh(e)
+
+    chest = BV2Chest(
+        entity_id=e.id,
+        is_locked=bool(body.get("is_locked", False)),
+        lock_dc=int(body.get("lock_dc", 10)),
+        icon=str(body.get("icon", "chest"))[:20],
+        is_opened=bool(body.get("is_opened", False)),
+    )
+    db.add(chest)
+    await db.commit()
+
+    sess_code = await session_code_for_location(location_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.entity_added", {
+            "location_id": location_id,
+            "entity": await _chest_detail(e.id, db),
+        })
+    return await _chest_detail(e.id, db)
+
+
+@router.get("/chests/{entity_id}")
+async def get_chest(entity_id: int, db: AsyncSession = Depends(get_session)):
+    return await _chest_detail(entity_id, db)
+
+
+@router.patch("/chests/{entity_id}")
+async def update_chest(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    e = await _get_chest_entity(entity_id, db)
+    chest = await db.get(BV2Chest, entity_id)
+    if not chest:
+        raise HTTPException(404, "Chest detail missing")
+
+    if "name" in body:
+        e.name = str(body["name"])[:120]
+    if "visible_to_players" in body:
+        e.visible_to_players = bool(body["visible_to_players"])
+    if "is_locked" in body:
+        chest.is_locked = bool(body["is_locked"])
+    if "lock_dc" in body:
+        chest.lock_dc = int(body["lock_dc"])
+    if "icon" in body:
+        chest.icon = str(body["icon"])[:20]
+    if "is_opened" in body:
+        chest.is_opened = bool(body["is_opened"])
+
+    await db.commit()
+    await db.refresh(e)
+    await db.refresh(chest)
+
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.entity_updated", {
+            "location_id": e.location_id,
+            "entity": await _chest_detail(entity_id, db),
+        })
+    return await _chest_detail(entity_id, db)
+
+
+@router.delete("/chests/{entity_id}")
+async def delete_chest(entity_id: int, db: AsyncSession = Depends(get_session)):
+    e = await _get_chest_entity(entity_id, db)
+    loc_id = e.location_id
+    await db.delete(e)  # cascades to BV2Chest + BV2ChestItem
+    await db.commit()
+
+    sess_code = await session_code_for_location(loc_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.entity_deleted", {
+            "location_id": loc_id,
+            "entity_id": entity_id,
+        })
+    return {"ok": True}
+
+
+# ── Chest items sub-resource ────────────────────────────────
+
+@router.post("/chests/{entity_id}/items")
+async def add_chest_item(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    e = await _get_chest_entity(entity_id, db)
+    item_id = int(body.get("item_id", 0))
+    item = await db.get(Item, item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    ci = BV2ChestItem(
+        chest_entity_id=entity_id,
+        item_id=item_id,
+        quantity=int(body.get("quantity", 1)),
+    )
+    db.add(ci)
+    await db.commit()
+    await db.refresh(ci)
+
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.entity_updated", {
+            "location_id": e.location_id,
+            "entity": await _chest_detail(entity_id, db),
+        })
+    return {"ok": True, "id": ci.id}
+
+
+@router.patch("/chests/{entity_id}/items/{item_row_id}")
+async def update_chest_item(entity_id: int, item_row_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    ci = await db.get(BV2ChestItem, item_row_id)
+    if not ci or ci.chest_entity_id != entity_id:
+        raise HTTPException(404, "Chest item not found")
+    if "quantity" in body:
+        ci.quantity = int(body["quantity"])
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/chests/{entity_id}/items/{item_row_id}")
+async def remove_chest_item(entity_id: int, item_row_id: int, db: AsyncSession = Depends(get_session)):
+    ci = await db.get(BV2ChestItem, item_row_id)
+    if not ci or ci.chest_entity_id != entity_id:
+        raise HTTPException(404, "Chest item not found")
+    await db.delete(ci)
+    await db.commit()
+    return {"ok": True}

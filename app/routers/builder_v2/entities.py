@@ -1,7 +1,5 @@
 """Entity CRUD: chests, traps, portals, npc_spawns, cover_zones, light_markers."""
 
-import json
-
 from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,23 +9,11 @@ from app.models import BV2Entity, BV2Location
 from app.routers.builder_v2.common import (
     VALID_ENTITY_TYPES,
     broadcast,
+    is_active_bv2_location,
     router,
     ser_entity,
     session_code_for_location,
 )
-
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
-
-def _coerce_props(raw: dict | None) -> str:
-    """Validate props is a dict and return JSON string."""
-    if raw is None:
-        return "{}"
-    if not isinstance(raw, dict):
-        raise HTTPException(400, "`props` must be an object")
-    return json.dumps(raw)
-
 
 # ─────────────────────────────────────────────────────────────
 # Routes
@@ -71,7 +57,6 @@ async def create_entity(location_id: int, body: dict, db: AsyncSession = Depends
         col=col,
         row=row,
         name=str(body.get("name") or "")[:120],
-        props_json=_coerce_props(body.get("props")),
         visible_to_players=bool(body.get("visible_to_players", True)),
     )
     db.add(e)
@@ -84,6 +69,10 @@ async def create_entity(location_id: int, body: dict, db: AsyncSession = Depends
             "location_id": location_id,
             "entity": ser_entity(e),
         })
+        if await is_active_bv2_location(location_id, db):
+            await broadcast(sess_code, "map.entity_added", {
+                "entity": ser_entity(e),
+            })
     return ser_entity(e)
 
 
@@ -109,8 +98,6 @@ async def update_entity(entity_id: int, body: dict, db: AsyncSession = Depends(g
         e.col = max(0, min(loc.cols - 1, int(body["col"])))
     if "row" in body:
         e.row = max(0, min(loc.rows - 1, int(body["row"])))
-    if "props" in body:
-        e.props_json = _coerce_props(body["props"])
     if "visible_to_players" in body:
         e.visible_to_players = bool(body["visible_to_players"])
 
@@ -123,6 +110,10 @@ async def update_entity(entity_id: int, body: dict, db: AsyncSession = Depends(g
             "location_id": e.location_id,
             "entity": ser_entity(e),
         })
+        if await is_active_bv2_location(e.location_id, db):
+            await broadcast(sess_code, "map.entity_updated", {
+                "entity": ser_entity(e),
+            })
     return ser_entity(e)
 
 
@@ -142,6 +133,10 @@ async def delete_entity(entity_id: int, db: AsyncSession = Depends(get_session))
             "location_id": location_id,
             "entity_id": entity_id,
         })
+        if await is_active_bv2_location(location_id, db):
+            await broadcast(sess_code, "map.entity_deleted", {
+                "entity_id": entity_id,
+            })
     return {"ok": True}
 
 

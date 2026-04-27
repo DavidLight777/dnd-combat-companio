@@ -122,7 +122,6 @@ def ser_entity(e: BV2Entity) -> dict:
         "col": e.col,
         "row": e.row,
         "name": e.name or "",
-        "props": _safe_json(e.props_json),
         "visible_to_players": bool(e.visible_to_players),
         "discovered_by": _safe_json(e.discovered_by_json) or [],
     }
@@ -168,3 +167,14 @@ async def session_code_for_location(location_id: int, db: AsyncSession) -> str |
     if not loc:
         return None
     return await session_code_for_map(loc.map_id, db)
+
+
+async def is_active_bv2_location(location_id: int, db: AsyncSession) -> bool:
+    """True if this location is the active one in the session's active bv2 map."""
+    loc = await db.get(BV2Location, location_id)
+    if not loc:
+        return False
+    m = await db.get(BV2Map, loc.map_id)
+    if not m or not m.is_active:
+        return False
+    return loc.is_active

@@ -3,14 +3,16 @@
 Run: pytest tests/test_smoke.py -q
 Each test must finish in <1s.
 """
+import os
+import sys
+
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-import sys
-import os
+from httpx import ASGITransport, AsyncClient
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from main import app
 from app.database import init_db
+from main import app
 
 
 @pytest_asyncio.fixture
@@ -169,13 +171,33 @@ async def test_status_effects_templates(client):
 # ── Smoke: every router imports without error ────────────────
 def test_all_routers_importable():
     from app.routers import (
-        sessions, characters, abilities, combat_events,
-        inventory, npc_library, quests, economy,
-        announcements, notes, session_timer, status_effects,
-        races_classes, ai, cards, combat, combat_actions, initiative,
-        memory, poisons, professions, websocket, wizard, chests,
+        abilities,
+        ai,
+        announcements,
         builder_v2,
+        cards,
+        characters,
+        chests,
+        combat,
+        combat_actions,
+        combat_events,
+        economy,
+        initiative,
+        inventory,
+        memory,
+        notes,
+        npc_library,
+        poisons,
+        professions,
+        quests,
+        races_classes,
+        session_timer,
+        sessions,
+        status_effects,
+        websocket,
+        wizard,
     )
+
     # Map router shadows builtin map(), needs alias import
     from app.routers import map as map_router
     assert sessions.router is not None
@@ -187,8 +209,8 @@ def test_all_routers_importable():
     assert economy.router is not None
     assert builder_v2.router is not None
     # Critical re-exports preserved
-    from app.routers.map import reset_movement_for
     from app.routers.abilities import _resolve_ability
+    from app.routers.map import reset_movement_for
     assert callable(reset_movement_for)
     assert callable(_resolve_ability)
 
@@ -338,18 +360,16 @@ async def test_bv2_entity_crud(client, session_code):
     r = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 20, "rows": 15})
     loc_id = r.json()["id"]
 
-    # Create chest
+    # Create a simple decor entity (generic endpoint, no detail table)
     r = await client.post(f"/api/builder-v2/locations/{loc_id}/entities", json={
-        "entity_type": "chest",
+        "entity_type": "light_marker",
         "col": 5, "row": 5,
-        "name": "Treasure Chest",
-        "props": {"locked": True, "dc_unlock": 15},
+        "name": "Lantern",
     })
     assert r.status_code == 200, r.text
     ent = r.json()
-    assert ent["entity_type"] == "chest"
+    assert ent["entity_type"] == "light_marker"
     assert ent["col"] == 5
-    assert ent["props"]["locked"] is True
     ent_id = ent["id"]
 
     # List
@@ -360,12 +380,10 @@ async def test_bv2_entity_crud(client, session_code):
 
     # Patch
     r = await client.patch(f"/api/builder-v2/entities/{ent_id}", json={
-        "name": "Locked Chest",
-        "props": {"locked": False},
+        "name": "Bright Lantern",
     })
     assert r.status_code == 200
-    assert r.json()["name"] == "Locked Chest"
-    assert r.json()["props"]["locked"] is False
+    assert r.json()["name"] == "Bright Lantern"
 
     # Move
     r = await client.post(f"/api/builder-v2/entities/{ent_id}/move", json={"col": 10, "row": 10})
@@ -441,7 +459,7 @@ async def test_bv2_entity_move_bounds_clamped(client, session_code):
 @pytest.mark.asyncio
 async def test_bv2_visit_persists(client, session_code):
     """POST /visit stores explored cells; GET /visit returns them."""
-    r = await client.post(f"/api/sessions/join", json={
+    r = await client.post("/api/sessions/join", json={
         "session_code": session_code, "player_name": "Scout",
     })
     char_id = r.json()["character_id"]
@@ -468,7 +486,7 @@ async def test_bv2_visit_persists(client, session_code):
 @pytest.mark.asyncio
 async def test_bv2_visit_merges_not_replaces(client, session_code):
     """Two sequential POSTs with different cells produce a union."""
-    r = await client.post(f"/api/sessions/join", json={
+    r = await client.post("/api/sessions/join", json={
         "session_code": session_code, "player_name": "Scout",
     })
     char_id = r.json()["character_id"]
@@ -496,7 +514,7 @@ async def test_bv2_visit_merges_not_replaces(client, session_code):
 @pytest.mark.asyncio
 async def test_bv2_visit_discovers_entities_in_visible_cells(client, session_code):
     """An entity inside visible_cells appears in discovered_entity_ids."""
-    r = await client.post(f"/api/sessions/join", json={
+    r = await client.post("/api/sessions/join", json={
         "session_code": session_code, "player_name": "Scout",
     })
     char_id = r.json()["character_id"]
@@ -1063,6 +1081,218 @@ async def test_bv2_library_save_and_load(client, session_code):
     assert r.status_code == 200
 
 
+# ── bv2 Typed Entity Tables (Phase 7 Group A) ───────────────
+
+@pytest.mark.asyncio
+async def test_bv2_chest_full_config_roundtrip(client, session_code):
+    """Chest detail table roundtrip: create, add items, GET, assert all fields."""
+    # Setup map + location
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    # Create two items
+    item1 = (await client.post("/api/items", json={"name": "Sword", "category": "weapon",
+                                                     "base_price": 100, "session_id": None})).json()["id"]
+    item2 = (await client.post("/api/items", json={"name": "Shield", "category": "armor",
+                                                     "base_price": 50, "session_id": None})).json()["id"]
+    # Create chest entity
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/chests", json={
+        "col": 3, "row": 4, "name": "Treasure",
+        "is_locked": True, "lock_dc": 15, "icon": "chest_gold",
+    })
+    assert r.status_code == 200, r.text
+    chest = r.json()
+    assert chest["entity_type"] == "chest"
+    assert chest["is_locked"] is True
+    assert chest["lock_dc"] == 15
+    assert chest["icon"] == "chest_gold"
+    ent_id = chest["id"]
+    # Add items
+    r = await client.post(f"/api/builder-v2/chests/{ent_id}/items", json={
+        "item_id": item1, "quantity": 2,
+    })
+    assert r.status_code == 200
+    r = await client.post(f"/api/builder-v2/chests/{ent_id}/items", json={
+        "item_id": item2, "quantity": 1,
+    })
+    assert r.status_code == 200
+    # GET full detail
+    r = await client.get(f"/api/builder-v2/chests/{ent_id}")
+    assert r.status_code == 200
+    detail = r.json()
+    assert detail["is_locked"] is True
+    assert detail["lock_dc"] == 15
+    assert len(detail["items"]) == 2
+    names = {i["name"] for i in detail["items"]}
+    assert names == {"Sword", "Shield"}
+    q = {i["name"]: i["quantity"] for i in detail["items"]}
+    assert q["Sword"] == 2
+    assert q["Shield"] == 1
+
+
+@pytest.mark.asyncio
+async def test_bv2_trap_full_config_roundtrip(client, session_code):
+    """Trap detail table roundtrip + invalid damage_dice negative path."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    # Valid create
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/traps", json={
+        "col": 2, "row": 2, "name": "Spike Pit",
+        "trap_type": "pit", "damage_dice": "2d6+3",
+        "damage_type": "piercing", "dc_detect": 14,
+        "dc_disarm": 12, "dc_save": 13,
+        "save_ability": "dex", "trigger_mode": "on_enter",
+        "reset_on_trigger": True,
+    })
+    assert r.status_code == 200, r.text
+    t = r.json()
+    assert t["damage_dice"] == "2d6+3"
+    assert t["dc_detect"] == 14
+    assert t["reset_on_trigger"] is True
+    # Invalid dice -> 422
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/traps", json={
+        "col": 3, "row": 3, "name": "Bad",
+        "damage_dice": "banana",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bv2_portal_full_config_roundtrip(client, session_code):
+    """Portal detail table roundtrip with target location + key item."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    a = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                           json={"cols": 8, "rows": 8})).json()["id"]
+    b = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                           json={"cols": 8, "rows": 8})).json()["id"]
+    key_item = (await client.post("/api/items", json={"name": "Key", "category": "misc",
+                                                        "base_price": 10, "session_id": None})).json()["id"]
+    r = await client.post(f"/api/builder-v2/locations/{a}/portals", json={
+        "col": 1, "row": 1, "name": "Door",
+        "target_location_id": b, "target_col": 5, "target_row": 5,
+        "is_one_way": True, "requires_key_item_id": key_item, "label": "Magic Door",
+    })
+    assert r.status_code == 200, r.text
+    p = r.json()
+    assert p["target_location_id"] == b
+    assert p["target_col"] == 5
+    assert p["is_one_way"] is True
+    assert p["requires_key_item_id"] == key_item
+    # GET
+    r = await client.get(f"/api/builder-v2/portals/{p['id']}")
+    assert r.status_code == 200
+    assert r.json()["label"] == "Magic Door"
+
+
+@pytest.mark.asyncio
+async def test_bv2_portal_target_nullified_on_target_delete(client, session_code):
+    """S5b: deleting a target location must NULL out portal.target_location_id."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    a = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                           json={"cols": 8, "rows": 8})).json()["id"]
+    b = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                           json={"cols": 8, "rows": 8})).json()["id"]
+    r = await client.post(f"/api/builder-v2/locations/{a}/portals", json={
+        "col": 0, "row": 0, "target_location_id": b,
+    })
+    ent_id = r.json()["id"]
+    await client.delete(f"/api/builder-v2/locations/{b}")
+    r = await client.get(f"/api/builder-v2/portals/{ent_id}")
+    assert r.json()["target_location_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_bv2_npc_spawn_full_config_roundtrip(client, session_code):
+    """NPC spawn detail table roundtrip."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    # Get session id first
+    sess = (await client.get(f"/api/sessions/{session_code}")).json()
+    sess_id = sess["id"]
+    # Create NPC template
+    tpl = (await client.post("/api/npc-library/templates", json={
+        "session_id": sess_id, "name": "Goblin", "max_hp": 15,
+        "armor_class": 12, "strength": 10, "dexterity": 14,
+    })).json()["id"]
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/npc-spawns", json={
+        "col": 2, "row": 3, "name": "Ambush",
+        "npc_template_id": tpl, "auto_spawn_trigger": "on_enter",
+        "spawn_count": 3, "is_hostile": True,
+    })
+    assert r.status_code == 200, r.text
+    s = r.json()
+    assert s["npc_template_id"] == tpl
+    assert s["spawn_count"] == 3
+    assert s["is_hostile"] is True
+    r = await client.get(f"/api/builder-v2/npc-spawns/{s['id']}")
+    assert r.json()["auto_spawn_trigger"] == "on_enter"
+
+
+@pytest.mark.asyncio
+async def test_bv2_cover_zone_multi_cell_roundtrip(client, session_code):
+    """Cover zone with multiple cells roundtrip."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/cover-zones", json={
+        "col": 1, "row": 1, "name": "Rubble",
+        "cover_level": "three_quarters", "material": "stone",
+        "blocks_line_of_sight": True, "is_destructible": True,
+        "current_hp": 20, "max_hp": 20,
+    })
+    assert r.status_code == 200, r.text
+    zone = r.json()
+    ent_id = zone["id"]
+    assert zone["cover_level"] == "three_quarters"
+    # Add cells
+    for cell in [{"col": 1, "row": 1}, {"col": 2, "row": 1}, {"col": 2, "row": 2}]:
+        r = await client.post(f"/api/builder-v2/cover-zones/{ent_id}/cells", json=cell)
+        assert r.status_code == 200
+    r = await client.get(f"/api/builder-v2/cover-zones/{ent_id}")
+    assert len(r.json()["cells"]) == 3
+    # Remove one cell
+    r = await client.delete(f"/api/builder-v2/cover-zones/{ent_id}/cells/1/1")
+    assert r.status_code == 200
+    r = await client.get(f"/api/builder-v2/cover-zones/{ent_id}")
+    assert len(r.json()["cells"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_bv2_chest_with_items_appears_in_player_map_state(client, session_code):
+    """Integration: chest + items -> activate -> /api/map shows chest in _mapChests."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    item1 = (await client.post("/api/items", json={"name": "Gem", "category": "misc",
+                                                     "base_price": 500, "session_id": None})).json()["id"]
+    # Create chest with item (opened so items surface in public payload)
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/chests", json={
+        "col": 5, "row": 5, "name": "Loot",
+        "is_locked": False, "is_opened": True,
+    })
+    ent_id = r.json()["id"]
+    await client.post(f"/api/builder-v2/chests/{ent_id}/items", json={"item_id": item1, "quantity": 1})
+    # Activate
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+    # Map state
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state.get("bv2_active_location_id") == loc_id
+    chests = state.get("_mapChests", [])
+    assert any(c["name"] == "Loot" for c in chests)
+    loot = next(c for c in chests if c["name"] == "Loot")
+    assert any(i["name"] == "Gem" for i in loot.get("items", []))
+
+
 @pytest.mark.asyncio
 async def test_bv2_location_delete_nullifies_character_pointer(client, session_code):
     """S5: deleting a bv2 location must NULL out characters.current_location_id
@@ -1102,3 +1332,236 @@ async def test_bv2_location_delete_nullifies_character_pointer(client, session_c
     after2 = (await client.get(f"/api/characters/{char_id}")).json()
     assert after2["current_location_id"] is None, \
         "S5 regression: map delete did not clear character pointer to child location"
+
+
+@pytest.mark.asyncio
+async def test_bv2_location_hex_grid_persists(client, session_code):
+    """grid_type='hex' must round-trip through PATCH/GET cleanly."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 8, "rows": 6})).json()["id"]
+    r = await client.patch(f"/api/builder-v2/locations/{loc_id}",
+                           json={"grid_type": "hex"})
+    assert r.status_code == 200
+    assert r.json()["grid_type"] == "hex"
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 7, "row": 5, "tile_type": "wall"}], "erase": [],
+    })
+    full = (await client.get(f"/api/builder-v2/locations/{loc_id}")).json()
+    assert any(t["col"] == 7 and t["row"] == 5 for t in full["tiles"])
+
+
+@pytest.mark.asyncio
+async def test_bv2_active_map_surfaces_on_legacy_map_endpoint(client, session_code):
+    """Activating a bv2 map+location must make /api/map/{code} return
+    bv2-sourced state instead of legacy MapFloor data."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "BV2"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 3, "row": 3, "tile_type": "wall",
+                 "blocks_movement": True, "blocks_vision": True}],
+        "erase": [],
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/entities", json={
+        "entity_type": "light_marker", "col": 5, "row": 5, "name": "Goldie",
+    })
+
+    # Before activation: /api/map should NOT see bv2 data.
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state.get("bv2_active_location_id") is None
+
+    # Activate map and location
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    # Now /api/map should be bv2-sourced
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state["has_map"] is True
+    assert state["bv2_active_location_id"] == loc_id
+    assert state["active_floor_tile_size"] == 50
+    assert state["active_floor_grid_type"] == "square"
+    assert "3,3" in state["active_floor_tiles"]
+    assert state["active_floor_tiles"]["3,3"]["type"] == "wall"
+    assert state["active_floor_tiles"]["3,3"]["blocks_vision"] is True
+
+
+@pytest.mark.asyncio
+async def test_bv2_library_load_then_activate_surfaces(client, session_code):
+    """Full user journey: build -> save snapshot -> load as new map ->
+    activate -> players see it on /api/map."""
+    # Build a map with one wall
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Original"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 0, "row": 0, "tile_type": "wall"}], "erase": [],
+    })
+
+    # Save -> load -> get the new map id
+    snap_id = (await client.post("/api/builder-v2/library/save-from-map",
+                                 json={"map_id": map_id, "name": "Snap"})).json()["id"]
+    new_map_id = (await client.post(f"/api/builder-v2/library/{snap_id}/load-as-map",
+                                    json={"session_code": session_code,
+                                          "name": "Loaded"})).json()["map_id"]
+    new_loc_id = (await client.get(
+        f"/api/builder-v2/maps/{new_map_id}/locations")).json()[0]["id"]
+
+    # Activate the LOADED map
+    await client.post(f"/api/builder-v2/maps/{new_map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{new_loc_id}/activate", json={})
+
+    # Players see it
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state["bv2_active_location_id"] == new_loc_id
+    assert "0,0" in state["active_floor_tiles"]
+
+
+@pytest.mark.asyncio
+async def test_phase7_bridge_payload_keeps_bv2_chests_with_null_active_floor_id(client, session_code):
+    """The bv2 bridge must return _mapChests with active_floor_id=None.
+    The client uses active_floor_id=None as a signal to NOT wipe the
+    bridge-provided chests."""
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 10, "rows": 10})).json()["id"]
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/chests", json={
+        "col": 5, "row": 5, "name": "Loot", "is_locked": False, "is_opened": True,
+    })
+    ent_id = r.json()["id"]
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    # Critical assertions for Bug #2:
+    assert state["active_floor_id"] is None, \
+        "bv2-sourced state must signal active_floor_id=None"
+    assert state["bv2_active_location_id"] == loc_id, \
+        "bv2 source marker must be set"
+    assert any(c["name"] == "Loot" for c in state.get("_mapChests", [])), \
+        "bridge must populate _mapChests; the client trusts this"
+
+
+@pytest.mark.asyncio
+async def test_phase7_library_load_then_activate_via_ui_flow(client, session_code):
+    """Verify the backend supports the auto-activate-after-load flow
+    that the client now performs. The client calls loadSnapshot ->
+    activateMap -> activateLoc; this test exercises the same
+    sequence and asserts /api/map surfaces the new map."""
+    # Build + save a snapshot
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Original"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 1, "row": 1, "tile_type": "wall"}], "erase": [],
+    })
+    snap_id = (await client.post("/api/builder-v2/library/save-from-map",
+                                 json={"map_id": map_id, "name": "Snap"})).json()["id"]
+    # Load (UI step 1)
+    new_map_id = (await client.post(f"/api/builder-v2/library/{snap_id}/load-as-map",
+                                    json={"session_code": session_code,
+                                          "name": "Loaded"})).json()["map_id"]
+    # Auto-activate map (UI step 2 — this is what 90-library.js will now do)
+    await client.post(f"/api/builder-v2/maps/{new_map_id}/activate", json={})
+    # Auto-activate first location (UI step 3)
+    locs = (await client.get(f"/api/builder-v2/maps/{new_map_id}/locations")).json()
+    assert len(locs) > 0, "loaded snapshot must include at least one location"
+    await client.post(f"/api/builder-v2/locations/{locs[0]['id']}/activate", json={})
+    # Player view sees it immediately
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state["bv2_active_location_id"] == locs[0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_bv2_bridge_payload_includes_lights_and_edges(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "LE"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 8, "rows": 8})).json()["id"]
+    # Add light
+    await client.post(f"/api/builder-v2/locations/{loc_id}/lights", json={
+        "col": 2, "row": 2, "radius_cells": 4, "color_hex": "#ffaa44",
+        "intensity": 1.0, "source_kind": "torch",
+    })
+    # Add edge
+    await client.post(f"/api/builder-v2/locations/{loc_id}/edges", json={
+        "side": "east", "range_start": 3, "range_end": 5,
+        "target_location_id": None,
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert len(state.get("bv2_lights", [])) == 1
+    assert state["bv2_lights"][0]["col"] == 2
+    assert state["bv2_lights"][0]["color_hex"] == "#ffaa44"
+    assert len(state.get("bv2_edges", [])) == 1
+    assert state["bv2_edges"][0]["side"] == "east"
+
+
+@pytest.mark.asyncio
+async def test_bv2_bridge_payload_revealed_cells_for_character(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "R"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    # Create a character
+    join = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "Scout",
+    })
+    char_id = join.json()["character_id"]
+    # Place character in location
+    await client.patch(f"/api/characters/{char_id}", json={
+        "current_location_id": loc_id, "col": 1, "row": 1,
+    })
+    # Visit endpoint stores explored tiles
+    await client.post(f"/api/builder-v2/locations/{loc_id}/visit", json={
+        "character_id": char_id,
+        "visible_cells": [[1, 1], [2, 1], [1, 2]],
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}?character_id={char_id}")).json()
+    rc = state.get("revealed_cells", [])
+    assert "1,1" in rc
+    assert "2,1" in rc
+    assert "1,2" in rc
+
+
+@pytest.mark.asyncio
+async def test_bv2_bridge_payload_revealed_cells_empty_without_character_id(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "NR"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state.get("revealed_cells") == []
+
+
+@pytest.mark.asyncio
+async def test_bv2_shift_location_content(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Shift"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    # Place a tile at (1,1)
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 1, "row": 1, "tile_type": "wall"}], "erase": [],
+    })
+    # Shift right+down by 1
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/shift", json={
+        "delta_col": 1, "delta_row": 1,
+    })
+    assert r.status_code == 200
+    assert r.json()["shifted"] is True
+    # Tile should now be at (2,2)
+    tiles = (await client.get(f"/api/builder-v2/locations/{loc_id}/tiles")).json()
+    assert any(t["col"] == 2 and t["row"] == 2 and t["tile_type"] == "wall" for t in tiles)

@@ -70,6 +70,7 @@
       this._dragStart = { x: 0, y: 0 };
       this._lastPaintedKey = null;
       this._hoveredEntity = null;
+      this._boundsDrag = null;
 
       // Callbacks
       this.onPaint = opts.onPaint || null;       // (col,row,brush) => void
@@ -162,16 +163,18 @@
       const mx = (sx - this.offsetX) / this.scale;
       const my = (sy - this.offsetY) / this.scale;
       if (this._isHex()) {
-        const s = gs / Math.sqrt(3);
-        const fq = (Math.sqrt(3) / 3 * mx - my / 3) / s;
-        const fr = (2 / 3 * my) / s;
-        // Round axial fractional to integer hex
-        const fs = -fq - fr;
-        let q = Math.round(fq), r = Math.round(fr), ss = Math.round(fs);
-        const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(ss - fs);
-        if (dq > dr && dq > ds) q = -r - ss;
-        else if (dr > ds)       r = -q - ss;
-        return { col: q, row: r };
+        // odd-r offset: brute-force nearest centre (O(1), exact)
+        let best = null, bestD = Infinity;
+        const targetRow = my / (gs * Math.sqrt(3) / 2);
+        for (const dr of [-1, 0, 1]) {
+          const row = Math.round(targetRow - 0.5) + dr;
+          const xOff = (row & 1) ? gs / 2 : 0;
+          const col = Math.round((mx - xOff) / gs - 0.5);
+          const c = this._tileCenterPx(col, row);
+          const d = (c.x - mx) ** 2 + (c.y - my) ** 2;
+          if (d < bestD) { bestD = d; best = { col, row }; }
+        }
+        return best;
       }
       return { col: Math.floor(mx / gs), row: Math.floor(my / gs) };
     }
@@ -183,7 +186,12 @@
     _tileCenterPx(col, row) {
       const gs = this._gridSize();
       if (this._isHex()) {
-        return { x: gs * (col + row / 2), y: gs * (Math.sqrt(3) / 2 * row) };
+        // odd-r pointy-top offset: every odd row shifts +gs/2 to the east
+        const xOff = (row & 1) ? gs / 2 : 0;
+        return {
+          x: (col + 0.5) * gs + xOff,
+          y: (row + 0.5) * gs * (Math.sqrt(3) / 2),
+        };
       }
       return { x: (col + 0.5) * gs, y: (row + 0.5) * gs };
     }
@@ -207,6 +215,7 @@
       this._drawLighting(ctx);
       this._drawGrid(ctx);
       this._drawBoundary(ctx);
+      if (this.mode === 'edit') this._drawBoundsHandles(ctx);
 
       ctx.restore();
     }
@@ -387,11 +396,10 @@
       if (this._isHex()) {
         const sqrt3 = Math.sqrt(3);
         const size = gs / sqrt3;
-        for (let r = -1; r <= rows + 1; r++) {
-          for (let q = -1; q <= cols + 1; q++) {
-            const cx = gs * (q + r / 2);
-            const cy = gs * (sqrt3 / 2 * r);
-            this._hexPath(ctx, cx, cy, size);
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const { x, y } = this._tileCenterPx(c, r);
+            this._hexPath(ctx, x, y, size);
             ctx.stroke();
           }
         }
@@ -413,8 +421,13 @@
 
     _drawBoundary(ctx) {
       const gs = this._gridSize();
-      const bw = this._cols() * gs;
-      const bh = this._rows() * gs;
+      const isHex = this._isHex();
+      const bw = isHex
+        ? this._cols() * gs + (this._rows() > 1 ? gs / 2 : 0)
+        : this._cols() * gs;
+      const bh = isHex
+        ? (this._rows() * gs * Math.sqrt(3) / 2 + gs * (1 - Math.sqrt(3) / 2))
+        : this._rows() * gs;
       // Dim outside-of-bounds
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -427,6 +440,78 @@
       ctx.lineWidth = 2 / this.scale;
       ctx.strokeRect(0, 0, bw, bh);
       ctx.restore();
+    }
+
+    _drawBoundsHandles(ctx) {
+      if (!this.location) return;
+      const gs = this._gridSize();
+      const isHex = this._isHex();
+      const bw = isHex
+        ? this._cols() * gs + (this._rows() > 1 ? gs / 2 : 0)
+        : this._cols() * gs;
+      const bh = isHex
+        ? (this._rows() * gs * Math.sqrt(3) / 2 + gs * (1 - Math.sqrt(3) / 2))
+        : this._rows() * gs;
+      const hs = 10 / this.scale;
+      const positions = [
+        ['e',  bw,      bh / 2],
+        ['s',  bw / 2,  bh],
+        ['se', bw,      bh],
+      ];
+      ctx.fillStyle = '#fbbf24';
+      for (const [, x, y] of positions) {
+        ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
+      }
+    }
+
+    _hitHandle(sx, sy) {
+      if (!this.location) return null;
+      const gs = this._gridSize();
+      const mx = (sx - this.offsetX) / this.scale;
+      const my = (sy - this.offsetY) / this.scale;
+      const isHex = this._isHex();
+      const bw = isHex
+        ? this._cols() * gs + (this._rows() > 1 ? gs / 2 : 0)
+        : this._cols() * gs;
+      const bh = isHex
+        ? (this._rows() * gs * Math.sqrt(3) / 2 + gs * (1 - Math.sqrt(3) / 2))
+        : this._rows() * gs;
+      const hs = 14 / this.scale;
+      const handles = [
+        { id: 'e',  x: bw,     y: bh / 2 },
+        { id: 's',  x: bw / 2, y: bh },
+        { id: 'se', x: bw,     y: bh },
+        { id: 'w',  x: 0,      y: bh / 2 },
+        { id: 'n',  x: bw / 2, y: 0 },
+        { id: 'nw', x: 0,      y: 0 },
+      ];
+      for (const h of handles) {
+        if (Math.abs(mx - h.x) < hs && Math.abs(my - h.y) < hs) return h.id;
+      }
+      return null;
+    }
+
+    _shiftContent(dCol, dRow) {
+      // Shift tiles
+      const newTiles = new Map();
+      for (const [key, val] of this.tiles) {
+        const [c, r] = key.split(',').map(Number);
+        const nc = c + dCol, nr = r + dRow;
+        if (nc >= 0 && nr >= 0 && nc < this.location.cols && nr < this.location.rows) {
+          newTiles.set(`${nc},${nr}`, val);
+        }
+      }
+      this.tiles = newTiles;
+      // Shift entities
+      for (const ent of this.entities) {
+        ent.col += dCol;
+        ent.row += dRow;
+      }
+      // Shift lights
+      for (const li of this.lights) {
+        li.col += dCol;
+        li.row += dRow;
+      }
     }
 
     _hexPath(ctx, cx, cy, size) {
@@ -462,6 +547,18 @@
       c.addEventListener('mousedown', e => {
         if (this.mode !== 'edit') return;
         if (e.button === 0) {
+          // Check for bounds handle hit first
+          const handle = this._hitHandle(e.offsetX, e.offsetY);
+          if (handle) {
+            this._boundsDrag = {
+              edge: handle,
+              startCols: this._cols(),
+              startRows: this._rows(),
+              startMx: (e.offsetX - this.offsetX) / this.scale,
+              startMy: (e.offsetY - this.offsetY) / this.scale,
+            };
+            return;
+          }
           const brush = this.getBrush();
           const ent = this._entityAtScreen(e.offsetX, e.offsetY);
           if (brush.startsWith('entity:')) {
@@ -501,6 +598,39 @@
       });
 
       c.addEventListener('mousemove', e => {
+        if (this._boundsDrag) {
+          const { edge, startCols, startRows, startMx, startMy } = this._boundsDrag;
+          const gs = this._gridSize();
+          const mx = (e.offsetX - this.offsetX) / this.scale;
+          const my = (e.offsetY - this.offsetY) / this.scale;
+          const dCol = Math.round((mx - startMx) / gs);
+          const dRow = Math.round((my - startMy) / gs);
+          if (edge.includes('e')) this.location.cols = Math.max(5, startCols + dCol);
+          if (edge.includes('w')) {
+            const newCols = Math.max(5, startCols - dCol);
+            const delta = newCols - startCols;
+            if (delta > 0) {
+              this._shiftContent(delta, 0);
+              this.offsetX -= delta * gs * this.scale;
+            }
+            this.location.cols = newCols;
+          }
+          if (edge.includes('s')) this.location.rows = Math.max(5, startRows + dRow);
+          if (edge.includes('n')) {
+            const newRows = Math.max(5, startRows - dRow);
+            const delta = newRows - startRows;
+            if (delta > 0) {
+              this._shiftContent(0, delta);
+              this.offsetY -= delta * gs * this.scale;
+            }
+            this.location.rows = newRows;
+          }
+          this.render();
+          this.canvas.dispatchEvent(new CustomEvent('bv2:bounds-resized', {
+            detail: { cols: this.location.cols, rows: this.location.rows }
+          }));
+          return;
+        }
         if (this._isPainting) this._paintAt(e.offsetX, e.offsetY);
         else if (this._isDragging) {
           this.offsetX = e.offsetX - this._dragStart.x;
@@ -510,6 +640,12 @@
           const prev = this._hoveredEntity;
           this._hoveredEntity = this._entityAtScreen(e.offsetX, e.offsetY);
           if (prev !== this._hoveredEntity) this.render();
+          // Cursor feedback for handles
+          const handle = this._hitHandle(e.offsetX, e.offsetY);
+          if (handle === 'e' || handle === 'w') c.style.cursor = 'ew-resize';
+          else if (handle === 's' || handle === 'n') c.style.cursor = 'ns-resize';
+          else if (handle === 'se' || handle === 'nw') c.style.cursor = 'nwse-resize';
+          else c.style.cursor = 'crosshair';
         }
       });
 
@@ -517,10 +653,25 @@
         this._isPainting = false;
         this._isDragging = false;
         this._lastPaintedKey = null;
+        if (this._boundsDrag) {
+          const didShift = ['w','n','nw'].includes(this._boundsDrag.edge);
+          const shiftCol = didShift ? (this.location.cols - this._boundsDrag.startCols) : 0;
+          const shiftRow = didShift ? (this.location.rows - this._boundsDrag.startRows) : 0;
+          this._boundsDrag = null;
+          this.canvas.dispatchEvent(new CustomEvent('bv2:bounds-resized-done', {
+            detail: {
+              cols: this.location.cols,
+              rows: this.location.rows,
+              shift_col: shiftCol,
+              shift_row: shiftRow,
+            }
+          }));
+        }
       });
       c.addEventListener('mouseleave', () => {
         this._isPainting = false;
         this._isDragging = false;
+        this._boundsDrag = null;
       });
 
       c.addEventListener('wheel', e => {

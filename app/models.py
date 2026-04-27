@@ -1368,9 +1368,9 @@ class BV2Tile(Base):
 
 
 class BV2Entity(Base):
-    """All interactive objects on a location: chest, trap, portal, light,
-    npc_spawn, cover_zone, edge_marker. Type-specific properties go in
-    `props_json` so we don't need a table per kind.
+    """All interactive objects on a location: chest, trap, portal,
+    npc_spawn, cover_zone, light_marker. Type-specific properties live
+    in dedicated detail tables (Phase 7) — no JSON config.
     """
     __tablename__ = "bv2_entities"
 
@@ -1380,7 +1380,6 @@ class BV2Entity(Base):
     col: Mapped[int] = mapped_column(Integer, default=0)
     row: Mapped[int] = mapped_column(Integer, default=0)
     name: Mapped[str] = mapped_column(Text, default="")
-    props_json: Mapped[str] = mapped_column(Text, default="{}")
     visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
     discovered_by_json: Mapped[str] = mapped_column(Text, default="[]")  # list of character_id
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -1445,3 +1444,104 @@ class BV2Library(Base):
     snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
     preview_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+# ── Phase 7: typed entity detail tables (NO JSON config) ─────
+
+class BV2Chest(Base):
+    __tablename__ = "bv2_chests"
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_dc: Mapped[int] = mapped_column(Integer, default=10)
+    icon: Mapped[str] = mapped_column(String(20), default="chest")
+    is_opened: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class BV2ChestItem(Base):
+    __tablename__ = "bv2_chest_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chest_entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_chests.entity_id", ondelete="CASCADE"), nullable=False
+    )
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class BV2Trap(Base):
+    __tablename__ = "bv2_traps"
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    trap_type: Mapped[str] = mapped_column(String(20), default="spike")
+    damage_dice: Mapped[str] = mapped_column(String(20), default="1d6")
+    damage_type: Mapped[str] = mapped_column(String(20), default="piercing")
+    dc_detect: Mapped[int] = mapped_column(Integer, default=12)
+    dc_disarm: Mapped[int] = mapped_column(Integer, default=12)
+    dc_save: Mapped[int] = mapped_column(Integer, default=12)
+    save_ability: Mapped[str] = mapped_column(String(10), default="dex")
+    is_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_disarmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    trigger_mode: Mapped[str] = mapped_column(String(20), default="on_enter")
+    reset_on_trigger: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class BV2Portal(Base):
+    __tablename__ = "bv2_portals"
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    target_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bv2_locations.id", ondelete="SET NULL"), nullable=True
+    )
+    target_col: Mapped[int] = mapped_column(Integer, default=0)
+    target_row: Mapped[int] = mapped_column(Integer, default=0)
+    is_one_way: Mapped[bool] = mapped_column(Boolean, default=False)
+    requires_key_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("items.id", ondelete="SET NULL"), nullable=True
+    )
+    label: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class BV2NPCSpawn(Base):
+    __tablename__ = "bv2_npc_spawns"
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    npc_template_id: Mapped[int] = mapped_column(
+        ForeignKey("npc_templates.id", ondelete="CASCADE"), nullable=False
+    )
+    auto_spawn_trigger: Mapped[str] = mapped_column(String(20), default="on_enter")
+    spawn_count: Mapped[int] = mapped_column(Integer, default=1)
+    has_spawned: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hostile: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class BV2CoverZone(Base):
+    __tablename__ = "bv2_cover_zones"
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    cover_level: Mapped[str] = mapped_column(String(20), default="half")
+    material: Mapped[str] = mapped_column(String(20), default="wooden")
+    blocks_line_of_sight: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_destructible: Mapped[bool] = mapped_column(Boolean, default=False)
+    current_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class BV2CoverCell(Base):
+    __tablename__ = "bv2_cover_cells"
+    __table_args__ = (UniqueConstraint(
+        "zone_entity_id", "col", "row", name="uq_bv2_cover_cell"
+    ),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_entity_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_cover_zones.entity_id", ondelete="CASCADE"), nullable=False
+    )
+    col: Mapped[int] = mapped_column(Integer, nullable=False)
+    row: Mapped[int] = mapped_column(Integer, nullable=False)

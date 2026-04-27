@@ -8,7 +8,21 @@ Phases 2-6: entities, FOV, lighting, edge transitions, library, polish.
 """
 
 # Register sub-modules so their @router.<verb> decorators run.
-from app.routers.builder_v2 import edges, entities, fov, library, lights, locations, maps, tiles  # noqa: F401, E402
+from app.routers.builder_v2 import (  # noqa: F401, E402
+    chests,
+    cover_zones,
+    edges,
+    entities,
+    fov,
+    library,
+    lights,
+    locations,
+    maps,
+    npc_spawns,
+    portals,
+    tiles,
+    traps,
+)
 from app.routers.builder_v2.common import router
 
 __all__ = ["router"]

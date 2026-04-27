@@ -80,6 +80,14 @@ class MapCanvas {
     // Map Builder portals (MapPortal)
     this.portals = [];
 
+    // Phase 8: lighting + edge indicators
+    this.ambientLight = 1.0;
+    this.isIndoor = false;
+    this.lights = [];
+    this.edges = [];
+    this._lightLayer = null;
+    this._lightLayerCtx = null;
+
     // Transform
     this.offsetX = 0;
     this.offsetY = 0;
@@ -401,6 +409,11 @@ class MapCanvas {
     this.render();
   }
 
+  setAmbientLight(v) { this.ambientLight = (v != null ? v : 1.0); this.render(); }
+  setIndoor(v) { this.isIndoor = !!v; this.render(); }
+  setLights(arr) { this.lights = arr || []; this.render(); }
+  setEdges(arr) { this.edges = arr || []; this.render(); }
+
   // Phase 6: lazy cache of HTMLImageElement objects keyed by URL.
   // `setTokens` doesn't prefetch — the image is loaded the first time
   // we try to render that token, then re-render is triggered when the
@@ -611,7 +624,11 @@ class MapCanvas {
 
   setFog(enabled, revealedCells) {
     this.fogEnabled = enabled;
-    this.revealedCells = new Set((revealedCells || []).map(c => `${c[0]},${c[1]}`));
+    const cells = (revealedCells || []).map(c => {
+      if (typeof c === 'string') return c;
+      return `${c[0]},${c[1]}`;
+    });
+    this.revealedCells = new Set(cells);
     this.render();
   }
 
@@ -716,6 +733,9 @@ class MapCanvas {
         });
       }
     }
+
+    // Phase 8: edge transition indicators
+    this._renderEdges(ctx);
 
     // Drawings (Stage 9)
     for (const d of this.drawings) {
@@ -979,6 +999,9 @@ class MapCanvas {
     // without the rest of the scene having to be rebuilt by hand.
     this._renderFx(ctx);
 
+    // Phase 8: lighting overlay (drawn in screen space)
+    this._renderLightingOverlay(ctx);
+
     ctx.restore();
   }
 
@@ -1005,6 +1028,58 @@ class MapCanvas {
   _screenToGrid(sx, sy) {
     const m = this._screenToMap(sx, sy);
     return { col: Math.floor(m.x / this.gridSize), row: Math.floor(m.y / this.gridSize) };
+  }
+
+  // Phase 8: recursive shadowcasting for square grids.
+  // Returns a Set of "col,row" strings.
+  computeVisibleCells(originCol, originRow, range) {
+    const MULT = [
+      [1, 0, 0, 1], [0, 1, 1, 0], [0, 1, -1, 0], [-1, 0, 0, 1],
+      [-1, 0, 0, -1], [0, -1, -1, 0], [0, -1, 1, 0], [1, 0, 0, -1],
+    ];
+    const _blocks = (c, r) => {
+      const t = this.tiles[`${c},${r}`];
+      return !!(t && t.blocks_vision);
+    };
+    const _cast = (cx, cy, row, start, end, radius, xx, xy, yx, yy, visible) => {
+      if (start < end) return;
+      const radiusSq = radius * radius;
+      let nextStart = start;
+      for (let j = row; j <= radius; j++) {
+        let blocked = false;
+        let dx = -j - 1;
+        let dy = -j;
+        while (dx <= 0) {
+          dx += 1;
+          const X = cx + dx * xx + dy * xy;
+          const Y = cy + dx * yx + dy * yy;
+          const lSlope = (dx - 0.5) / (dy + 0.5);
+          const rSlope = (dx + 0.5) / (dy - 0.5);
+          if (start < rSlope) continue;
+          else if (end > lSlope) break;
+          else {
+            if (dx * dx + dy * dy < radiusSq) visible.add(`${X},${Y}`);
+            if (blocked) {
+              if (_blocks(X, Y)) { nextStart = rSlope; continue; }
+              else { blocked = false; start = nextStart; }
+            } else {
+              if (_blocks(X, Y) && j < radius) {
+                blocked = true; nextStart = rSlope;
+                _cast(cx, cy, j + 1, start, lSlope, radius, xx, xy, yx, yy, visible);
+              }
+            }
+          }
+        }
+        if (blocked) break;
+      }
+    };
+    const visible = new Set();
+    visible.add(`${originCol},${originRow}`);
+    for (let octant = 0; octant < 8; octant++) {
+      const [xx, xy, yx, yy] = MULT[octant];
+      _cast(originCol, originRow, 1, 1.0, 0.0, range, xx, xy, yx, yy, visible);
+    }
+    return visible;
   }
 
   _fitToView() {
@@ -1559,6 +1634,104 @@ class MapCanvas {
         ctx.fillText('🌀', px + gs / 2, py + gs / 2);
       }
     }
+  }
+
+  // ── Phase 8: edge transition visual indicators ──────────────
+  _renderEdges(ctx) {
+    if (!this.edges || !this.edges.length) return;
+    const gs = this.gridSize;
+    const cols = Math.ceil(this.mapWidth / gs);
+    const rows = Math.ceil(this.mapHeight / gs);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,210,255,0.7)';
+    ctx.fillStyle = 'rgba(0,210,255,0.35)';
+    ctx.lineWidth = 2 / this.scale;
+    for (const e of this.edges) {
+      const rs = e.range_start ?? 0;
+      const re = e.range_end ?? rs;
+      if (e.side === 'north') {
+        const y = 0;
+        for (let c = rs; c <= re; c++) {
+          const x = c * gs;
+          ctx.beginPath();
+          ctx.moveTo(x + gs * 0.2, y + gs * 0.35);
+          ctx.lineTo(x + gs * 0.5, y + gs * 0.05);
+          ctx.lineTo(x + gs * 0.8, y + gs * 0.35);
+          ctx.stroke();
+        }
+      } else if (e.side === 'south') {
+        const y = rows * gs;
+        for (let c = rs; c <= re; c++) {
+          const x = c * gs;
+          ctx.beginPath();
+          ctx.moveTo(x + gs * 0.2, y - gs * 0.35);
+          ctx.lineTo(x + gs * 0.5, y - gs * 0.05);
+          ctx.lineTo(x + gs * 0.8, y - gs * 0.35);
+          ctx.stroke();
+        }
+      } else if (e.side === 'west') {
+        const x = 0;
+        for (let r = rs; r <= re; r++) {
+          const y = r * gs;
+          ctx.beginPath();
+          ctx.moveTo(x + gs * 0.35, y + gs * 0.2);
+          ctx.lineTo(x + gs * 0.05, y + gs * 0.5);
+          ctx.lineTo(x + gs * 0.35, y + gs * 0.8);
+          ctx.stroke();
+        }
+      } else if (e.side === 'east') {
+        const x = cols * gs;
+        for (let r = rs; r <= re; r++) {
+          const y = r * gs;
+          ctx.beginPath();
+          ctx.moveTo(x - gs * 0.35, y + gs * 0.2);
+          ctx.lineTo(x - gs * 0.05, y + gs * 0.5);
+          ctx.lineTo(x - gs * 0.35, y + gs * 0.8);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── Phase 8: lighting overlay ───────────────────────────────
+  _renderLightingOverlay(ctx) {
+    if (this.role !== 'player') return;
+    const darkAlpha = this.isIndoor ? 0.88 : Math.max(0, 1 - (this.ambientLight ?? 1.0));
+    if (darkAlpha <= 0 && !this.lights.length) return;
+
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (!this._lightLayer) {
+      this._lightLayer = document.createElement('canvas');
+      this._lightLayerCtx = this._lightLayer.getContext('2d');
+    }
+    this._lightLayer.width = w;
+    this._lightLayer.height = h;
+    const lctx = this._lightLayerCtx;
+
+    lctx.clearRect(0, 0, w, h);
+    lctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
+    lctx.fillRect(0, 0, w, h);
+
+    if (this.lights.length) {
+      lctx.globalCompositeOperation = 'destination-out';
+      for (const light of this.lights) {
+        const px = (light.col + 0.5) * this.gridSize * this.scale + this.offsetX;
+        const py = (light.row + 0.5) * this.gridSize * this.scale + this.offsetY;
+        const r = (light.radius_cells ?? 4) * this.gridSize * this.scale;
+        const g = lctx.createRadialGradient(px, py, 0, px, py, r);
+        g.addColorStop(0, `rgba(0,0,0,${Math.min(1, light.intensity ?? 1.0)})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        lctx.fillStyle = g;
+        lctx.beginPath();
+        lctx.arc(px, py, r, 0, Math.PI * 2);
+        lctx.fill();
+      }
+      lctx.globalCompositeOperation = 'source-over';
+    }
+
+    ctx.drawImage(this._lightLayer, 0, 0);
   }
 
   // ── Render a saved/preview drawing ──────────────────────────

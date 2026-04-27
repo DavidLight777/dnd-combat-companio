@@ -136,7 +136,14 @@ async function loadMapState() {
     if (state.active_floor_tiles) {
       mapCanvas.setTiles(state.active_floor_tiles, state.active_floor_grid_type || 'square');
     }
-    // Load builder entities for the active floor
+    // Phase 8: bv2 lighting + edges (visible on both GM and player canvases)
+    mapCanvas.setAmbientLight(state.bv2_ambient_light ?? 1.0);
+    mapCanvas.setIndoor(state.bv2_is_indoor ?? false);
+    mapCanvas.setLights(state.bv2_lights || []);
+    mapCanvas.setEdges(state.bv2_edges || []);
+    // Phase 7: bv2 bridge already populated chests/portals when
+    // active_floor_id is null. Only fetch legacy builder entities
+    // for a legacy floor.
     try {
       const afid = state.active_floor_id;
       if (afid) {
@@ -144,10 +151,11 @@ async function loadMapState() {
         mapCanvas.setMapChests((allChests || []).filter(c => c.floor_id === afid));
         const allPortals = await api.get(`/api/map-builder/${SESSION_CODE}/portals`);
         mapCanvas.setPortals((allPortals || []).filter(p => p.floor_id === afid));
-      } else {
+      } else if (!state.bv2_active_location_id) {
         mapCanvas.setMapChests([]);
         mapCanvas.setPortals([]);
       }
+      // else: bv2-sourced; leave bridge data alone.
     } catch {}
     mapGridEnabled = state.grid_enabled;
     mapFogEnabled = state.fog_enabled;
