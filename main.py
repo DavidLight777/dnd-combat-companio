@@ -1,54 +1,53 @@
 import json
 import os
 import socket
-import uvicorn
-import webbrowser
 import threading
+import webbrowser
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.database import init_db
 # Registers SQLAlchemy after_commit listeners that fan out
 # `entity.invalidated` WS events for every DB mutation. Must be imported
 # before any router touches the DB so the hooks are active on day one.
 from app import realtime  # noqa: F401
-from app.routers.sessions import router as sessions_router
-from app.routers.characters import router as characters_router
-from app.routers.combat import router as combat_router
-from app.routers.websocket import router as websocket_router
-from app.routers.initiative import router as initiative_router
-from app.routers.map import router as map_router
-from app.routers.map_builder import router as map_builder_router
-from app.routers.inventory import router as inventory_router
-from app.routers.ai import router as ai_router
-from app.routers.economy import router as economy_router
-from app.routers.status_effects import router as status_effects_router
-from app.routers.combat_events import router as combat_events_router
-from app.routers.races_classes import router as races_classes_router
-from app.routers.npc_library import router as npc_library_router
-from app.routers.quests import router as quests_router
-from app.routers.announcements import router as announcements_router
-from app.routers.notes import router as notes_router
-from app.routers.session_timer import router as session_timer_router
-from app.routers.combat_actions import router as combat_actions_router
+from app.database import init_db
 from app.routers.abilities import router as abilities_router
-from app.routers.memory import router as memory_router
-from app.routers.professions import router as professions_router
-from app.routers.poisons import router as poisons_router
-from app.routers.wizard import router as wizard_router
+from app.routers.ai import router as ai_router
+from app.routers.announcements import router as announcements_router
+from app.routers.builder_v2 import router as builder_v2_router
 from app.routers.cards import router as cards_router
+from app.routers.characters import router as characters_router
 from app.routers.chests import router as chests_router
-
+from app.routers.combat import router as combat_router
+from app.routers.combat_actions import router as combat_actions_router
+from app.routers.combat_events import router as combat_events_router
+from app.routers.economy import router as economy_router
+from app.routers.initiative import router as initiative_router
+from app.routers.inventory import router as inventory_router
+from app.routers.map import router as map_router
+from app.routers.memory import router as memory_router
+from app.routers.notes import router as notes_router
+from app.routers.npc_library import router as npc_library_router
+from app.routers.poisons import router as poisons_router
+from app.routers.professions import router as professions_router
+from app.routers.quests import router as quests_router
+from app.routers.races_classes import router as races_classes_router
+from app.routers.session_timer import router as session_timer_router
+from app.routers.sessions import router as sessions_router
+from app.routers.status_effects import router as status_effects_router
+from app.routers.websocket import router as websocket_router
+from app.routers.wizard import router as wizard_router
 
 # ── Load config ──────────────────────────────────────────────
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 config = {}
 if os.path.exists(CONFIG_PATH):
-    with open(CONFIG_PATH, "r") as f:
+    with open(CONFIG_PATH) as f:
         config = json.load(f)
 
 
@@ -95,7 +94,7 @@ app.include_router(poisons_router)
 app.include_router(wizard_router)
 app.include_router(cards_router)
 app.include_router(chests_router)
-app.include_router(map_builder_router)
+app.include_router(builder_v2_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

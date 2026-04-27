@@ -1,21 +1,27 @@
 """Combat calculation endpoints — damage intake, attack roll, damage roll, HP recovery."""
 
+import json as _json
 import random
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import select
-
 from app.database import get_session
-from app.models import Character, InventoryItem, CharacterStatusEffect
-from app.schemas import DamageIntakeRequest, HpRecoveryRequest
 from app.game_mechanics import (
-    calculate_damage_intake, calculate_attack_roll,
-    calculate_damage_roll, calculate_hp_recovery, calculate_enemy_damage,
-    get_all_active_bonuses, aggregate_status_penalties,
-    apply_advantage, format_advantage_breakdown, resolve_advantage_mode,
+    aggregate_status_penalties,
+    apply_advantage,
+    calculate_attack_roll,
+    calculate_damage_intake,
+    calculate_damage_roll,
+    calculate_enemy_damage,
+    calculate_hp_recovery,
+    format_advantage_breakdown,
+    get_all_active_bonuses,
+    resolve_advantage_mode,
 )
-import json as _json
+from app.models import Character, CharacterStatusEffect, InventoryItem
+from app.schemas import DamageIntakeRequest, HpRecoveryRequest
 
 
 async def _load_item_bonuses(character_id: int, db: AsyncSession) -> dict:

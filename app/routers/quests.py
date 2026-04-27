@@ -1,13 +1,14 @@
 """Stage 8 — Quest System: Templates, Assignment, Completion."""
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import QuestTemplate, CharacterQuest, Character, InventoryItem
+from app.models import Character, CharacterQuest, InventoryItem, QuestTemplate, Session
 
 router = APIRouter(prefix="/api", tags=["quests"])
 
@@ -286,7 +287,7 @@ async def complete_quest(quest_id: int, db: AsyncSession = Depends(get_session))
         raise HTTPException(400, "Quest is not active")
 
     q.status = "completed"
-    q.completed_at = datetime.now(timezone.utc)
+    q.completed_at = datetime.now(UTC)
     q.reward_revealed = True
 
     rewards_applied = {"xp": 0, "currency": 0, "items": []}
@@ -392,7 +393,7 @@ async def fail_quest(quest_id: int, db: AsyncSession = Depends(get_session)):
         raise HTTPException(400, "Quest is not active")
 
     q.status = "failed"
-    q.completed_at = datetime.now(timezone.utc)
+    q.completed_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(q)
     return _ser_quest(q)

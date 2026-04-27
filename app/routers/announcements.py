@@ -1,11 +1,10 @@
 """Stage 10 — Session Announcements API."""
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, SessionAnnouncement, Character
+from app.models import Character, Session, SessionAnnouncement
 
 router = APIRouter(prefix="/api/announcements", tags=["announcements"])
 

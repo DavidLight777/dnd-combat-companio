@@ -1,5 +1,6 @@
 """Stage 7 — NPC Library: Folders, Templates, Events, Spawn."""
 import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -7,8 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
-    NpcFolder, NpcTemplate, EventTemplate, Character,
-    InventoryItem, NpcShopInventory, Session,
+    Character,
+    EventTemplate,
+    InventoryItem,
+    NpcFolder,
+    NpcShopInventory,
+    NpcTemplate,
+    Session,
 )
 
 router = APIRouter(prefix="/api/npc-library", tags=["npc-library"])

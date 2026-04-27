@@ -1,14 +1,12 @@
 """Fix 2 — Chest System API."""
-import json
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Chest, ChestItem, Character, Item, Session, InventoryItem
 from app.game_mechanics import add_item_to_inventory
+from app.models import Character, Chest, ChestItem, Item, Session
 from app.websocket_manager import manager as _ws
 
 router = APIRouter(prefix="/api", tags=["chests"])

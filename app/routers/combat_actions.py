@@ -1,6 +1,5 @@
 """Stage 11 — Combat Targeting & Attack Actions API."""
 import json
-from datetime import datetime, timezone
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,13 +8,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
-from app.models import (
-    CombatEvent, CombatParticipant, CombatAction, Character,
-    InventoryItem, CharacterStatusEffect, StatusEffectTemplate, Item,
-)
 from app.game_mechanics import (
-    calculate_combat_attack, calculate_combat_damage, stat_modifier,
-    get_all_active_bonuses, aggregate_status_penalties, resolve_advantage_mode,
+    aggregate_status_penalties,
+    calculate_combat_attack,
+    calculate_combat_damage,
+    get_all_active_bonuses,
+    resolve_advantage_mode,
+)
+from app.models import (
+    Character,
+    CharacterStatusEffect,
+    CombatAction,
+    CombatEvent,
+    CombatParticipant,
+    InventoryItem,
+    StatusEffectTemplate,
 )
 
 router = APIRouter(prefix="/api/combat", tags=["combat-actions"])

@@ -29,9 +29,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from sqlalchemy import event, inspect as sa_inspect, select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session as SyncSession
 
 from app.websocket_manager import manager
@@ -190,7 +191,8 @@ async def _broadcast_all(buf: list[dict]) -> None:
         return
 
     from app.database import async_session
-    from app.models import Character, CombatEvent, InventoryItem, Session as SessionModel
+    from app.models import Character, CombatEvent, InventoryItem
+    from app.models import Session as SessionModel
 
     # Collect id sets for each resolve pass.
     direct_session_ids: set[int] = set()

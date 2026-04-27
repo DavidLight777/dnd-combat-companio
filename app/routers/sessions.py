@@ -2,15 +2,26 @@ import json
 import random
 import secrets
 import string
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, Character, CombatLog, InventoryItem, Item, Race, StatModifier, CharacterWizardState, CharacterAbility
+from app.models import (
+    Character,
+    CharacterAbility,
+    CharacterWizardState,
+    CombatLog,
+    InventoryItem,
+    Item,
+    Race,
+    Session,
+    StatModifier,
+)
+from app.schemas import SessionCreate, SessionCreated, SessionJoin, SessionJoined, SessionOut
 from app.websocket_manager import manager
-from app.schemas import SessionCreate, SessionJoin, SessionCreated, SessionJoined, SessionOut
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -224,6 +235,10 @@ async def list_session_characters(code: str, db: AsyncSession = Depends(get_sess
             "place_at_table": c.place_at_table,
             "is_at_table": c.place_at_table,  # alias
             "show_hp_to_players": c.show_hp_to_players,
+            "sight_range_cells": c.sight_range_cells,
+            "bv2_location_id": c.current_location_id,
+            "bv2_col": c.col,
+            "bv2_row": c.row,
         }
         for c in chars
     ]

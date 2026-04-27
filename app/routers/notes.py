@@ -1,11 +1,12 @@
 """Stage 10 — Character Notes API."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import CharacterNote, Character
+from app.models import Character, CharacterNote
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -71,7 +72,7 @@ async def update_note(note_id: int, body: dict, db: AsyncSession = Depends(get_s
         n.title = body["title"]
     if "content" in body:
         n.content = body["content"]
-    n.updated_at = datetime.now(timezone.utc)
+    n.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(n)
     return _ser(n)

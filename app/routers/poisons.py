@@ -17,6 +17,7 @@ Rules:
 from __future__ import annotations
 
 import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -24,7 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
-    PoisonTemplate, InventoryItemPoison, InventoryItem, Item,
+    InventoryItem,
+    InventoryItemPoison,
+    Item,
+    PoisonTemplate,
 )
 from app.websocket_manager import manager
 

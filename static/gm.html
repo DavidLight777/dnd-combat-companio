@@ -169,7 +169,7 @@
           <button class="gm-tab" data-tab="map">
             <span class="tab-icon">◈</span>Map
           </button>
-          <button class="gm-tab" data-tab="builder">
+          <button class="gm-tab" data-tab="builder-v2">
             <span class="tab-icon">⊕</span>Builder
           </button>
           <button class="gm-tab" data-tab="items">
@@ -357,95 +357,123 @@
           </div>
         </div>
 
-        <!-- ── Builder ───────────────────────────────────────── -->
-        <div class="tab-content" id="tab-builder">
+        <!-- ── Builder v2 ────────────────────────────────────── -->
+        <div class="tab-content" id="tab-builder-v2">
           <div style="display:flex;flex:1;overflow:hidden">
-            <!-- Left sidebar: Tools -->
-            <div id="builder-sidebar" style="width:200px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto">
+            <!-- Left sidebar -->
+            <div style="width:220px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto">
+
+              <!-- Map -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
                 <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Map</div>
-                <select id="builder-map-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
+                <select id="bv2-map-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
                 <div style="display:flex;gap:4px">
-                  <button id="btn-new-map" class="btn btn-primary btn-xs" style="flex:1" title="New Map">+ New Map</button>
-                  <button id="btn-delete-map" class="btn btn-danger btn-xs" title="Delete Map">🗑</button>
+                  <button id="bv2-btn-new-map" class="btn btn-primary btn-xs" style="flex:1">+ New Map</button>
+                  <button id="bv2-btn-delete-map" class="btn btn-danger btn-xs" title="Delete">🗑</button>
                 </div>
-                <button id="btn-activate-map" class="btn btn-ghost btn-xs" style="width:100%;margin-top:4px" title="Activate Map">▶ Activate Map</button>
               </div>
 
+              <!-- Location -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
-                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Floor</div>
-                <select id="builder-floor-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Location</div>
+                <select id="bv2-loc-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
                 <div style="display:flex;gap:4px">
-                  <button id="btn-new-floor" class="btn btn-primary btn-xs" style="flex:1" title="New Floor">+ New</button>
-                  <button id="btn-delete-floor" class="btn btn-danger btn-xs" title="Delete Floor">🗑</button>
+                  <button id="bv2-btn-new-loc" class="btn btn-primary btn-xs" style="flex:1">+ New</button>
+                  <button id="bv2-btn-delete-loc" class="btn btn-danger btn-xs" title="Delete">🗑</button>
                 </div>
-                <button id="btn-activate-floor" class="btn btn-ghost btn-xs" style="width:100%;margin-top:4px" title="Activate on Map">▶ Activate Floor</button>
+                <button id="bv2-btn-apply" class="btn btn-success btn-sm" style="width:100%;margin-top:8px;font-weight:600">▶ Apply to Game</button>
+                <div id="bv2-save-indicator" style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin-top:4px;min-height:14px"></div>
               </div>
 
+              <!-- Grid -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
                 <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Grid</div>
-                <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs" style="width:100%;margin-bottom:6px">▢ Square Grid</button>
-                <label style="font-size:0.7rem;color:var(--text-muted)">Tile Size: <span id="builder-tile-size-val">50</span>px</label>
-                <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:100%;margin-bottom:6px">
+                <button id="bv2-btn-grid-type" class="btn btn-ghost btn-xs" style="width:100%;margin-bottom:6px">▢ Square Grid</button>
+                <label style="font-size:0.7rem;color:var(--text-muted)">Tile Size: <span id="bv2-tile-size-val">50</span>px</label>
+                <input id="bv2-tile-size" type="range" min="20" max="100" value="50" style="width:100%;margin-bottom:6px">
                 <div style="display:flex;gap:4px;align-items:center">
                   <label style="font-size:0.7rem;color:var(--text-muted)">W:</label>
-                  <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:50px;font-size:0.75rem" class="form-control">
+                  <input id="bv2-cols" type="number" min="5" max="200" value="40" style="width:50px;font-size:0.75rem" class="form-control">
                   <label style="font-size:0.7rem;color:var(--text-muted)">H:</label>
-                  <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:50px;font-size:0.75rem" class="form-control">
+                  <input id="bv2-rows" type="number" min="5" max="200" value="30" style="width:50px;font-size:0.75rem" class="form-control">
                 </div>
               </div>
 
-              <div style="padding:10px;border-bottom:1px solid var(--border)">
-                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Background</div>
-                <input type="file" id="builder-bg-upload" accept="image/*" style="display:none">
-                <button id="btn-builder-bg-upload" class="btn btn-ghost btn-xs" style="width:100%;margin-bottom:4px">🖼 Upload Image</button>
-                <button id="btn-builder-bg-remove" class="btn btn-ghost btn-xs" style="width:100%;color:var(--accent-red)">🗑 Remove Image</button>
-              </div>
-
+              <!-- Brushes -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
                 <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Terrain</div>
                 <div class="builder-tool-grid">
-                  <button class="builder-brush active" data-brush="floor" title="Floor">⬜<span>Floor</span></button>
-                  <button class="builder-brush" data-brush="wall" title="Wall">🧱<span>Wall</span></button>
-                  <button class="builder-brush" data-brush="water" title="Water">💧<span>Water</span></button>
-                  <button class="builder-brush" data-brush="pit" title="Pit">🕳<span>Pit</span></button>
+                  <button class="bv2-brush active" data-brush="floor" title="Floor (1)">⬜<span>Floor</span></button>
+                  <button class="bv2-brush" data-brush="wall"  title="Wall (2)">🧱<span>Wall</span></button>
+                  <button class="bv2-brush" data-brush="water" title="Water (3)">💧<span>Water</span></button>
+                  <button class="bv2-brush" data-brush="lava"  title="Lava (4)">🔥<span>Lava</span></button>
+                  <button class="bv2-brush" data-brush="pit"   title="Pit (5)">🕳<span>Pit</span></button>
+                  <button class="bv2-brush" data-brush="door"  title="Door (6)">🚪<span>Door</span></button>
+                  <button class="bv2-brush" data-brush="rough" title="Rough (7)">⛰<span>Rough</span></button>
+                  <button class="bv2-brush" data-brush="erase" title="Erase (E)">🧹<span>Erase</span></button>
                 </div>
+                <button id="bv2-btn-clear" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All Tiles</button>
               </div>
 
+              <!-- Entities -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
-                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Objects</div>
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Entities</div>
                 <div class="builder-tool-grid">
-                  <button class="builder-brush" data-brush="door" title="Door">🚪<span>Door</span></button>
-                  <button class="builder-brush" data-brush="stairs_up" title="Stairs Up">⬆<span>Up</span></button>
-                  <button class="builder-brush" data-brush="stairs_down" title="Stairs Down">⬇<span>Down</span></button>
-                  <button class="builder-brush" data-brush="trap" title="Trap">⚠<span>Trap</span></button>
-                  <button class="builder-brush" data-brush="chest" title="Chest">📦<span>Chest</span></button>
-                  <button class="builder-brush" data-brush="portal" title="Portal">🌀<span>Portal</span></button>
+                  <button class="bv2-brush" data-brush="entity:chest" title="Chest">🗃<span>Chest</span></button>
+                  <button class="bv2-brush" data-brush="entity:trap" title="Trap">⚠<span>Trap</span></button>
+                  <button class="bv2-brush" data-brush="entity:portal" title="Portal">🌀<span>Portal</span></button>
+                  <button class="bv2-brush" data-brush="entity:npc_spawn" title="NPC Spawn">⊛<span>NPC</span></button>
+                  <button class="bv2-brush" data-brush="entity:cover_zone" title="Cover">⛑<span>Cover</span></button>
                 </div>
+                <div id="bv2-entity-list" style="margin-top:8px;max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
 
+              <!-- Lights -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
-                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Actions</div>
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Lights</div>
                 <div class="builder-tool-grid">
-                  <button class="builder-brush" data-brush="erase" title="Erase">🧹<span>Erase</span></button>
+                  <button class="bv2-light-brush" data-preset="torch" title="Torch">🔥<span>Torch</span></button>
+                  <button class="bv2-light-brush" data-preset="lamp"  title="Lamp">💡<span>Lamp</span></button>
+                  <button class="bv2-light-brush" data-preset="magic" title="Magic">✨<span>Magic</span></button>
                 </div>
-                <button id="btn-clear-tiles" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All</button>
+                <div id="bv2-light-list" style="margin-top:8px;max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
 
+              <!-- Edges -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Edges</div>
+                <button class="bv2-edge-brush btn btn-ghost btn-xs" style="width:100%" title="Draw edge">🔗 Draw Edge</button>
+                <div id="bv2-edge-list" style="margin-top:8px;max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
+              </div>
+
+              <!-- Library -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
                 <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Library</div>
-                <button id="btn-save-to-library" class="btn btn-primary btn-xs" style="width:100%;margin-bottom:4px">💾 Save to Library</button>
-                <button id="btn-open-library" class="btn btn-ghost btn-xs" style="width:100%">📂 Open Library</button>
+                <button id="bv2-btn-save-library" class="btn btn-primary btn-xs" style="width:100%;margin-bottom:4px">💾 Save Snapshot</button>
+                <button id="bv2-btn-library" class="btn btn-ghost btn-xs" style="width:100%">📂 Open Library</button>
               </div>
 
-              <div style="padding:10px">
-                <button id="btn-save-tiles" class="btn btn-primary btn-sm" style="width:100%">💾 Save Floor</button>
+              <!-- Help -->
+              <div style="padding:10px;font-size:0.7rem;color:var(--text-muted);line-height:1.5">
+                <strong style="color:var(--text)">Hotkeys</strong><br>
+                1-7 select brush · E erase<br>
+                Left drag = paint · Right drag = pan · Wheel = zoom<br>
+                Click = place entity · Shift+click = delete entity<br>
+                <em>Auto-saves on every stroke.</em><br>
+                Apply pushes the location live to all players.
               </div>
+
             </div>
 
             <!-- Canvas area -->
             <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
-              <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
+              <canvas id="bv2-canvas" style="display:block;width:100%;height:100%"></canvas>
+              <div id="bv2-empty-msg" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--text-muted);pointer-events:none;font-size:0.95rem;text-align:center;padding:20px">
+                <div>
+                  <div style="font-size:2.5rem;margin-bottom:12px">🗺️</div>
+                  <div>Create a Map and a Location to start drawing.</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -762,6 +790,115 @@
 
 <!-- ── CHEST MODAL ──────────────────────────────────────────── -->
 
+<!-- ── BV2 ENTITY MODAL ─────────────────────────────────────── -->
+<div id="bv2-entity-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:420px">
+    <div class="modal-header">
+      <h2 id="bv2-entity-modal-title">Entity</h2>
+      <button class="btn-icon" id="bv2-entity-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="bv2-ent-id">
+      <input type="hidden" id="bv2-ent-type">
+      <div class="form-grid">
+        <div class="form-group"><label>Name</label><input type="text" id="bv2-ent-name" placeholder="Name"></div>
+        <div class="form-group"><label>Type</label><input type="text" id="bv2-ent-type-display" readonly style="background:var(--bg-surface-2)"></div>
+        <div class="form-group" style="display:flex;gap:8px">
+          <div style="flex:1"><label>Col</label><input type="number" id="bv2-ent-col" min="0" style="width:100%"></div>
+          <div style="flex:1"><label>Row</label><input type="number" id="bv2-ent-row" min="0" style="width:100%"></div>
+        </div>
+        <div class="form-group" style="flex-direction:row;align-items:center;gap:8px">
+          <label style="flex-direction:row;gap:4px"><input type="checkbox" id="bv2-ent-visible"> Visible to players</label>
+        </div>
+        <div class="form-group"><label>Properties (JSON)</label><textarea id="bv2-ent-props" rows="4" placeholder='{"locked": true}'></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="bv2-ent-delete" style="margin-right:auto">Delete</button>
+      <button class="btn btn-ghost" id="bv2-ent-cancel">Cancel</button>
+      <button class="btn btn-primary" id="bv2-ent-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── BV2 LIGHT MODAL ─────────────────────────────────────── -->
+<div id="bv2-light-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:360px">
+    <div class="modal-header">
+      <h2 id="bv2-light-modal-title">Light</h2>
+      <button class="btn-icon" id="bv2-light-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="bv2-light-id">
+      <div class="form-grid">
+        <div class="form-group" style="display:flex;gap:8px">
+          <div style="flex:1"><label>Col</label><input type="number" id="bv2-light-col" min="0" style="width:100%"></div>
+          <div style="flex:1"><label>Row</label><input type="number" id="bv2-light-row" min="0" style="width:100%"></div>
+        </div>
+        <div class="form-group"><label>Radius (cells)</label><input type="number" id="bv2-light-radius" min="0.5" step="0.5" style="width:100%"></div>
+        <div class="form-group"><label>Color</label><input type="color" id="bv2-light-color" style="width:100%;height:32px"></div>
+        <div class="form-group"><label>Intensity</label><input type="number" id="bv2-light-intensity" min="0" step="0.1" style="width:100%"></div>
+        <div class="form-group"><label>Kind</label><input type="text" id="bv2-light-kind" style="width:100%"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="bv2-light-delete" style="margin-right:auto">Delete</button>
+      <button class="btn btn-ghost" id="bv2-light-cancel">Cancel</button>
+      <button class="btn btn-primary" id="bv2-light-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── BV2 EDGE MODAL ──────────────────────────────────────── -->
+<div id="bv2-edge-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:360px">
+    <div class="modal-header">
+      <h2 id="bv2-edge-modal-title">New Edge</h2>
+      <button class="btn-icon" id="bv2-edge-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Side</label>
+          <select id="bv2-edge-side" style="width:100%">
+            <option value="north">North</option>
+            <option value="south">South</option>
+            <option value="east">East</option>
+            <option value="west">West</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;gap:8px">
+          <div style="flex:1"><label>Range Start</label><input type="number" id="bv2-edge-range-start" min="0" style="width:100%"></div>
+          <div style="flex:1"><label>Range End</label><input type="number" id="bv2-edge-range-end" min="0" style="width:100%"></div>
+        </div>
+        <div class="form-group"><label>Target Location ID</label><input type="number" id="bv2-edge-target-loc" min="1" style="width:100%"></div>
+        <div class="form-group" style="display:flex;gap:8px">
+          <div style="flex:1"><label>Target Col</label><input type="number" id="bv2-edge-target-col" min="0" style="width:100%"></div>
+          <div style="flex:1"><label>Target Row</label><input type="number" id="bv2-edge-target-row" min="0" style="width:100%"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="bv2-edge-cancel">Cancel</button>
+      <button class="btn btn-primary" id="bv2-edge-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── BV2 LIBRARY MODAL ───────────────────────────────────── -->
+<div id="bv2-library-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header">
+      <h2>Library</h2>
+      <button class="btn-icon" id="bv2-library-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="bv2-library-list" style="max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="bv2-library-cancel">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── DICE ROLL LOG ─────────────────────────────────────────── -->
 <div id="roll-log-panel">
@@ -796,6 +933,35 @@
   <script src="/static/js/websocket-client.js?v=reworkv4p0"></script>
   <script src="/static/js/character-sheet-core.js?v=reworkv4p0"></script>
   <script src="/static/js/map-canvas.js?v=reworkv4p0"></script>
-  <script src="/static/js/gm-app.js?v=reworkv4p2"></script>
+  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
+  <script src="/static/js/gm/01-core.js?v=split1"></script>
+  <script src="/static/js/gm/02-characters.js?v=split1"></script>
+  <script src="/static/js/gm/03-level-up.js?v=split1"></script>
+  <script src="/static/js/gm/04-status-effects.js?v=split1"></script>
+  <script src="/static/js/gm/05-npc-sidebar.js?v=split1"></script>
+  <script src="/static/js/gm/06-map-main.js?v=split1"></script>
+  <script src="/static/js/gm/07-session-ops.js?v=split1"></script>
+  <script src="/static/js/gm/08-websocket.js?v=split1"></script>
+  <script src="/static/js/gm/09-items.js?v=split1"></script>
+  <script src="/static/js/gm/10-ai-chat.js?v=split1"></script>
+  <script src="/static/js/gm/11-combat.js?v=split1"></script>
+  <script src="/static/js/gm/12-races-classes.js?v=split1"></script>
+  <script src="/static/js/gm/13-quests.js?v=split1"></script>
+  <script src="/static/js/gm/14-npc-library.js?v=split1"></script>
+  <script src="/static/js/gm/15-meta-stage10.js?v=split1"></script>
+  <script src="/static/js/gm/16-abilities.js?v=split1"></script>
+  <script src="/static/js/gm/17-npc-panels.js?v=split1"></script>
+  <script src="/static/js/gm/19-chests.js?v=split1"></script>
+  <script src="/static/js/gm/20-init.js?v=split1"></script>
+  <script src="/static/js/builder_v2/00-state.js?v=bv2-1"></script>
+  <script src="/static/js/builder_v2/10-api.js?v=bv2-1"></script>
+  <script src="/static/js/builder_v2/20-mapview.js?v=bv2-1"></script>
+  <script src="/static/js/builder_v2/30-editor.js?v=bv2-1"></script>
+  <script src="/static/js/builder_v2/40-websocket.js?v=bv2-1"></script>
+  <script src="/static/js/builder_v2/50-entities.js?v=bv2-2"></script>
+  <script src="/static/js/builder_v2/60-fov.js?v=bv2-3"></script>
+  <script src="/static/js/builder_v2/70-lights.js?v=bv2-4"></script>
+  <script src="/static/js/builder_v2/80-edges.js?v=bv2-5"></script>
+  <script src="/static/js/builder_v2/90-library.js?v=bv2-6"></script>
 </body>
 </html>

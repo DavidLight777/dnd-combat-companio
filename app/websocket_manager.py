@@ -5,7 +5,8 @@ Manages all active WS connections grouped by session code.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from fastapi import WebSocket
 
 logger = logging.getLogger("ws_manager")
@@ -41,7 +42,7 @@ class ConnectionManager:
         message = json.dumps({
             "event": event,
             "data": data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         dead = []
         for conn in self._connections.get(session_code, []):
@@ -57,7 +58,7 @@ class ConnectionManager:
         message = json.dumps({
             "event": event,
             "data": data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         conns = self._connections.get(session_code, [])
         dead = []
@@ -78,7 +79,7 @@ class ConnectionManager:
         message = json.dumps({
             "event": event,
             "data": data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         for conn in self._connections.get(session_code, []):
             if conn["role"] == "gm":

@@ -21,20 +21,19 @@ full contract sent to the model.
 
 from __future__ import annotations
 
-import os
 import json
+import os
+
 import httpx
-from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Session,
-    Character,
-    InventoryItem,
-    Item,
-    CombatLog,
     AIConversation,
+    Character,
+    CombatLog,
+    Item,
+    Session,
 )
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -206,8 +205,8 @@ def parse_envelope(raw: str) -> tuple[str, list[dict], str | None]:
 # during test collection (no FastAPI app spun up).
 # ═════════════════════════════════════════════════════════════════
 async def _dispatch_create_item(session_id: int, payload: dict, db: AsyncSession) -> dict:
-    from app.routers.inventory import _sanitize_damage_modes
     from app.models import ItemBonus, ItemWeaponStats
+    from app.routers.inventory import _sanitize_damage_modes
 
     # Force session scope + AI attribution; everything else is GM-set or default.
     is_potion = bool(payload.get("is_potion", False))

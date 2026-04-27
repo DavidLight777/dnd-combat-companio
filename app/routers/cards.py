@@ -1,14 +1,15 @@
 """Fix 2 — Card Library API."""
 import json
 import os
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import CardLibrary, Session
+from app.models import CardLibrary
 
 router = APIRouter(prefix="/api", tags=["cards"])
 
@@ -121,7 +122,7 @@ async def upload_card_image(
     if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
         raise HTTPException(400, "Invalid image format")
 
-    filename = f"card_{card_id}_{int(datetime.now(timezone.utc).timestamp())}{ext}"
+    filename = f"card_{card_id}_{int(datetime.now(UTC).timestamp())}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
 
     with open(filepath, "wb") as f:

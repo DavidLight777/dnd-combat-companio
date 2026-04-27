@@ -2,14 +2,14 @@
 
 import json
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("websocket")
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_session as get_db_session, async_session
-from app.models import Session, Character
+from app.database import async_session
+from app.models import Character, Session
 from app.websocket_manager import manager
 
 router = APIRouter(tags=["websocket"])

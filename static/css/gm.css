@@ -835,6 +835,37 @@
       font-size: 0.6rem;
       text-transform: capitalize;
     }
+    .builder-tool-grid .bv2-brush {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 6px 2px;
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      transition: all var(--t-fast);
+      min-height: 52px;
+    }
+    .builder-tool-grid .bv2-brush:hover {
+      background: var(--bg-surface-3);
+      border-color: var(--border-active);
+      color: var(--text-primary);
+    }
+    .builder-tool-grid .bv2-brush.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+    .builder-tool-grid .bv2-brush span {
+      font-size: 0.6rem;
+      text-transform: capitalize;
+    }
     #builder-sidebar .form-control {
       background: var(--bg-input);
       border: 1px solid var(--border);

@@ -13,6 +13,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -20,7 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
-    Character, CharacterClass, CharacterProfession,
+    Character,
+    CharacterClass,
+    CharacterProfession,
 )
 from app.websocket_manager import manager
 

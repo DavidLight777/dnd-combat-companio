@@ -1,5 +1,6 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
@@ -17,8 +18,9 @@ class Base(DeclarativeBase):
 
 
 async def init_db():
-    from app.models import Base as _  # noqa: F401
     from sqlalchemy import text
+
+    from app.models import Base as _  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     # FIX 6: lightweight column migrations for existing SQLite DBs

@@ -1,0 +1,41 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [
+    "alembic/versions",
+    ".venv",
+    "__pycache__",
+    "static",
+]
+
+[tool.ruff.lint]
+# Pragmatic set — focus on real bugs, not style nitpicks
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes (unused imports, undefined names)
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "B",      # bugbear (likely bugs)
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long — many existing long strings
+    "E402",   # module level imports not at top — needed for some patterns
+    "E711",   # comparison to None should be 'is None' — many `== None` in SQLAlchemy filters (legit)
+    "E712",   # comparison to True/False — same as above for SQLAlchemy
+    "B008",   # function call in default argument — FastAPI Depends pattern
+    "B904",   # raise X from Y — too strict for project style
+    "B007",   # loop control variable not used — common in for-else patterns
+    "UP007",  # `Optional[X]` — keep for legacy compat
+    "UP045",  # `X | None` syntax — pyupgrade is too aggressive here
+    "E701",   # multiple statements on one line — used for one-liner if-statements (style)
+    "E741",   # ambiguous variable name (l, I, O) — minor cosmetic
+    "W293",   # blank line contains whitespace — cosmetic
+    "F841",   # unused local variable — many are documentation/debug artifacts
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/models.py" = ["F401"]
+"alembic/env.py" = ["F401", "E402"]
+"app/routers/*/__init__.py" = ["F401"]   # re-exports + side-effect sub-module imports
+"tests/**" = ["F401", "E402"]

@@ -1,6 +1,8 @@
-from datetime import datetime, timezone
-from sqlalchemy import Integer, String, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from datetime import UTC, datetime, timezone
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 
 
@@ -18,7 +20,7 @@ class Session(Base):
     current_turn_character_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("characters.id", use_alter=True), nullable=True)
     turn_number: Mapped[int] = mapped_column(Integer, default=0)
     shop_open: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Stage 10: Session timer
     play_timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -85,6 +87,13 @@ class Character(Base):
     token_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_visible_on_map: Mapped[bool] = mapped_column(Boolean, default=True)
     vision_radius: Mapped[int] = mapped_column(Integer, default=5)
+    sight_range_cells: Mapped[int] = mapped_column(Integer, default=8)
+    # Map Builder v2: grid position inside a bv2 location.
+    current_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bv2_locations.id", ondelete="SET NULL"), nullable=True
+    )
+    col: Mapped[int] = mapped_column(Integer, default=0)
+    row: Mapped[int] = mapped_column(Integer, default=0)
     # Rework v3 Phase 4: grid-movement budget. `base_speed_cells` is the
     # number of cells this character may traverse on their combat turn;
     # default 6 matches the D&D 5e humanoid baseline (30 ft / 5 ft cell).
@@ -117,7 +126,7 @@ class Character(Base):
     rank: Mapped[str] = mapped_column(String(20), default="common")
 
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Rework v2: identity (cosmetic only)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -252,7 +261,7 @@ class CombatLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     event_type: Mapped[str] = mapped_column(String(20), default="custom")
     actor_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("characters.id"), nullable=True)
     target_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("characters.id"), nullable=True)
@@ -412,7 +421,7 @@ class MapLibrary(Base):
     # Preview image (screenshot or uploaded background)
     image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -580,7 +589,7 @@ class InventoryItem(Base):
     is_equipped: Mapped[bool] = mapped_column(Boolean, default=False)
     equipped_slot: Mapped[str | None] = mapped_column(String(20), nullable=True)  # main_hand, off_hand, armor, head, ring_1, ring_2, amulet, boots, gloves, belt
     custom_notes: Mapped[str] = mapped_column(Text, default="")
-    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     character: Mapped["Character"] = relationship(back_populates="inventory_items")
     item: Mapped["Item"] = relationship(lazy="selectin")
@@ -608,7 +617,7 @@ class CurrencyTransaction(Base):
     to_character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
     amount_bronze: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str] = mapped_column(Text, default="")
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class NpcReputation(Base):
@@ -645,7 +654,7 @@ class TradeSession(Base):
     npc_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
     player_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(20), default="open")  # open, closed
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -675,7 +684,7 @@ class CharacterStatusEffect(Base):
     color: Mapped[str] = mapped_column(String(10), default="#ff6b6b")
     effects: Mapped[str] = mapped_column(Text, default="[]")  # JSON
     remaining_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL=permanent
-    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     applied_by_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
 
     template: Mapped["StatusEffectTemplate | None"] = relationship(lazy="selectin")
@@ -688,7 +697,7 @@ class EquipmentTemplate(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
     item_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of item IDs
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -746,7 +755,7 @@ class CombatAction(Base):
     attack_roll: Mapped[str] = mapped_column(Text, default="{}")  # JSON: {d20, modifiers, total, hit, critical, fumble}
     damage_roll: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {base, modifiers, total, reduction, final}
     description: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     attacker: Mapped["Character"] = relationship(foreign_keys=[attacker_id], lazy="selectin")
     target: Mapped["Character | None"] = relationship(foreign_keys=[target_id], lazy="selectin")
@@ -913,7 +922,7 @@ class CharacterQuest(Base):
     reward_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
     # Fix 3: structured rewards snapshot at assignment time
     structured_rewards: Mapped[str | None] = mapped_column(Text, nullable=True)
-    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -927,7 +936,7 @@ class AIConversation(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # user / assistant
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -941,7 +950,7 @@ class SessionAnnouncement(Base):
     author_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
-    posted_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    posted_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -955,8 +964,8 @@ class CharacterNote(Base):
     title: Mapped[str] = mapped_column(Text, default="")
     content: Mapped[str] = mapped_column(Text, default="")
     is_gm_note: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1163,7 +1172,7 @@ class CharacterMemory(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, default="")
     related_npc_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1177,7 +1186,7 @@ class CharacterProfession(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), nullable=False)
     level: Mapped[int] = mapped_column(Integer, default=1)  # 1..5 per profession
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     character: Mapped["Character"] = relationship(back_populates="professions")
     character_class: Mapped["CharacterClass"] = relationship(lazy="selectin")
@@ -1206,7 +1215,7 @@ class PoisonTemplate(Base):
     # Default per-weapon values
     default_charges: Mapped[int] = mapped_column(Integer, default=3)  # how many hits the coat lasts
     default_turns_per_hit: Mapped[int] = mapped_column(Integer, default=3)  # DoT duration applied per hit
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class InventoryItemPoison(Base):
@@ -1217,7 +1226,7 @@ class InventoryItemPoison(Base):
     poison_template_id: Mapped[int] = mapped_column(ForeignKey("poison_templates.id", ondelete="CASCADE"), nullable=False)
     charges_remaining: Mapped[int] = mapped_column(Integer, default=3)  # decremented on successful hit while equipped
     turns_per_hit: Mapped[int] = mapped_column(Integer, default=3)  # overridden to 1 for arrows
-    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     poison_template: Mapped["PoisonTemplate"] = relationship(lazy="selectin")
 
@@ -1240,8 +1249,8 @@ class CharacterWizardState(Base):
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     data: Mapped[str] = mapped_column(Text, default="{}")  # JSON: step-by-step inputs
     gm_approved: Mapped[bool] = mapped_column(Boolean, default=False)  # final step approval
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1257,7 +1266,7 @@ class CardLibrary(Base):
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     card_type: Mapped[str] = mapped_column(String(20), default="character")  # character / location / item / custom
     card_data: Mapped[str] = mapped_column(Text, default="{}")  # JSON extra fields
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class Chest(Base):
@@ -1287,5 +1296,152 @@ class ChestItem(Base):
 
     chest: Mapped["Chest"] = relationship(back_populates="items")
     item: Mapped["Item"] = relationship(lazy="selectin")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+# ══════════════════════════════════════════════════════════════
+# MAP BUILDER V2 — full rewrite (parallel to legacy MapTemplate/MapFloor/...)
+# All tables prefixed `bv2_`. Reversible via alembic, no data migration
+# from the old builder. Phase 1 uses Map/Location/Tile only; the rest
+# of the tables are declared up-front so a single migration covers
+# the whole feature surface.
+# ══════════════════════════════════════════════════════════════
+class BV2Map(Base):
+    """Top-level container — a "story map" grouping related locations."""
+    __tablename__ = "bv2_maps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="New Map")
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    cover_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class BV2Location(Base):
+    """A single playable location (room / area / floor)."""
+    __tablename__ = "bv2_locations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    map_id: Mapped[int] = mapped_column(ForeignKey("bv2_maps.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="New Location")
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    grid_type: Mapped[str] = mapped_column(String(10), default="square")  # square | hex
+    tile_size: Mapped[int] = mapped_column(Integer, default=50)
+    cols: Mapped[int] = mapped_column(Integer, default=40)
+    rows: Mapped[int] = mapped_column(Integer, default=30)
+
+    background_color: Mapped[str] = mapped_column(Text, default="#1a1a1a")
+    background_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # 0..1 — global ambient brightness (0=pitch dark, 1=full daylight)
+    ambient_light: Mapped[float] = mapped_column(Float, default=1.0)
+    is_indoor: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Active = the location currently shown to players.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class BV2Tile(Base):
+    """A single painted tile on a location grid.
+
+    Unique on (location_id, col, row) — one tile per cell. Painting over
+    a cell overwrites the tile_type (handled in the bulk PUT endpoint).
+    """
+    __tablename__ = "bv2_tiles"
+    __table_args__ = (UniqueConstraint("location_id", "col", "row", name="uq_bv2_tile_cell"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("bv2_locations.id", ondelete="CASCADE"), nullable=False)
+    col: Mapped[int] = mapped_column(Integer, nullable=False)
+    row: Mapped[int] = mapped_column(Integer, nullable=False)
+    # floor | wall | water | lava | pit | door | rough | decor_<variant>
+    tile_type: Mapped[str] = mapped_column(String(32), default="floor")
+    blocks_movement: Mapped[bool] = mapped_column(Boolean, default=False)
+    blocks_vision: Mapped[bool] = mapped_column(Boolean, default=False)
+    extra_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class BV2Entity(Base):
+    """All interactive objects on a location: chest, trap, portal, light,
+    npc_spawn, cover_zone, edge_marker. Type-specific properties go in
+    `props_json` so we don't need a table per kind.
+    """
+    __tablename__ = "bv2_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("bv2_locations.id", ondelete="CASCADE"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    col: Mapped[int] = mapped_column(Integer, default=0)
+    row: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(Text, default="")
+    props_json: Mapped[str] = mapped_column(Text, default="{}")
+    visible_to_players: Mapped[bool] = mapped_column(Boolean, default=True)
+    discovered_by_json: Mapped[str] = mapped_column(Text, default="[]")  # list of character_id
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class BV2Light(Base):
+    """A light source — placed in the builder (static) or attached to a
+    character (carried). Phase 1 declares the table; the lighting logic
+    is implemented in Phase 4.
+    """
+    __tablename__ = "bv2_lights"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("bv2_locations.id", ondelete="CASCADE"), nullable=True)
+    character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=True)
+    col: Mapped[int] = mapped_column(Integer, default=0)
+    row: Mapped[int] = mapped_column(Integer, default=0)
+    radius_cells: Mapped[float] = mapped_column(Float, default=6.0)
+    color_hex: Mapped[str] = mapped_column(String(9), default="#ffd9a0")
+    intensity: Mapped[float] = mapped_column(Float, default=1.0)
+    source_kind: Mapped[str] = mapped_column(String(20), default="torch")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class BV2Edge(Base):
+    """Edge-transition segment: a slice of one side of a location that
+    teleports a character to another location when crossed. Phase 5.
+    """
+    __tablename__ = "bv2_edges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("bv2_locations.id", ondelete="CASCADE"), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)  # north | south | east | west
+    range_start: Mapped[int] = mapped_column(Integer, default=0)
+    range_end: Mapped[int] = mapped_column(Integer, default=9999)
+    target_location_id: Mapped[int | None] = mapped_column(ForeignKey("bv2_locations.id", ondelete="SET NULL"), nullable=True)
+    target_entry_col: Mapped[int] = mapped_column(Integer, default=0)
+    target_entry_row: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class BV2VisitState(Base):
+    """Per-character fog-of-war + discovered entities, per location."""
+    __tablename__ = "bv2_visit_state"
+    __table_args__ = (UniqueConstraint("character_id", "location_id", name="uq_bv2_visit_char_loc"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("bv2_locations.id", ondelete="CASCADE"), nullable=False)
+    explored_tiles_json: Mapped[str] = mapped_column(Text, default="[]")  # list of [col, row]
+    discovered_entity_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class BV2Library(Base):
+    """Saved snapshot of a Map (all locations + entities) for re-use."""
+    __tablename__ = "bv2_library"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    preview_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

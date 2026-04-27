@@ -1,7 +1,7 @@
 """Stage 4 — Status Effects & Equipment Templates API."""
 
 import json
-from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -9,8 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
-    StatusEffectTemplate, CharacterStatusEffect, EquipmentTemplate,
-    Character, Item, InventoryItem,
+    Character,
+    CharacterStatusEffect,
+    EquipmentTemplate,
+    InventoryItem,
+    Item,
+    StatusEffectTemplate,
 )
 
 router = APIRouter(prefix="/api", tags=["status-effects"])
@@ -289,7 +293,6 @@ async def process_turn_effects(character_id: int, db: AsyncSession = Depends(get
     3. Apply hp_change_per_turn effects
     Returns list of events that occurred.
     """
-    from app.game_mechanics import aggregate_status_penalties
 
     char = await db.get(Character, character_id)
     if not char:

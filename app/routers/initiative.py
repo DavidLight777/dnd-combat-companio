@@ -2,12 +2,13 @@
 
 import json
 import random
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Session, Character, InitiativeOrder, CharacterStatusEffect
+from app.models import Character, CharacterStatusEffect, InitiativeOrder, Session
 
 router = APIRouter(prefix="/api/initiative", tags=["initiative"])
 

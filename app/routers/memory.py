@@ -1,12 +1,11 @@
 """Phase 6 — Character Memory / Journal CRUD."""
 
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import CharacterMemory, Character
+from app.models import Character, CharacterMemory
 
 router = APIRouter(prefix="/api", tags=["memory"])
 
@@ -126,8 +125,8 @@ async def create_memory_entry(
 
     # Broadcast to all clients of the session; player-side filters by character_id
     try:
-        from app.websocket_manager import manager
         from app.models import Session as SessionModel
+        from app.websocket_manager import manager
         if session_id is not None:
             sess = await db.get(SessionModel, session_id)
             if sess:

@@ -1,5 +1,6 @@
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
 
 
 # ── Session ──────────────────────────────────────────────────
@@ -84,6 +85,9 @@ class CharacterUpdate(BaseModel):
     is_alive: Optional[bool] = None
     map_x: Optional[float] = None
     map_y: Optional[float] = None
+    current_location_id: Optional[int] = None
+    col: Optional[int] = None
+    row: Optional[int] = None
     gm_notes: Optional[str] = None
     # Rework v2: identity (cosmetic) + inventory cap + decline state
     age: Optional[int] = None

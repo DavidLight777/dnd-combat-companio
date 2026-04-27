@@ -1,12 +1,13 @@
 """Stage 6 — Races & Classes CRUD + seed data."""
 import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Race, CharacterClass, RaceRankConfig
+from app.models import CharacterClass, Race, RaceRankConfig
 
 router = APIRouter(prefix="/api/races-classes", tags=["races-classes"])
 
@@ -133,6 +134,7 @@ async def delete_race(race_id: int, db: AsyncSession = Depends(get_session)):
         raise HTTPException(404, "Race not found")
     # Null out race_id on all characters referencing this race
     from sqlalchemy import update as sa_update
+
     from app.models import Character as _Char
     await db.execute(sa_update(_Char).where(_Char.race_id == race_id).values(race_id=None))
     await db.delete(r)

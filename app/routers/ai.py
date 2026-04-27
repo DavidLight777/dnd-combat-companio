@@ -5,23 +5,21 @@ duplicated — and disagreed with — the main system prompt. It's now a thin
 shim around the envelope agent so both routes speak the same schema.
 """
 
-import json
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_session
-from app.models import Session, AIConversation
 from app.ai_agent import (
+    _call_openrouter,
+    _load_config,
+    _load_system_prompt,
     chat_with_ai,
     get_conversation_history,
     parse_envelope,
     run_actions,
-    _load_config,
-    _load_system_prompt,
-    _call_openrouter,
 )
+from app.database import get_session
+from app.models import AIConversation, Session
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
