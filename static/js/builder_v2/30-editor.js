@@ -144,6 +144,14 @@
     try {
       const payload = await S.api.getLoc(locId);
       S.view.loadLocation(payload);
+      // Phase 9: load characters on this location for token preview
+      try {
+        const allChars = await api.get(`/api/sessions/${SESSION_CODE}/characters`);
+        const hereChars = (allChars || []).filter(c => c.current_location_id === locId);
+        S.view.setCharacters(hereChars);
+      } catch (e) {
+        console.error('bv2 load characters', e);
+      }
       // Sync sidebar inputs with loaded settings
       const loc = payload.location;
       const ts = document.getElementById('bv2-tile-size');
@@ -156,6 +164,14 @@
       if (c)   c.value = loc.cols;
       if (r)   r.value = loc.rows;
       if (gtBtn) gtBtn.textContent = loc.grid_type === 'hex' ? '⬡ Hex Grid' : '▢ Square Grid';
+      // Phase 9: sync ambient light + indoor checkbox
+      const ambEl = document.getElementById('bv2-loc-ambient');
+      const ambValEl = document.getElementById('bv2-loc-ambient-val');
+      const indoorEl = document.getElementById('bv2-loc-indoor');
+      const amb = (loc.ambient_light != null) ? loc.ambient_light : 1.0;
+      if (ambEl) ambEl.value = amb;
+      if (ambValEl) ambValEl.textContent = amb.toFixed(2);
+      if (indoorEl) indoorEl.checked = !!loc.is_indoor;
       updateEmptyMsg();
       renderLocSelect();
     } catch (e) {
@@ -178,8 +194,13 @@
       S.maps.push(m);
       S.currentMapId = m.id;
       S.currentLocId = null;
+      // Clear stale locations from the previously selected map before
+      // auto-creating the first location — otherwise createLocation picks
+      // a default name like "Location 4" using the old map's count and
+      // the dropdown shows old entries until the next refetch.
+      S.locations = [];
       renderMapSelect();
-      // Auto-create first location so the user can start drawing right away
+      renderLocSelect();
       await createLocation(/*silent*/ true);
     } catch (e) {
       console.error('bv2 createMap', e);
@@ -309,17 +330,23 @@
     S.view = new S.MapView(canvas, {
       mode: 'edit',
       getBrush: () => S.brush,
-      onPaint: (col, row, brush) => queueSave(col, row, brush),
+      onPaint: (col, row, brush) => {
+        if (brush === 'zone') {
+          if (typeof S.toggleZoneCell === 'function') S.toggleZoneCell(col, row);
+          return;
+        }
+        queueSave(col, row, brush);
+      },
       onErase: (col, row)        => queueSave(col, row, 'erase'),
-      onEntityClick: (ent, action) => {
+      onEntityClick: async (ent, action) => {
         if (typeof S.openEntityModal === 'function') {
           if (action === 'delete') S.openEntityModal(ent, 'delete');
-          else S.openEntityModal(ent, 'edit');
+          else await S.openEntityModal(ent, 'edit');
         }
       },
-      onCellClick: (col, row, entityType) => {
+      onCellClick: async (col, row, entityType) => {
         if (typeof S.openEntityModal === 'function') {
-          S.openEntityModal(null, 'create', { col, row, entity_type: entityType });
+          await S.openEntityModal(null, 'create', { col, row, entity_type: entityType });
         }
       },
     });
@@ -388,6 +415,29 @@
       e.target.textContent = next === 'hex' ? '⬡ Hex Grid' : '▢ Square Grid';
       S.view.render();
       queueSettingsSave({ grid_type: next });
+    });
+
+    // Ambient light
+    document.getElementById('bv2-loc-ambient')?.addEventListener('input', e => {
+      let v = parseFloat(e.target.value);
+      if (Number.isNaN(v)) v = 1.0;
+      v = Math.max(0, Math.min(1, v));
+      document.getElementById('bv2-loc-ambient-val').textContent = v.toFixed(2);
+      if (S.view.location) {
+        S.view.location.ambient_light = v;
+        S.view.render();
+      }
+      queueSettingsSave({ ambient_light: v });
+    });
+
+    // Indoor checkbox
+    document.getElementById('bv2-loc-indoor')?.addEventListener('change', e => {
+      const checked = e.target.checked;
+      if (S.view.location) {
+        S.view.location.is_indoor = checked;
+        S.view.render();
+      }
+      queueSettingsSave({ is_indoor: checked });
     });
 
     // Bounds resize from canvas drag handles

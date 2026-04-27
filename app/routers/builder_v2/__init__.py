@@ -14,6 +14,7 @@ from app.routers.builder_v2 import (  # noqa: F401, E402
     edges,
     entities,
     fov,
+    interiors,
     library,
     lights,
     locations,

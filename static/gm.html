@@ -381,6 +381,14 @@
                   <button id="bv2-btn-new-loc" class="btn btn-primary btn-xs" style="flex:1">+ New</button>
                   <button id="bv2-btn-delete-loc" class="btn btn-danger btn-xs" title="Delete">🗑</button>
                 </div>
+                <div style="padding:6px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <label style="flex:1 0 100%;font-size:0.7rem;color:var(--text-muted)">Ambient light</label>
+                  <input id="bv2-loc-ambient" type="range" min="0" max="1" step="0.05" value="1" style="flex:1">
+                  <span id="bv2-loc-ambient-val" style="width:32px;font-size:0.7rem">1.00</span>
+                  <label style="flex:1 0 100%;font-size:0.7rem;margin-top:4px;display:flex;gap:4px;align-items:center">
+                    <input id="bv2-loc-indoor" type="checkbox"> Indoor (heavy darkness fallback)
+                  </label>
+                </div>
                 <button id="bv2-btn-apply" class="btn btn-success btn-sm" style="width:100%;margin-top:8px;font-weight:600">▶ Apply to Game</button>
                 <div id="bv2-save-indicator" style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin-top:4px;min-height:14px"></div>
               </div>
@@ -411,8 +419,15 @@
                   <button class="bv2-brush" data-brush="door"  title="Door (6)">🚪<span>Door</span></button>
                   <button class="bv2-brush" data-brush="rough" title="Rough (7)">⛰<span>Rough</span></button>
                   <button class="bv2-brush" data-brush="erase" title="Erase (E)">🧹<span>Erase</span></button>
+                  <button class="bv2-brush" data-brush="zone" title="Interior Zone (Z)">▦<span>Zone</span></button>
                 </div>
                 <button id="bv2-btn-clear" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All Tiles</button>
+              </div>
+
+              <!-- Interior Zones -->
+              <div id="bv2-interior-section" style="padding:10px;border-bottom:1px solid var(--border);display:none">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Interior Zones</div>
+                <div id="bv2-interior-list" style="max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
 
               <!-- Entities -->
@@ -963,5 +978,6 @@
   <script src="/static/js/builder_v2/70-lights.js?v=bv2-4"></script>
   <script src="/static/js/builder_v2/80-edges.js?v=bv2-5"></script>
   <script src="/static/js/builder_v2/90-library.js?v=bv2-6"></script>
+  <script src="/static/js/builder_v2/95-interiors.js?v=bv2-7"></script>
 </body>
 </html>

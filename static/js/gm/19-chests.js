@@ -572,26 +572,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Map tab — Load from Library
+  // Map tab — Load from Library. The legacy openLibraryModal /
+  // loadLibraryMap helpers were removed when bv2 took over; route
+  // this button to the bv2 library modal which already handles
+  // load → activate-map → activate-location and broadcasts the
+  // bv2.* events that loadMapState listens for.
   const mapLibBtn = document.getElementById('btn-map-load-library');
   if (mapLibBtn) {
     mapLibBtn.addEventListener('click', () => {
-      openLibraryModal(async (libraryId) => {
-        try {
-          await loadLibraryMap(libraryId);
-          if (currentFloorId) {
-            await api.post(`/api/map-builder/floors/${currentFloorId}/activate`);
-            builderFloors.forEach(ff => ff.is_active = (ff.id === currentFloorId));
-            renderBuilderFloorSelect();
-          }
-          await loadMapState();
-          await loadMapFloorsForTab();
-          showToast('📂 Map loaded and activated');
-        } catch (e) {
-          showToast('Load failed: ' + (e.message || 'error'));
-          console.error('loadLibraryMap', e);
-        }
-      });
+      if (window.bv2 && typeof window.bv2.openLibraryModal === 'function') {
+        window.bv2.openLibraryModal();
+      } else {
+        showToast('Library not available');
+      }
     });
   }
 });

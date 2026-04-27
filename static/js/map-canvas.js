@@ -38,6 +38,7 @@ class MapCanvas {
     this.onMarkerClick = options.onMarkerClick || null;
     this.onTokenClick = options.onTokenClick || null;
     this.onTokenRightClick = options.onTokenRightClick || null;
+    this.onDoorRightClick = options.onDoorRightClick || null;
     this.onChestClick = options.onChestClick || null;
     this.onMapChestClick = options.onMapChestClick || null;
     this.onPortalClick = options.onPortalClick || null;
@@ -99,6 +100,11 @@ class MapCanvas {
     this.dragToken = null; // token being dragged
     this.lastMouse = { x: 0, y: 0 };
     this.fogPaintMode = false; // GM fog reveal mode
+    // RAF-coalesced render handle. `_requestRender()` schedules at
+    // most one full render per animation frame; high-frequency events
+    // (mousemove during drag/pan/draw) call it instead of `render()`
+    // directly so the canvas can't become a CPU hog at 120 Hz mice.
+    this._renderRafId = null;
 
     // Drawing mode (Stage 9)
     this.drawMode = null; // null, 'freehand', 'rectangle', 'circle', 'line', 'arrow', 'marker', 'erase', 'measure'
@@ -413,6 +419,7 @@ class MapCanvas {
   setIndoor(v) { this.isIndoor = !!v; this.render(); }
   setLights(arr) { this.lights = arr || []; this.render(); }
   setEdges(arr) { this.edges = arr || []; this.render(); }
+  setInteriors(arr) { this.interiors = arr || []; this.render(); }
 
   // Phase 6: lazy cache of HTMLImageElement objects keyed by URL.
   // `setTokens` doesn't prefetch — the image is loaded the first time
@@ -652,6 +659,17 @@ class MapCanvas {
     this._measureEnd = null;
     const cursors = { freehand: 'crosshair', rectangle: 'crosshair', circle: 'crosshair', line: 'crosshair', arrow: 'crosshair', marker: 'cell', erase: 'pointer', measure: 'crosshair', 'obj-wall': 'crosshair' };
     this.canvas.style.cursor = cursors[mode] || 'default';
+  }
+
+  // RAF coalescing: high-frequency callers schedule a render through
+  // this helper. Multiple calls inside one animation frame collapse
+  // into a single full redraw on the next frame.
+  _requestRender() {
+    if (this._renderRafId != null) return;
+    this._renderRafId = requestAnimationFrame(() => {
+      this._renderRafId = null;
+      this.render();
+    });
   }
 
   // ── Rendering ─────────────────────────────────────────────
@@ -1002,6 +1020,9 @@ class MapCanvas {
     // Phase 8: lighting overlay (drawn in screen space)
     this._renderLightingOverlay(ctx);
 
+    // Phase 9: interior zone overlay
+    this._renderInteriorOverlay(ctx);
+
     ctx.restore();
   }
 
@@ -1234,7 +1255,7 @@ class MapCanvas {
       // Drawing modes
       if (this.drawMode === 'freehand' && this._isDrawing && this._drawingPath.length > 0) {
         this._drawingPath.push([n.x, n.y]);
-        this.render();
+        this._requestRender();
         return;
       }
       if (['rectangle', 'circle', 'line', 'arrow', 'obj-wall'].includes(this.drawMode) && this._shapeStart) {
@@ -1249,25 +1270,25 @@ class MapCanvas {
           line_width: this.drawLineWidth,
           fill_opacity: this.drawMode === 'obj-wall' ? 0.45 : this.drawFillOpacity,
         };
-        this.render();
+        this._requestRender();
         return;
       }
       if (this.drawMode === 'measure' && this._measureStart) {
         this._measureEnd = [n.x, n.y];
-        this.render();
+        this._requestRender();
         return;
       }
 
       if (this.dragToken) {
         this.dragToken.x = Math.max(0, Math.min(1, n.x));
         this.dragToken.y = Math.max(0, Math.min(1, n.y));
-        this.render();
+        this._requestRender();
         return;
       }
       if (this.isDragging) {
         this.offsetX = sx - this.dragStart.x;
         this.offsetY = sy - this.dragStart.y;
-        this.render();
+        this._requestRender();
       }
     });
 
@@ -1458,6 +1479,13 @@ class MapCanvas {
       const token = this._hitToken(m.x, m.y);
       if (token && this.onTokenRightClick) {
         this.onTokenRightClick(token, e.clientX, e.clientY);
+      } else if (this.onDoorRightClick) {
+        const g = this._screenToGrid(sx, sy);
+        const key = `${g.col},${g.row}`;
+        const tile = this.tiles ? this.tiles[key] : null;
+        if (tile && tile.type === 'door') {
+          this.onDoorRightClick(g.col, g.row, !!tile.is_open, e.clientX, e.clientY);
+        }
       }
     });
 
@@ -1495,7 +1523,8 @@ class MapCanvas {
         ctx.closePath();
       };
       // Tiles
-      for (const [key, type] of Object.entries(this.tiles)) {
+      for (const [key, raw] of Object.entries(this.tiles)) {
+        const type = typeof raw === 'string' ? raw : (raw && raw.type) || 'floor';
         const [q, r] = key.split(',').map(Number);
         const c = _axialToPixel(q, r);
         if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
@@ -1569,7 +1598,8 @@ class MapCanvas {
       }
     } else {
       // Square grid
-      for (const [key, type] of Object.entries(this.tiles)) {
+      for (const [key, raw] of Object.entries(this.tiles)) {
+        const type = typeof raw === 'string' ? raw : (raw && raw.type) || 'floor';
         const [col, row] = key.split(',').map(Number);
         const px = col * gs, py = row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
@@ -1695,9 +1725,12 @@ class MapCanvas {
   }
 
   // ── Phase 8: lighting overlay ───────────────────────────────
+  // Phase 9: GM gets a soft preview (0.35x darkness) so they can
+  // tune ambient light / indoor settings while building.
   _renderLightingOverlay(ctx) {
-    if (this.role !== 'player') return;
-    const darkAlpha = this.isIndoor ? 0.88 : Math.max(0, 1 - (this.ambientLight ?? 1.0));
+    const isGm = this.role === 'gm';
+    const softFactor = isGm ? 0.35 : 1.0;
+    const darkAlpha = (this.isIndoor ? 0.88 : Math.max(0, 1 - (this.ambientLight ?? 1.0))) * softFactor;
     if (darkAlpha <= 0 && !this.lights.length) return;
 
     const w = this.canvas.width;
@@ -1721,7 +1754,7 @@ class MapCanvas {
         const py = (light.row + 0.5) * this.gridSize * this.scale + this.offsetY;
         const r = (light.radius_cells ?? 4) * this.gridSize * this.scale;
         const g = lctx.createRadialGradient(px, py, 0, px, py, r);
-        g.addColorStop(0, `rgba(0,0,0,${Math.min(1, light.intensity ?? 1.0)})`);
+        g.addColorStop(0, `rgba(0,0,0,${Math.min(1, (light.intensity ?? 1.0) * softFactor)})`);
         g.addColorStop(1, 'rgba(0,0,0,0)');
         lctx.fillStyle = g;
         lctx.beginPath();
@@ -1732,6 +1765,129 @@ class MapCanvas {
     }
 
     ctx.drawImage(this._lightLayer, 0, 0);
+  }
+
+  // ── Phase 9: interior zone overlay ──────────────────────────
+  // Covers interior cells based on reveal_mode:
+  //   gm_only  -> black for players, visible for GM
+  //   always   -> no overlay
+  //   on_enter -> hidden until a player token steps inside.
+  // GM always sees a soft preview (lower alpha).
+  _renderInteriorOverlay(ctx) {
+    if (!this.interiors || !this.interiors.length) return;
+    const gs = this.gridSize;
+    const isGm = this.role === 'gm';
+    for (const zone of this.interiors) {
+      if (zone.reveal_mode === 'always') continue;
+      const cells = zone.cells || [];
+      if (!cells.length) continue;
+      const cellSet = new Set(cells.map(c => `${c.col},${c.row}`));
+
+      // Phase 9 Round 2: door peek — compute cells revealed through open doors
+      const peekCells = new Set();
+      if (this.tiles) {
+        const boundaryDoors = [];
+        for (const [key, tile] of Object.entries(this.tiles)) {
+          if (tile.type !== 'door' || !tile.is_open) continue;
+          const [dc, dr] = key.split(',').map(Number);
+          let hasIn = false, hasOut = false;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nk = `${dc + dx},${dr + dy}`;
+              if (cellSet.has(nk)) hasIn = true;
+              else hasOut = true;
+            }
+          }
+          if (hasIn && hasOut) boundaryDoors.push({ col: dc, row: dr });
+        }
+
+        let shouldPeek = isGm;
+        if (!isGm && boundaryDoors.length) {
+          const cols = Math.ceil(this.mapWidth / gs);
+          const rows = Math.ceil(this.mapHeight / gs);
+          for (const t of this.tokens) {
+            if (t.is_npc || !t.visible) continue;
+            const tc = Math.floor(t.x * cols);
+            const tr = Math.floor(t.y * rows);
+            for (const d of boundaryDoors) {
+              if (Math.max(Math.abs(tc - d.col), Math.abs(tr - d.row)) <= 3) {
+                shouldPeek = true;
+                break;
+              }
+            }
+            if (shouldPeek) break;
+          }
+        }
+
+        if (shouldPeek) {
+          for (const d of boundaryDoors) {
+            const startKey = `${d.col},${d.row}`;
+            const visited = new Set([startKey]);
+            if (cellSet.has(startKey)) peekCells.add(startKey);
+            const queue = [{ col: d.col, row: d.row, depth: 0 }];
+            while (queue.length) {
+              const cur = queue.shift();
+              if (cur.depth >= 2) continue;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (dx === 0 && dy === 0) continue;
+                  const nc = cur.col + dx, nr = cur.row + dy;
+                  const nk = `${nc},${nr}`;
+                  if (visited.has(nk)) continue;
+                  visited.add(nk);
+                  if (!cellSet.has(nk)) continue;
+                  peekCells.add(nk);
+                  queue.push({ col: nc, row: nr, depth: cur.depth + 1 });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (zone.reveal_mode === 'gm_only' && !isGm) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,1.0)';
+        for (const key of cellSet) {
+          if (peekCells.has(key)) continue;
+          const [c, r] = key.split(',').map(Number);
+          ctx.fillRect(c * gs, r * gs, gs, gs);
+        }
+        ctx.restore();
+        continue;
+      }
+      let hasPlayerInside = false;
+      if (!isGm) {
+        const cols = Math.ceil(this.mapWidth / gs);
+        const rows = Math.ceil(this.mapHeight / gs);
+        for (const t of this.tokens) {
+          if (t.is_npc || !t.visible) continue;
+          const tc = Math.floor(t.x * cols);
+          const tr = Math.floor(t.y * rows);
+          if (cellSet.has(`${tc},${tr}`)) { hasPlayerInside = true; break; }
+        }
+      }
+      if (!hasPlayerInside && !isGm) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.95)';
+        for (const key of cellSet) {
+          if (peekCells.has(key)) continue;
+          const [c, r] = key.split(',').map(Number);
+          ctx.fillRect(c * gs, r * gs, gs, gs);
+        }
+        ctx.restore();
+      } else if (!hasPlayerInside && isGm) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        for (const key of cellSet) {
+          if (peekCells.has(key)) continue;
+          const [c, r] = key.split(',').map(Number);
+          ctx.fillRect(c * gs, r * gs, gs, gs);
+        }
+        ctx.restore();
+      }
+    }
   }
 
   // ── Render a saved/preview drawing ──────────────────────────

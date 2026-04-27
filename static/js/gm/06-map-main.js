@@ -10,6 +10,7 @@ let mapCanvas = null;
 let mapGridEnabled = true;
 let mapFogEnabled = false;
 let mapFogPaintActive = false;
+let gmBv2LocationId = null;
 
 function initMapCanvas() {
   const canvasEl = $('#map-canvas');
@@ -60,6 +61,7 @@ function initMapCanvas() {
       if (shiftKey && token.is_npc) openNpcControlPanel(token.character_id);
     },
     onTokenRightClick: (token, cx, cy) => openTokenContextMenu(token, cx, cy),
+    onDoorRightClick: (col, row, isOpen, cx, cy) => openDoorContextMenu(col, row, isOpen, cx, cy),
     onChestClick: (chest) => openChestModal(chest),
     onMapChestClick: (chest) => openBuilderChestModal(chest.col, chest.row, chest),
     onPortalClick: (portal) => openBuilderPortalModal(portal.col, portal.row, portal),
@@ -93,8 +95,13 @@ function initMapCanvas() {
 async function loadMapState() {
   try {
     const state = await api.get(`/api/map/${SESSION_CODE}`);
+    gmBv2LocationId = state.bv2_active_location_id || null;
     initMapCanvas(); // ensure canvas object exists even if tab not yet open
-    if (state.has_map) {
+    // bv2 bridge sets has_map=True even when no background image is
+    // uploaded (image_url=""). Mirror the player-side guard so we
+    // skip loadImage("") (which rejects) and fall through to the
+    // empty-image branch that still renders tiles and tokens.
+    if (state.has_map && state.image_url) {
       await mapCanvas.loadImage(state.image_url);
       const tsz = state.active_floor_tile_size || state.grid_size || 50;
       const gtype = state.active_floor_grid_type || state.grid_type || 'square';
@@ -141,6 +148,8 @@ async function loadMapState() {
     mapCanvas.setIndoor(state.bv2_is_indoor ?? false);
     mapCanvas.setLights(state.bv2_lights || []);
     mapCanvas.setEdges(state.bv2_edges || []);
+    // Phase 9: interior zones
+    mapCanvas.setInteriors(state.bv2_interiors || []);
     // Phase 7: bv2 bridge already populated chests/portals when
     // active_floor_id is null. Only fetch legacy builder entities
     // for a legacy floor.
@@ -464,6 +473,45 @@ function openTokenContextMenu(token, cx, cy) {
         openNpcControlPanel(token.character_id);
       } else if (action === 'select') {
         selectCharacter(token.character_id);
+      }
+      close();
+    });
+  });
+}
+
+// Phase 9 Round 2: door toggle context menu (GM only)
+function openDoorContextMenu(col, row, isOpen, cx, cy) {
+  document.querySelectorAll('.token-ctx-menu').forEach(el => el.remove());
+  const menu = document.createElement('div');
+  menu.className = 'token-ctx-menu';
+  menu.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:8px;padding:4px 0;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);min-width:160px`;
+  menu.innerHTML = `
+    <div class="ctx-item" data-action="toggle" style="padding:6px 14px;font-size:0.78rem;cursor:pointer;display:flex;gap:6px;align-items:center">${isOpen ? 'Close Door' : 'Open Door'}</div>
+  `;
+  document.body.appendChild(menu);
+  menu.querySelectorAll('.ctx-item').forEach(item => {
+    item.addEventListener('mouseenter', () => item.style.background = 'var(--accent)20');
+    item.addEventListener('mouseleave', () => item.style.background = '');
+  });
+  const close = () => menu.remove();
+  setTimeout(() => document.addEventListener('click', close, { once: true }), 10);
+  menu.querySelectorAll('.ctx-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const action = item.dataset.action;
+      if (action === 'toggle' && gmBv2LocationId) {
+        const key = `${col},${row}`;
+        const nextOpen = !isOpen;
+        try {
+          await api.patch(`/api/builder-v2/locations/${gmBv2LocationId}/tiles`, {
+            set: [{ col, row, tile_type: 'door', is_open: nextOpen }],
+            erase: [],
+          });
+          if (mapCanvas && mapCanvas.tiles && mapCanvas.tiles[key]) {
+            mapCanvas.tiles[key].is_open = nextOpen;
+          }
+          mapCanvas.render();
+          addLog('map', `Door ${col},${row} ${nextOpen ? 'opened' : 'closed'}`);
+        } catch { showToast('Failed to toggle door'); }
       }
       close();
     });

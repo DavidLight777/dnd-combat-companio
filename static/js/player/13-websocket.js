@@ -85,6 +85,12 @@ ws.on('status_effect.removed', d => {
 ws.on('status_effect.expired', d => {
   if (d.character_id == CHAR_ID) { loadStatusEffects(); showToast(`${d.effect_name} expired`); }
 });
+// Phase 9: character walked through an edge transition
+ws.on('bv2.character_edge_transitioned', d => {
+  if (d.character_id == CHAR_ID) {
+    loadPlayerMapState();
+  }
+});
 
 // ══════════════════════════════════════════════════════════════
 // GENERIC ENTITY INVALIDATION — live refresh without page reload

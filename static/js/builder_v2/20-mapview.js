@@ -54,6 +54,8 @@
       this.tiles = new Map();           // "col,row" -> tile object from ser_tile
       this.entities = [];               // Phase 2
       this.lights = [];                 // Phase 4
+      this.characters = [];             // Phase 9: live tokens on this location
+      this.pendingZoneCells = new Set(); // Phase 9 R3: cells being painted for a new interior zone
 
       // FOV state (Phase 3)
       this.visibleSet = null;           // Set<"col,row"> — currently visible
@@ -114,6 +116,16 @@
       this.entities = payload.entities || [];
       this.lights = payload.lights || [];
       this._fitToViewQueued = true;
+      this.render();
+    }
+
+    setCharacters(arr) {
+      this.characters = arr || [];
+      this.render();
+    }
+
+    setPendingZone(cells) {
+      this.pendingZoneCells = new Set((cells || []).map(c => `${c.col},${c.row}`));
       this.render();
     }
 
@@ -212,6 +224,8 @@
       this._drawTiles(ctx);
       this._drawFOV(ctx);
       this._drawEntities(ctx);
+      this._drawCharacters(ctx);
+      this._drawPendingZone(ctx);
       this._drawLighting(ctx);
       this._drawGrid(ctx);
       this._drawBoundary(ctx);
@@ -384,6 +398,58 @@
         ctx.fillStyle = '#fff';
         ctx.fillText(visual.icon, centerX, centerY);
       }
+    }
+
+    _drawCharacters(ctx) {
+      const gs = this._gridSize();
+      const isHex = this._isHex();
+      for (const ch of this.characters) {
+        if (ch.col == null || ch.row == null) continue;
+        const cx = isHex ? gs * (ch.col + ch.row / 2) : ch.col * gs;
+        const cy = isHex ? gs * (Math.sqrt(3) / 2 * ch.row) : ch.row * gs;
+        const centerX = cx + gs / 2;
+        const centerY = cy + gs / 2;
+        const radius = gs * 0.3;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.fillStyle = ch.token_color || '#4ade80';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 2 / this.scale;
+        ctx.stroke();
+        // Initial letter
+        ctx.font = `bold ${gs * 0.3}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff';
+        ctx.fillText((ch.name || '?')[0], centerX, centerY);
+      }
+    }
+
+    _drawPendingZone(ctx) {
+      if (!this.pendingZoneCells || !this.pendingZoneCells.size) return;
+      const gs = this._gridSize();
+      const isHex = this._isHex();
+      ctx.save();
+      ctx.strokeStyle = '#ffa726';
+      ctx.lineWidth = 2 / this.scale;
+      ctx.setLineDash([4 / this.scale, 3 / this.scale]);
+      ctx.fillStyle = 'rgba(255,200,80,0.25)';
+      for (const key of this.pendingZoneCells) {
+        const [c, r] = key.split(',').map(Number);
+        if (isHex) {
+          const cx = gs * (c + r / 2);
+          const cy = gs * (Math.sqrt(3) / 2 * r);
+          this._hexPath(ctx, cx, cy, gs / Math.sqrt(3) - 1);
+          ctx.fill();
+          this._hexPath(ctx, cx, cy, gs / Math.sqrt(3) - 1);
+          ctx.stroke();
+        } else {
+          ctx.fillRect(c * gs + 0.5, r * gs + 0.5, gs - 1, gs - 1);
+          ctx.strokeRect(c * gs + 0.5, r * gs + 0.5, gs - 1, gs - 1);
+        }
+      }
+      ctx.restore();
     }
 
     _drawGrid(ctx) {
@@ -710,6 +776,8 @@
       if (brush === 'erase') {
         this.eraseTile(col, row);
         if (this.onErase) this.onErase(col, row);
+      } else if (brush === 'zone') {
+        if (this.onPaint) this.onPaint(col, row, brush);
       } else {
         this.setTile(col, row, brush);
         if (this.onPaint) this.onPaint(col, row, brush);

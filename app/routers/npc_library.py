@@ -8,14 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
-    Character,
     EventTemplate,
-    InventoryItem,
     NpcFolder,
-    NpcShopInventory,
     NpcTemplate,
     Session,
 )
+from app.routers.builder_v2.spawns import spawn_npc_from_template
 
 router = APIRouter(prefix="/api/npc-library", tags=["npc-library"])
 
@@ -279,58 +277,8 @@ async def spawn_from_template(template_id: int, body: SpawnBody, db: AsyncSessio
     if not t:
         raise HTTPException(404, "Template not found")
 
-    spawned = []
-    for i in range(body.count):
-        suffix = f" #{i+1}" if body.count > 1 else ""
-        char = Character(
-            session_id=body.session_id,
-            name=f"{t.name}{suffix}",
-            is_npc=True,
-            is_gm_controlled=True,
-            max_hp=t.max_hp,
-            current_hp=t.max_hp,
-            spiritual_max_hp=t.spiritual_max_hp,
-            spiritual_hp=t.spiritual_max_hp,
-            mana_max=t.mana_max,
-            mana_current=t.mana_max,
-            armor_class=t.armor_class,
-            strength=t.strength,
-            dexterity=t.dexterity,
-            constitution=t.constitution,
-            intelligence=t.intelligence,
-            wisdom=t.wisdom,
-            charisma=t.charisma,
-            initiative_bonus=t.initiative_bonus,
-            token_color=t.token_color,
-            notes=t.notes,
-        )
-        db.add(char)
-        await db.flush()
-
-        # Default equipment
-        equipment_ids = json.loads(t.default_equipment) if t.default_equipment else []
-        for item_id in equipment_ids:
-            inv = InventoryItem(
-                character_id=char.id,
-                item_id=item_id,
-                quantity=1,
-                is_equipped=True,
-            )
-            db.add(inv)
-
-        # Merchant shop items
-        if t.is_merchant:
-            shop_items = json.loads(t.shop_items) if t.shop_items else []
-            for si in shop_items:
-                db.add(NpcShopInventory(
-                    npc_id=char.id,
-                    item_id=si.get("item_id"),
-                    stock=si.get("stock"),
-                    price_override_copper=si.get("price_override"),
-                ))
-
-        spawned.append({"id": char.id, "name": char.name})
-
+    chars = await spawn_npc_from_template(db, t, session_id=body.session_id, count=body.count)
+    spawned = [{"id": c.id, "name": c.name} for c in chars]
     await db.commit()
 
     # Rework v3 Phase 1: nudge everyone's map so the freshly spawned
@@ -416,47 +364,8 @@ async def trigger_event(event_id: int, db: AsyncSession = Depends(get_session)):
         t = await db.get(NpcTemplate, tid)
         if not t:
             continue
-        for i in range(count):
-            suffix = f" #{i+1}" if count > 1 else ""
-            char = Character(
-                session_id=e.session_id,
-                name=f"{t.name}{suffix}",
-                is_npc=True,
-                is_gm_controlled=True,
-                max_hp=t.max_hp,
-                current_hp=t.max_hp,
-                spiritual_max_hp=t.spiritual_max_hp,
-                spiritual_hp=t.spiritual_max_hp,
-                mana_max=t.mana_max,
-                mana_current=t.mana_max,
-                armor_class=t.armor_class,
-                strength=t.strength,
-                dexterity=t.dexterity,
-                constitution=t.constitution,
-                intelligence=t.intelligence,
-                wisdom=t.wisdom,
-                charisma=t.charisma,
-                initiative_bonus=t.initiative_bonus,
-                token_color=t.token_color,
-                notes=t.notes,
-            )
-            db.add(char)
-            await db.flush()
-
-            equipment_ids = json.loads(t.default_equipment) if t.default_equipment else []
-            for item_id in equipment_ids:
-                db.add(InventoryItem(character_id=char.id, item_id=item_id, quantity=1, is_equipped=True))
-
-            if t.is_merchant:
-                shop_items = json.loads(t.shop_items) if t.shop_items else []
-                for si in shop_items:
-                    db.add(NpcShopInventory(
-                        npc_id=char.id,
-                        item_id=si.get("item_id"),
-                        stock=si.get("stock"),
-                        price_override_copper=si.get("price_override"),
-                    ))
-
+        chars = await spawn_npc_from_template(db, t, session_id=e.session_id, count=count)
+        for char in chars:
             all_spawned.append({"id": char.id, "name": char.name})
 
     await db.commit()

@@ -52,7 +52,7 @@
         const id = parseInt(btn.dataset.loadId, 10);
         if (!confirm('Load this snapshot as a new Map?')) return;
         try {
-          const resp = await S.api.loadSnapshot(id, { session_code: SESSION_CODE, name: 'Loaded Map' });
+          const resp = await S.api.loadSnapshot(id, { session_code: SESSION_CODE });
           const newMapId = resp && resp.map_id;
           closeLibraryModal();
           if (typeof S.loadMaps === 'function') await S.loadMaps();
@@ -94,11 +94,24 @@
 
   async function onSaveCurrentMap() {
     if (!S.currentMapId) { alert('Select a Map first.'); return; }
-    const name = prompt('Snapshot name:', S.maps.find(m => m.id === S.currentMapId)?.name || 'Snapshot');
+    // Flush any pending tile strokes so the snapshot sees them on disk.
+    if (typeof S.flushSave === 'function') {
+      try { await S.flushSave(); } catch {}
+    }
+    const m = S.maps.find(x => x.id === S.currentMapId);
+    const name = prompt('Snapshot name:', m?.name || 'Snapshot');
     if (!name) return;
     try {
-      await S.api.saveSnapshot({ map_id: S.currentMapId, name: name.trim(), description: '' });
+      const snap = await S.api.saveSnapshot({
+        map_id: S.currentMapId, name: name.trim(), description: ''
+      });
+      console.info('[bv2] snapshot saved', { map_id: S.currentMapId, snap });
       alert('Snapshot saved!');
+      // Refresh the library list if the modal is currently open.
+      const modal = $('bv2-library-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        await refreshLibraryList();
+      }
     } catch (e) {
       console.error('bv2 saveSnapshot', e);
       alert('Failed to save snapshot');

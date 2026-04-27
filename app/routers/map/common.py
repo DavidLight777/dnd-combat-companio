@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import DATA_DIR
 from app.models import (
+    BV2Location,
+    BV2Map,
+    BV2Tile,
     Character,
     CombatEvent,
     CombatParticipant,
@@ -154,14 +157,64 @@ async def _path_is_blocked(
             .where(MapObject.blocks_movement == True)  # noqa: E712
         )).scalars().all()
 
+        # 2) bv2 blocking tiles for the active Map+Location of this
+        # session. Map Builder v2 stores walls/pits in BV2Tile and does
+        # NOT sync them into MapObject, so we have to consult that
+        # table directly. Without this, every player walks through
+        # every bv2 wall.
+        bv2_blocked_cells: set[tuple[int, int]] = set()
+        bv2_loc = None
+        bv2_map_row = (await db.execute(
+            select(BV2Map)
+            .where(BV2Map.session_id == session_id)
+            .where(BV2Map.is_active == True)  # noqa: E712
+        )).scalar_one_or_none()
+        if bv2_map_row:
+            bv2_loc = (await db.execute(
+                select(BV2Location)
+                .where(BV2Location.map_id == bv2_map_row.id)
+                .where(BV2Location.is_active == True)  # noqa: E712
+            )).scalar_one_or_none()
+        if bv2_loc:
+            tile_rows = (await db.execute(
+                select(BV2Tile)
+                .where(BV2Tile.location_id == bv2_loc.id)
+                .where(BV2Tile.blocks_movement == True)  # noqa: E712
+            )).scalars().all()
+            for t in tile_rows:
+                # Open doors are walkable even though blocks_movement
+                # may be true on the row; respect is_open as the live
+                # state (matches the GM right-click toggle).
+                if t.tile_type == "door" and t.is_open:
+                    continue
+                bv2_blocked_cells.add((t.col, t.row))
+
+        # If neither legacy walls nor bv2 walls exist — early out.
+        if not rows and not bv2_blocked_cells:
+            return False
+
+        cols = max(1, bv2_loc.cols) if bv2_loc else 1
+        rows_count = max(1, bv2_loc.rows) if bv2_loc else 1
+
         def _blocked(nx: float, ny: float) -> bool:
             for o in rows:
                 if nx >= o.x1 and nx <= o.x2 and ny >= o.y1 and ny <= o.y2:
                     return True
+            if bv2_blocked_cells:
+                col_i = int(nx * cols)
+                row_i = int(ny * rows_count)
+                if col_i < 0:
+                    col_i = 0
+                elif col_i >= cols:
+                    col_i = cols - 1
+                if row_i < 0:
+                    row_i = 0
+                elif row_i >= rows_count:
+                    row_i = rows_count - 1
+                if (col_i, row_i) in bv2_blocked_cells:
+                    return True
             return False
 
-        if not rows:
-            return False
         if _blocked(x1, y1):
             return True
         import math

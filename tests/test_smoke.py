@@ -1565,3 +1565,280 @@ async def test_bv2_shift_location_content(client, session_code):
     # Tile should now be at (2,2)
     tiles = (await client.get(f"/api/builder-v2/locations/{loc_id}/tiles")).json()
     assert any(t["col"] == 2 and t["row"] == 2 and t["tile_type"] == "wall" for t in tiles)
+
+
+@pytest.mark.asyncio
+async def test_phase9_load_as_map_preserves_snapshot_name(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Village Alpha"})).json()["id"]
+    await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 6, "rows": 6})
+    snap_id = (await client.post("/api/builder-v2/library/save-from-map",
+                                 json={"map_id": map_id, "name": "Village Snap"})).json()["id"]
+    new_id = (await client.post(f"/api/builder-v2/library/{snap_id}/load-as-map",
+                                json={"session_code": session_code})).json()["map_id"]
+    maps = (await client.get(f"/api/builder-v2/sessions/{session_code}/maps")).json()
+    new_map = next(m for m in maps if m["id"] == new_id)
+    assert new_map["name"] == "Village Snap"
+
+
+@pytest.mark.asyncio
+async def test_phase9_save_and_load_preserves_tiles(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Painted"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 8, "rows": 8})).json()["id"]
+    tiles = [{"col": c, "row": 0, "tile_type": "wall"} for c in range(5)]
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles",
+                       json={"set": tiles, "erase": []})
+    snap_id = (await client.post("/api/builder-v2/library/save-from-map",
+                                 json={"map_id": map_id, "name": "PaintedSnap"})).json()["id"]
+    new_id = (await client.post(f"/api/builder-v2/library/{snap_id}/load-as-map",
+                                json={"session_code": session_code})).json()["map_id"]
+    locs = (await client.get(f"/api/builder-v2/maps/{new_id}/locations")).json()
+    assert len(locs) == 1
+    full = (await client.get(f"/api/builder-v2/locations/{locs[0]['id']}")).json()
+    assert len(full["tiles"]) == 5
+    assert all(t["tile_type"] == "wall" for t in full["tiles"])
+
+
+@pytest.mark.asyncio
+async def test_phase9_interior_zone_crud(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "IZ"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 8, "rows": 8})).json()["id"]
+    # Create zone with 4 cells
+    r = await client.post(f"/api/builder-v2/locations/{loc_id}/interiors", json={
+        "name": "Shop", "kind": "building", "reveal_mode": "on_enter",
+        "cells": [{"col": 1, "row": 1}, {"col": 2, "row": 1},
+                   {"col": 1, "row": 2}, {"col": 2, "row": 2}],
+    })
+    assert r.status_code == 200
+    zone = r.json()
+    assert zone["name"] == "Shop"
+    assert len(zone["cells"]) == 4
+
+    # List
+    lst = (await client.get(f"/api/builder-v2/locations/{loc_id}/interiors")).json()
+    assert len(lst) == 1
+    assert lst[0]["name"] == "Shop"
+
+    # Patch
+    await client.patch(f"/api/builder-v2/interiors/{zone['id']}", json={"name": "Store"})
+    lst = (await client.get(f"/api/builder-v2/locations/{loc_id}/interiors")).json()
+    assert lst[0]["name"] == "Store"
+
+    # Replace cells
+    await client.put(f"/api/builder-v2/interiors/{zone['id']}/cells", json={
+        "cells": [{"col": 3, "row": 3}],
+    })
+    lst = (await client.get(f"/api/builder-v2/locations/{loc_id}/interiors")).json()
+    assert len(lst[0]["cells"]) == 1
+
+    # Delete
+    await client.delete(f"/api/builder-v2/interiors/{zone['id']}")
+    lst = (await client.get(f"/api/builder-v2/locations/{loc_id}/interiors")).json()
+    assert len(lst) == 0
+
+
+@pytest.mark.asyncio
+async def test_phase9_bridge_includes_interiors(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "BI"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    await client.post(f"/api/builder-v2/locations/{loc_id}/interiors", json={
+        "name": "Cave", "kind": "cave", "reveal_mode": "gm_only",
+        "cells": [{"col": 0, "row": 0}],
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert len(state.get("bv2_interiors", [])) == 1
+    assert state["bv2_interiors"][0]["name"] == "Cave"
+    assert state["bv2_interiors"][0]["cells"] == [{"col": 0, "row": 0}]
+
+
+@pytest.mark.asyncio
+async def test_phase9_bridge_excludes_chars_from_other_locations(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "TwoLocs"})).json()["id"]
+    loc1 = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                              json={"cols": 6, "rows": 6})).json()["id"]
+    loc2 = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                              json={"cols": 6, "rows": 6})).json()["id"]
+    # Create two characters
+    j1 = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "A",
+    })
+    char_a = j1.json()["character_id"]
+    j2 = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "B",
+    })
+    char_b = j2.json()["character_id"]
+    # Place A on loc1, B on loc2
+    await client.patch(f"/api/characters/{char_a}", json={
+        "current_location_id": loc1, "col": 1, "row": 1,
+    })
+    await client.patch(f"/api/characters/{char_b}", json={
+        "current_location_id": loc2, "col": 2, "row": 2,
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc1}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    ids = [t["character_id"] for t in state["tokens"]]
+    assert char_a in ids
+    assert char_b not in ids
+
+
+@pytest.mark.asyncio
+async def test_phase9_npc_spawn_on_enter(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Spawn"})).json()["id"]
+    loc_id = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                                json={"cols": 6, "rows": 6})).json()["id"]
+    # Create an NPC template first (need session_id)
+    sess = (await client.get(f"/api/sessions/{session_code}")).json()
+    sid = sess["id"]
+    tpl = await client.post("/api/npc-library/templates", json={
+        "session_id": sid, "name": "Goblin", "max_hp": 15,
+    })
+    tpl_id = tpl.json()["id"]
+    # Place an npc_spawn entity
+    ent = await client.post(f"/api/builder-v2/locations/{loc_id}/npc-spawns", json={
+        "col": 2, "row": 2, "npc_template_id": tpl_id,
+        "auto_spawn_trigger": "on_enter", "spawn_count": 2,
+    })
+    assert ent.status_code == 200
+    # Activate location triggers spawn
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+    # Verify 2 NPC chars exist via map bridge tokens
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    npcs = [t for t in state["tokens"] if t.get("name", "").startswith("Goblin")]
+    assert len(npcs) == 2
+    assert all(t.get("bv2_location_id") == loc_id for t in npcs)
+    # Re-activating must not duplicate
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+    state2 = (await client.get(f"/api/map/{session_code}")).json()
+    npcs2 = [t for t in state2["tokens"] if t.get("name", "").startswith("Goblin")]
+    assert len(npcs2) == 2
+
+
+@pytest.mark.asyncio
+async def test_phase9_edge_transition_moves_character(client, session_code):
+    map_id = (await client.post(f"/api/builder-v2/sessions/{session_code}/maps",
+                                json={"name": "Trans"})).json()["id"]
+    loc1 = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                              json={"cols": 6, "rows": 6})).json()["id"]
+    loc2 = (await client.post(f"/api/builder-v2/maps/{map_id}/locations",
+                              json={"cols": 6, "rows": 6})).json()["id"]
+    # Create edge from loc1 east side to loc2
+    await client.post(f"/api/builder-v2/locations/{loc1}/edges", json={
+        "side": "east", "range_start": 2, "range_end": 4,
+        "target_location_id": loc2, "target_entry_col": 1, "target_entry_row": 1,
+    })
+    # Create character on loc1
+    j = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "Walker",
+    })
+    char_id = j.json()["character_id"]
+    await client.patch(f"/api/characters/{char_id}", json={
+        "current_location_id": loc1, "col": 5, "row": 3,
+    })
+    # Move onto edge cell (col=5 is east boundary)
+    r = await client.post(f"/api/builder-v2/characters/{char_id}/move-grid", json={
+        "col": 5, "row": 3,
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["location_id"] == loc2
+    assert data["col"] == 1
+    assert data["row"] == 1
+
+
+@pytest.mark.asyncio
+async def test_phase9_spawn_helper_dedupes_seeding(client, session_code):
+    """Both legacy /templates/{id}/spawn and bv2 activate_location use the
+    same spawn_npc_from_template helper. Verify both paths create
+    characters with correct attributes."""
+    sess = (await client.get(f"/api/sessions/{session_code}")).json()
+    sid = sess["id"]
+
+    # Create NPC template
+    tpl = (await client.post("/api/npc-library/templates", json={
+        "session_id": sid, "name": "Orc",
+        "max_hp": 15, "armor_class": 12,
+        "strength": 14, "dexterity": 10, "constitution": 12,
+        "intelligence": 6, "wisdom": 8, "charisma": 5,
+        "spiritual_max_hp": 0, "mana_max": 0, "initiative_bonus": 0,
+        "token_color": "#668844",
+    })).json()
+
+    # Legacy path
+    legacy = (await client.post(
+        f"/api/npc-library/templates/{tpl['id']}/spawn",
+        json={"session_id": sid, "count": 2},
+    )).json()
+    assert len(legacy["spawned"]) == 2
+    assert all("Orc" in n["name"] for n in legacy["spawned"])
+
+    # bv2 path
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "Helper"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 6, "rows": 6},
+    )).json()["id"]
+    await client.post(f"/api/builder-v2/locations/{loc_id}/npc-spawns", json={
+        "col": 2, "row": 2, "npc_template_id": tpl["id"],
+        "auto_spawn_trigger": "on_enter", "spawn_count": 3,
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    chars = (await client.get(f"/api/sessions/{session_code}/characters")).json()
+    orcs = [c for c in chars if c.get("is_npc") and "Orc" in c.get("name", "")]
+    # Legacy 2 + bv2 3 = 5 total
+    assert len(orcs) == 5
+    bv2_orcs = [c for c in orcs if c.get("bv2_location_id") == loc_id]
+    assert len(bv2_orcs) == 3
+    assert all(c["bv2_col"] == 2 and c["bv2_row"] == 2 for c in bv2_orcs)
+
+
+@pytest.mark.asyncio
+async def test_phase9_door_open_persists_and_surfaces(client, session_code):
+    """Door is_open flag survives patch, serialiser, and legacy bridge."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "DoorTest"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 6, "rows": 6},
+    )).json()["id"]
+    # Paint a closed door
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 2, "row": 2, "tile_type": "door", "is_open": False}],
+        "erase": [],
+    })
+    full = (await client.get(f"/api/builder-v2/locations/{loc_id}")).json()
+    tile = next(t for t in full["tiles"] if t["col"] == 2 and t["row"] == 2)
+    assert tile["tile_type"] == "door"
+    assert tile["is_open"] is False
+
+    # Toggle open via patch
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 2, "row": 2, "tile_type": "door", "is_open": True}],
+        "erase": [],
+    })
+
+    # Activate and verify legacy bridge surfaces is_open
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state["active_floor_tiles"]["2,2"]["type"] == "door"
+    assert state["active_floor_tiles"]["2,2"]["is_open"] is True

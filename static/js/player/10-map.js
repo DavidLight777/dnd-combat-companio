@@ -62,6 +62,8 @@ async function _applyMapStateTo(canvas, state) {
   canvas.setIndoor(state.bv2_is_indoor ?? false);
   canvas.setLights(state.bv2_lights || []);
   canvas.setEdges(state.bv2_edges || []);
+  // Phase 9: interior zones
+  canvas.setInteriors(state.bv2_interiors || []);
   canvas.render();
 }
 

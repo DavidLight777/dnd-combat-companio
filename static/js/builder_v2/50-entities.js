@@ -69,9 +69,9 @@
     }).join('');
 
     listEl.querySelectorAll('[data-edit-id]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const ent = ents.find(x => x.id === parseInt(btn.dataset.editId, 10));
-        if (ent) openEntityModal(ent, 'edit');
+        if (ent) await openEntityModal(ent, 'edit');
       });
     });
     listEl.querySelectorAll('[data-del-id]').forEach(btn => {
@@ -247,11 +247,19 @@
     }};
   }
 
-  function _buildNpcSpawnForm(data) {
+  async function _buildNpcSpawnForm(data) {
     const sec = _createSection();
     const triggers = ['on_enter','on_activate','on_combat_start','manual'];
+    // Phase 9: fetch NPC templates from the library and render as a dropdown
+    let tplOptions = [];
+    try {
+      const tpls = await api.get(`/api/npc-library/templates?session_id=${SESSION_ID}`);
+      tplOptions = (tpls || []).map(t => ({ value: t.id, label: t.name }));
+    } catch (e) {
+      console.error('bv2 failed to load NPC templates', e);
+    }
     sec.innerHTML = [
-      _field('NPC Template ID', _inp('bv2-npc-tpl-id', data.npc_template_id, 'number')),
+      _field('NPC Template', _sel('bv2-npc-tpl-id', tplOptions, data.npc_template_id)),
       _field('Trigger', _sel('bv2-npc-trigger', triggers.map(t => ({value:t,label:t})), data.auto_spawn_trigger)),
       _field('Count', _inp('bv2-npc-count', data.spawn_count, 'number')),
       _field('Hostile', _chk('bv2-npc-hostile', data.is_hostile !== false)),
@@ -314,7 +322,7 @@
   }
 
   // ── Public: open modal ────────────────────────────────────
-  function openEntityModal(ent, mode, createOpts) {
+  async function openEntityModal(ent, mode, createOpts) {
     if (!S.currentLocId) { showError('Select a location first.'); return; }
 
     if (mode === 'delete' && ent) {
@@ -353,7 +361,7 @@
     if (type === 'chest') formApi = _buildChestForm(data);
     else if (type === 'trap') formApi = _buildTrapForm(data);
     else if (type === 'portal') formApi = _buildPortalForm(data);
-    else if (type === 'npc_spawn') formApi = _buildNpcSpawnForm(data);
+    else if (type === 'npc_spawn') formApi = await _buildNpcSpawnForm(data);
     else if (type === 'cover_zone') formApi = _buildCoverZoneForm(data);
     else {
       // Generic (light_marker etc.) — no typed section

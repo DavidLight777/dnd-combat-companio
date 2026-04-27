@@ -156,12 +156,15 @@ async def patch_tiles(location_id: int, body: dict, db: AsyncSession = Depends(g
             prev.tile_type = tile_type
             prev.blocks_movement = blocks["blocks_movement"]
             prev.blocks_vision = blocks["blocks_vision"]
+            if "is_open" in raw:
+                prev.is_open = bool(raw["is_open"])
         else:
             db.add(BV2Tile(
                 location_id=location_id,
                 col=col, row=row, tile_type=tile_type,
                 blocks_movement=blocks["blocks_movement"],
                 blocks_vision=blocks["blocks_vision"],
+                is_open=bool(raw["is_open"]) if "is_open" in raw else True,
                 extra_json="{}",
             ))
         set_count += 1

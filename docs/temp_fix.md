@@ -1188,5 +1188,99 @@ visit POST, which would run with stale/invalid coordinates.
 
 ---
 
+## Phase 9 — Bugs + Lighting + Interior Zones + Character Bridge — Fix List ✅ APPLIED on 2026-04-27
+
+### Fix 9.1 — `load-as-map` hardcodes snapshot name (MEDIUM)
+
+**File:** `static/js/builder_v2/90-library.js`  
+**Fix:** Remove `name: 'Loaded Map'` from the `loadSnapshot` call.
+
+### Fix 9.2 — Builder Location dropdown shows stale entries (MEDIUM)
+
+**File:** `static/js/builder_v2/30-editor.js`  
+**Fix:** Reset `S.locations = []` before auto-creating the first location on map creation.
+
+### Fix 9.3 — Snapshot save misses pending tiles (MEDIUM)
+
+**File:** `static/js/builder_v2/90-library.js`  
+**Fix:** Call `S.flushSave()` before `saveSnapshot`; refresh library list on success.
+
+### Fix 9.4 — `models.py` truncated by end-of-file edit (CRITICAL)
+
+**Root cause:** `edit()` matching the final lines of `models.py` replaced the entire tail,
+dropping all Phase 7 typed entity tables.  
+**Fix:** Restore from git, then use a unique anchor (`zone_entity_id`) instead of the
+very last line when appending new models.
+
+### Fix 9.5 — Alembic autogenerate on stale DB schema (MEDIUM)
+
+**Root cause:** `data/combat_companion.db` had an `alembic_version` row pointing to a
+deleted migration (`38310716b6f7`). Autogenerate saw missing tables and generated
+drop/create chaos.  
+**Fix:** Manually update `alembic_version` to the real head (`d928752f9387`), then
+write the migration by hand (only add new tables + column).
+
+### Phase 9 incomplete items (blocking nothing, noted for Phase 10)
+
+- **Interior zone builder UI (C.5):** No "Zone" terrain brush. Zones must be created
+  via API/tests for now.
+- **Door peek (C.4):** `BV2Tile.is_open` column exists, but no GM toggle UI and no
+  cone-of-sight peek logic in `_renderInteriorOverlay`.
+
+### Verification checklist
+
+- [x] Track A (library/bugs): 2 tests, all green.
+- [x] Track B (lighting): ambient slider + indoor checkbox in builder; GM soft preview.
+- [x] Track C (interiors): model + migration + endpoints + bridge + client overlay;
+      2 tests green.
+- [x] Track D (character/NPC): edge transition test, NPC spawn test, builder token
+      preview, NPC template dropdown in spawn modal; 3 tests green.
+- [x] `ruff check app tests` green; `pytest tests/test_smoke.py` reports **68** tests passing.
+
+---
+
+## Phase 9 Round 2 — Cleanup — Fix List ✅ APPLIED on 2026-04-27
+
+### Fix R1 — `SESSION_CODE` vs `SESSION_ID` in NPC template fetch (MEDIUM)
+
+**File:** `static/js/builder_v2/50-entities.js`  
+**Fix:** Use `SESSION_ID` (int) for `/api/npc-library/templates` query param.
+
+### Fix R2 — Duplicate NPC spawn seeding logic (MEDIUM)
+
+**File:** `app/routers/builder_v2/spawns.py` (new), `app/routers/npc_library.py`,
+`app/routers/builder_v2/locations.py`  
+**Fix:** Extract `spawn_npc_from_template` shared helper; both legacy and bv2
+spawn paths use it.
+
+### Fix R3 — Interior zone builder painting UI (MEDIUM)
+
+**Files:** `static/js/builder_v2/20-mapview.js`, `30-editor.js`, `95-interiors.js` (new),
+`static/gm.html`, `app/routers/builder_v2/locations.py`  
+**Fix:** Zone brush button paints pending cells; Enter saves via
+`POST /locations/{id}/interiors`. List shows existing zones with delete.
+
+### Fix R4 — Door peek toggle + render (MEDIUM)
+
+**Files:** `app/routers/builder_v2/common.py`, `app/routers/builder_v2/tiles.py`,
+`app/routers/map/files.py`, `static/js/map-canvas.js`, `static/js/gm/06-map-main.js`  
+**Fix:** `ser_tile` and bridge payload expose `is_open`. `patch_tiles` accepts
+`is_open`. GM right-click on door tile toggles open/closed. `_renderInteriorOverlay`
+BFS-computes a 2-cell-deep peek slice through open boundary doors; players see
+it within 3 cells, GM always sees it.
+
+### Verification checklist
+
+- [x] R1: NPC template dropdown populates correctly in builder spawn modal.
+- [x] R2: `test_phase9_spawn_helper_dedupes_seeding` passes; no drift between
+      legacy and bv2 spawn paths.
+- [x] R3: Zone brush paints pending cells; Enter saves; list refreshes.
+- [x] R4: Door toggle persists and surfaces on legacy map endpoint;
+      `_renderInteriorOverlay` skips peek cells.
+- [x] `ruff check app tests` green; `pytest tests/test_smoke.py` reports **70**
+      tests passing.
+
+---
+
 *End of file. New phases get appended above this standing-rules
 block; the rules block stays at the bottom as a permanent reference.*

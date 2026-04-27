@@ -89,6 +89,13 @@
     updateCoverZone: (id, body)    => api.patch(`${BASE}/cover-zones/${id}`, body),
     deleteCoverZone: (id)          => api.del(`${BASE}/cover-zones/${id}`),
     addCoverCell:    (id, body)    => api.post(`${BASE}/cover-zones/${id}/cells`, body),
-    removeCoverCell: (id, col, row)=> api.del(`${BASE}/cover-zones/${id}/cells/${col}/${row}`),
+    removeCoverCell:  (id, col, row)=> api.del(`${BASE}/cover-zones/${id}/cells/${col}/${row}`),
+
+    // Interiors
+    listInteriors:   (locId)       => api.get(`${BASE}/locations/${locId}/interiors`),
+    createInterior:  (locId, body) => api.post(`${BASE}/locations/${locId}/interiors`, body),
+    updateInterior:  (id, body)    => api.patch(`${BASE}/interiors/${id}`, body),
+    deleteInterior:  (id)          => api.del(`${BASE}/interiors/${id}`),
+    replaceInteriorCells: (id, body) => api.put(`${BASE}/interiors/${id}/cells`, body),
   };
 })();

@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import (
+    BV2Location,
+    BV2Map,
     Character,
     MapData,
     Session,
@@ -83,6 +85,33 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
                 # (Wall collision is enforced unconditionally above.)
     c.map_x = new_x
     c.map_y = new_y
+
+    # bv2 sync: when an active bv2 map+location exists for this session,
+    # mirror the drag into bv2 fields so the bridge keeps the token in
+    # the dragged cell on next state load. Without this, the legacy
+    # endpoint persists map_x/map_y but the bridge keeps reading the
+    # stale c.col/c.row, making the token snap back to its old place.
+    try:
+        bv2_map = (await db.execute(
+            select(BV2Map)
+            .where(BV2Map.session_id == c.session_id)
+            .where(BV2Map.is_active == True)  # noqa: E712
+        )).scalar_one_or_none()
+        if bv2_map:
+            bv2_loc = (await db.execute(
+                select(BV2Location)
+                .where(BV2Location.map_id == bv2_map.id)
+                .where(BV2Location.is_active == True)  # noqa: E712
+            )).scalar_one_or_none()
+            if bv2_loc and new_x is not None and new_y is not None:
+                cols = max(1, bv2_loc.cols)
+                rows = max(1, bv2_loc.rows)
+                c.col = max(0, min(cols - 1, int(new_x * cols)))
+                c.row = max(0, min(rows - 1, int(new_y * rows)))
+                c.current_location_id = bv2_loc.id
+    except Exception:
+        pass
+
     if caller_token and move_distance_cells > 0:
         c.movement_used_this_turn = (c.movement_used_this_turn or 0.0) + move_distance_cells
     await db.commit()

@@ -14,6 +14,8 @@ from app.models import (
     BV2ChestItem,
     BV2Edge,
     BV2Entity,
+    BV2InteriorCell,
+    BV2InteriorZone,
     BV2Light,
     BV2Location,
     BV2Map,
@@ -162,24 +164,41 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
             "type": t.tile_type,
             "blocks_movement": bool(t.blocks_movement),
             "blocks_vision": bool(t.blocks_vision),
+            "is_open": bool(t.is_open),
         }
         for t in tiles_q.scalars().all()
     }
 
-    # Tokens: only characters whose current_location_id matches this location
+    # Tokens: characters that belong to this location (current_location_id
+    # matches) OR PCs that have no bv2 location assigned yet. The latter
+    # fall back to legacy map_x/map_y if they exist, otherwise to a
+    # default bottom-row cell. This guarantees the GM sees their party
+    # the moment a bv2 location becomes active without requiring an
+    # explicit "Apply to Game" toggle each time.
     tokens = []
     cols = max(1, loc.cols)
     rows = max(1, loc.rows)
+    default_row = max(0, rows - 2)
     for c in chars:
-        if c.current_location_id != loc.id:
+        owns = (c.current_location_id == loc.id)
+        unplaced = (c.current_location_id is None) and (not c.is_npc)
+        if not owns and not unplaced:
             continue
-        if loc.grid_type == "hex":
-            xpx = (c.col + 0.5) + (0.5 if c.row % 2 else 0.0)
-            x_norm = xpx / (cols + 0.5)
-            y_norm = (c.row + 0.5) * (math.sqrt(3) / 2) / (rows * math.sqrt(3) / 2)
+        if owns:
+            col_i, row_i = c.col or 0, c.row or 0
+        elif c.map_x is not None and c.map_y is not None:
+            col_i = max(0, min(cols - 1, int(c.map_x * cols)))
+            row_i = max(0, min(rows - 1, int(c.map_y * rows)))
         else:
-            x_norm = (c.col + 0.5) / cols
-            y_norm = (c.row + 0.5) / rows
+            col_i = max(0, min(cols - 1, len(tokens)))
+            row_i = default_row
+        if loc.grid_type == "hex":
+            xpx = (col_i + 0.5) + (0.5 if row_i % 2 else 0.0)
+            x_norm = xpx / (cols + 0.5)
+            y_norm = (row_i + 0.5) * (math.sqrt(3) / 2) / (rows * math.sqrt(3) / 2)
+        else:
+            x_norm = (col_i + 0.5) / cols
+            y_norm = (row_i + 0.5) / rows
         speed_total = await _effective_speed_cells(c, db)
         tokens.append({
             "character_id": c.id, "name": c.name, "is_npc": c.is_npc,
@@ -275,6 +294,24 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         for e in edges_q.scalars().all()
     ]
 
+    # Interior zones
+    zones_q = await db.execute(
+        select(BV2InteriorZone).where(BV2InteriorZone.location_id == loc.id)
+    )
+    interiors = []
+    for z in zones_q.scalars().all():
+        cells_q = await db.execute(
+            select(BV2InteriorCell).where(BV2InteriorCell.zone_id == z.id)
+        )
+        interiors.append({
+            "id": z.id,
+            "name": z.name,
+            "kind": z.kind,
+            "reveal_mode": z.reveal_mode,
+            "ambient_light_override": z.ambient_light_override,
+            "cells": [{"col": c.col, "row": c.row} for c in cells_q.scalars().all()],
+        })
+
     # Revealed cells from visit state
     revealed_cells: list[str] = []
     if character_id:
@@ -299,7 +336,12 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         "grid_size": loc.tile_size,
         "grid_enabled": True,
         "grid_type": loc.grid_type,
-        "fog_enabled": True,
+        # Phase 8 fog-of-war is opt-in: only enable for players
+        # (character_id passed) AND only when they already have at
+        # least one explored tile. Otherwise a freshly-activated map
+        # would appear fully black/grey because the visit state is
+        # empty. GM (no character_id) always sees the full map.
+        "fog_enabled": bool(character_id) and bool(revealed_cells),
         "remember_explored": True,
         "revealed_cells": revealed_cells,
         "tokens": tokens,
@@ -320,6 +362,7 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         "bv2_is_indoor": bool(loc.is_indoor),
         "bv2_lights": lights,
         "bv2_edges": edges,
+        "bv2_interiors": interiors,
     }
 
 

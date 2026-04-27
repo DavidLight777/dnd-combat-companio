@@ -1364,6 +1364,8 @@ class BV2Tile(Base):
     tile_type: Mapped[str] = mapped_column(String(32), default="floor")
     blocks_movement: Mapped[bool] = mapped_column(Boolean, default=False)
     blocks_vision: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase 9: door open/closed state for interior zone peek logic
+    is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     extra_json: Mapped[str] = mapped_column(Text, default="{}")
 
 
@@ -1542,6 +1544,40 @@ class BV2CoverCell(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     zone_entity_id: Mapped[int] = mapped_column(
         ForeignKey("bv2_cover_zones.entity_id", ondelete="CASCADE"), nullable=False
+    )
+    col: Mapped[int] = mapped_column(Integer, nullable=False)
+    row: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BV2InteriorZone(Base):
+    """A sub-zone inside a Location (building, cave, room) with its own
+    visibility rules. Phase 9.
+    """
+    __tablename__ = "bv2_interior_zones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    location_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_locations.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, default="Interior")
+    kind: Mapped[str] = mapped_column(String(20), default="building")
+    ambient_light_override: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reveal_mode: Mapped[str] = mapped_column(String(20), default="on_enter")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+
+class BV2InteriorCell(Base):
+    """One grid cell belonging to an interior zone."""
+    __tablename__ = "bv2_interior_cells"
+    __table_args__ = (
+        UniqueConstraint("zone_id", "col", "row", name="uq_bv2_interior_cell"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_id: Mapped[int] = mapped_column(
+        ForeignKey("bv2_interior_zones.id", ondelete="CASCADE"), nullable=False
     )
     col: Mapped[int] = mapped_column(Integer, nullable=False)
     row: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -1,5 +1,6 @@
 """Location-level CRUD: a Location is one playable area inside a Map."""
 
+
 from fastapi import Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,8 @@ from app.models import (
     BV2CoverZone,
     BV2Edge,
     BV2Entity,
+    BV2InteriorCell,
+    BV2InteriorZone,
     BV2Light,
     BV2Location,
     BV2Map,
@@ -22,6 +25,7 @@ from app.models import (
     BV2VisitState,
     Character,
     Item,
+    NpcTemplate,
     Session,
 )
 from app.routers.builder_v2.common import (
@@ -32,6 +36,7 @@ from app.routers.builder_v2.common import (
     ser_location,
     ser_tile,
 )
+from app.routers.builder_v2.spawns import spawn_npc_from_template
 
 
 @router.get("/maps/{map_id}/locations")
@@ -172,11 +177,28 @@ async def get_location_full(location_id: int, db: AsyncSession = Depends(get_ses
             })
         return base
 
+    # Phase 9: interior zones
+    zones_q = await db.execute(
+        select(BV2InteriorZone).where(BV2InteriorZone.location_id == location_id)
+    )
+    interiors = []
+    for z in zones_q.scalars().all():
+        cells_q = await db.execute(
+            select(BV2InteriorCell).where(BV2InteriorCell.zone_id == z.id)
+        )
+        interiors.append({
+            "id": z.id, "name": z.name, "kind": z.kind,
+            "reveal_mode": z.reveal_mode,
+            "ambient_light_override": z.ambient_light_override,
+            "cells": [{"col": c.col, "row": c.row} for c in cells_q.scalars().all()],
+        })
+
     return {
         "location": ser_location(loc),
         "tiles": [ser_tile(t) for t in tiles_r.scalars().all()],
         "entities": [_enrich(e) for e in entities],
         "lights": [ser_light(li) for li in lights_r.scalars().all()],
+        "interiors": interiors,
     }
 
 
@@ -374,6 +396,54 @@ async def activate_location(location_id: int, db: AsyncSession = Depends(get_ses
             .values(is_active=False)
         )
         m.is_active = True
+
+    # Phase 9: auto-spawn NPCs with on_enter trigger
+    spawns_q = await db.execute(
+        select(BV2Entity, BV2NPCSpawn)
+        .join(BV2NPCSpawn, BV2NPCSpawn.entity_id == BV2Entity.id)
+        .where(BV2Entity.location_id == location_id)
+        .where(BV2NPCSpawn.auto_spawn_trigger == "on_enter")
+        .where(BV2NPCSpawn.has_spawned.is_(False))
+    )
+    for ent, spawn in spawns_q.all():
+        t = await db.get(NpcTemplate, spawn.npc_template_id)
+        if not t:
+            continue
+        if not m:
+            continue
+        await spawn_npc_from_template(
+            db, t,
+            session_id=m.session_id,
+            count=spawn.spawn_count,
+            location_id=location_id,
+            col=ent.col,
+            row=ent.row,
+        )
+        spawn.has_spawned = True
+
+    # Auto-place PCs that don't yet belong to any bv2 location so the
+    # GM and players see their tokens immediately on the runtime Map
+    # tab. Existing placements (current_location_id already set) are
+    # preserved so cross-location characters don't snap back. NPCs are
+    # spawned via the on_enter trigger above and shouldn't be touched.
+    if m:
+        unplaced_pcs_q = await db.execute(
+            select(Character)
+            .where(Character.session_id == m.session_id)
+            .where(Character.is_npc == False)  # noqa: E712
+            .where(Character.current_location_id.is_(None))
+        )
+        unplaced_pcs = unplaced_pcs_q.scalars().all()
+        if unplaced_pcs:
+            cols = max(1, loc.cols)
+            rows = max(1, loc.rows)
+            row_idx = max(0, rows - 2)
+            n = len(unplaced_pcs)
+            for i, c in enumerate(unplaced_pcs):
+                slot = int((cols - 1) * (i + 0.5) / max(1, n))
+                c.current_location_id = loc.id
+                c.col = max(0, min(cols - 1, slot))
+                c.row = row_idx
 
     await db.commit()
     await db.refresh(loc)

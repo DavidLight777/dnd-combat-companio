@@ -1027,8 +1027,47 @@ Before telling the user "done":
   accepts both `"col,row"` strings (bv2 bridge) and `[col,row]` arrays
   (legacy MapData) so the same renderer works for both backends.
 
-Last migration: `d928752f9387_bv2_entity_detail_tables_and_drop_props_json.py`.  
-Tests in `tests/test_smoke.py`: 61 (38 are bv2).  
+### Phase 9 caveats
+
+- **Library save/load bugs fixed.** `load-as-map` no longer hardcodes
+  `"Loaded Map"`; snapshot name is preserved. `createMap` clears stale
+  `S.locations` before auto-creating the first location. `onSaveCurrentMap`
+  flushes pending tiles via `S.flushSave` before snapshotting and refreshes
+  the library modal list.
+- **Lighting visibility wired in builder.** `gm.html` has ambient light
+  slider (0-1) and indoor checkbox. `30-editor.js` syncs them on load
+  and saves via `queueSettingsSave`. `_renderLightingOverlay` gives GM a
+  soft preview (0.35x darkness) so they can tune while building.
+- **Interior zones (sub-rooms) implemented.** New tables `bv2_interior_zones`
+  and `bv2_interior_cells` with CRUD endpoints under `/api/builder-v2/`.
+  Bridge exposes `bv2_interiors` in map state. Client overlay hides cells
+  based on `reveal_mode` (`gm_only` / `always` / `on_enter`). `on_enter`
+  hides the zone until a player token steps inside; GM sees a soft preview.
+  Builder has a "Zone" brush: click cells to paint a pending zone,
+  press Enter to name and save. Zones are listed in the builder sidebar.
+  Door peek implemented. GM right-clicks a door tile to toggle `is_open`;
+  `_renderInteriorOverlay` computes a 2-cell-deep BFS slice into the zone
+  through any open boundary door. Players see the slice only when within
+  3 cells (Chebyshev); GM always sees it.
+- **Character edge transitions verified.** `POST /characters/{id}/move-grid`
+  already detects edge crossings and teleports to target location. Player
+  WS listener `bv2.character_edge_transitioned` triggers `loadPlayerMapState()`.
+- **NPC auto-spawn on location enter implemented.** `activate_location`
+  queries `BV2NPCSpawn` with `auto_spawn_trigger="on_enter"` and
+  `has_spawned=False`, then creates Character rows from the linked
+  `NpcTemplate`. `has_spawned` is flipped to prevent duplicates.
+  Shared helper `spawn_npc_from_template` in `app/routers/builder_v2/spawns.py`
+  deduplicates seeding logic between legacy `npc_library.py` and bv2
+  `locations.py`.
+- **Builder canvas shows live character tokens.** `20-mapview.js` renders
+  small colored circles with initials for characters whose
+  `current_location_id` matches the loaded location.
+- **NPC spawn modal uses template dropdown.** `50-entities.js` fetches
+  `/api/npc-library/templates` and renders a `<select>` instead of a raw
+  ID textbox.
+
+Last migration: `a6197a61b7f3_phase_9_interior_zones_and_door_open.py`.  
+Tests in `tests/test_smoke.py`: 70 (43 are bv2).  
 Legacy code: not touched outside `static/js/gm/01-core.js` (single-line
 flex-tab addition) and `app/routers/map/files.py` +
 `app/routers/sessions.py` (one-field additions for `sight_range_cells`

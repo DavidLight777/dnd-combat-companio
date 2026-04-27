@@ -110,6 +110,7 @@ def ser_tile(t: BV2Tile) -> dict:
         "tile_type": t.tile_type,
         "blocks_movement": bool(t.blocks_movement),
         "blocks_vision": bool(t.blocks_vision),
+        "is_open": bool(t.is_open),
         "extra": _safe_json(t.extra_json),
     }
 
