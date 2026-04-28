@@ -1768,17 +1768,33 @@ class MapCanvas {
         const radius = light.radius_cells ?? 4;
         const intensity = light.intensity ?? 1.0;
         const visibleSet = this.computeVisibleCells(light.col, light.row, Math.ceil(radius));
+
+        // Phase 12 R2: build a clip path from visible cells, then draw
+        // a smooth radial gradient inside it. This replaces the old
+        // punch-out-per-cell approach that produced stair-stepped light.
+        const path = new Path2D();
         for (const key of visibleSet) {
           const [c, r] = key.split(',').map(Number);
-          const d = Math.sqrt((c - light.col) ** 2 + (r - light.row) ** 2);
-          const alpha = Math.max(0, 1 - d / radius) * intensity * softFactor;
-          if (alpha <= 0) continue;
           const sx = c * gs * this.scale + this.offsetX;
           const sy = r * gs * this.scale + this.offsetY;
           const sz = gs * this.scale;
-          lctx.fillStyle = `rgba(0,0,0,${alpha})`;
-          lctx.fillRect(sx, sy, sz + 1, sz + 1);
+          path.rect(sx, sy, sz + 1, sz + 1);
         }
+
+        lctx.save();
+        lctx.clip(path);
+        const cx = (light.col + 0.5) * gs * this.scale + this.offsetX;
+        const cy = (light.row + 0.5) * gs * this.scale + this.offsetY;
+        const rPx = radius * gs * this.scale;
+        const grad = lctx.createRadialGradient(cx, cy, 0, cx, cy, rPx);
+        grad.addColorStop(0,   `rgba(0,0,0,${intensity * softFactor})`);
+        grad.addColorStop(0.6, `rgba(0,0,0,${intensity * 0.5 * softFactor})`);
+        grad.addColorStop(1,   'rgba(0,0,0,0)');
+        lctx.fillStyle = grad;
+        // Fill a generous rect centred on the light so the gradient
+        // reaches its zero-alpha edge without being clipped early.
+        lctx.fillRect(cx - rPx, cy - rPx, rPx * 2, rPx * 2);
+        lctx.restore();
       }
       lctx.globalCompositeOperation = 'source-over';
     }
