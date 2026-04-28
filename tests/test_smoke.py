@@ -2362,20 +2362,8 @@ async def test_phase11_5_wall_check_uses_character_location(client, session_code
 
 
 # ── Phase 12 (visual overhaul) ─────────────────────
-
-@pytest.mark.asyncio
-async def test_phase12_sprite_assets_present(client):
-    """Each registered sprite path resolves to a real file (200 OK)."""
-    sprites = [
-        "floor_stone.png", "floor_wood.png", "floor_grass.png",
-        "wall_stone.png", "door_closed.png", "door_open.png",
-        "water.png", "lava.png", "pit.png", "rough.png",
-    ]
-    for name in sprites:
-        r = await client.get(f"/static/assets/tiles/{name}")
-        assert r.status_code == 200, f"missing sprite: {name}"
-        assert int(r.headers.get("content-length", "0")) > 0
-
+# NOTE: test_phase12_sprite_assets_present was removed in Phase 13 R1
+# because placeholder tiles were replaced by a Kenney atlas.
 
 @pytest.mark.asyncio
 async def test_phase12_token_image_url_in_payload(client, session_code):
