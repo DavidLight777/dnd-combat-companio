@@ -317,6 +317,12 @@
           <div class="map-toolbar">
             <button class="btn btn-primary btn-sm" id="btn-map-load-library">📂 Load from Library</button>
             <button class="btn btn-danger btn-sm" id="btn-remove-map">🗑 Remove</button>
+            <select id="map-location-switcher"
+                    title="Switch active location"
+                    style="padding:4px 8px;border-radius:4px;background:#1a1814;
+                           color:#fff;border:1px solid #3a3530;font-size:0.75rem">
+              <option value="">— No active location —</option>
+            </select>
             <div class="sep"></div>
             <select id="map-floor-select" class="btn btn-ghost btn-sm" style="min-width:110px"></select>
             <div class="sep"></div>
@@ -354,6 +360,7 @@
           </div>
           <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
             <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
+            <div id="map-lighting-hud" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;padding:4px 8px;border-radius:4px;font-size:0.72rem;pointer-events:none;z-index:5"></div>
           </div>
         </div>
 
@@ -388,6 +395,7 @@
                   <label style="flex:1 0 100%;font-size:0.7rem;margin-top:4px;display:flex;gap:4px;align-items:center">
                     <input id="bv2-loc-indoor" type="checkbox"> Indoor (heavy darkness fallback)
                   </label>
+                  <div id="bv2-lighting-status" style="flex:1 0 100%;margin-top:4px;font-size:0.7rem;font-weight:600;padding:2px 6px;border-radius:4px;width:fit-content">Bright</div>
                 </div>
                 <button id="bv2-btn-apply" class="btn btn-success btn-sm" style="width:100%;margin-top:8px;font-weight:600">▶ Apply to Game</button>
                 <div id="bv2-save-indicator" style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin-top:4px;min-height:14px"></div>
@@ -420,6 +428,7 @@
                   <button class="bv2-brush" data-brush="rough" title="Rough (7)">⛰<span>Rough</span></button>
                   <button class="bv2-brush" data-brush="erase" title="Erase (E)">🧹<span>Erase</span></button>
                   <button class="bv2-brush" data-brush="zone" title="Interior Zone (Z)">▦<span>Zone</span></button>
+                  <button class="bv2-brush" data-brush="building" title="Building: drag rectangle = walls + floor + door + interior zone (B)">🏠<span>Building</span></button>
                 </div>
                 <button id="bv2-btn-clear" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All Tiles</button>
               </div>
@@ -947,16 +956,16 @@
 
   <script src="/static/js/websocket-client.js?v=reworkv4p0"></script>
   <script src="/static/js/character-sheet-core.js?v=reworkv4p0"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv4p0"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv4p2"></script>
   <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
   <script src="/static/js/gm/01-core.js?v=split1"></script>
   <script src="/static/js/gm/02-characters.js?v=split1"></script>
   <script src="/static/js/gm/03-level-up.js?v=split1"></script>
   <script src="/static/js/gm/04-status-effects.js?v=split1"></script>
   <script src="/static/js/gm/05-npc-sidebar.js?v=split1"></script>
-  <script src="/static/js/gm/06-map-main.js?v=split1"></script>
+  <script src="/static/js/gm/06-map-main.js?v=split3"></script>
   <script src="/static/js/gm/07-session-ops.js?v=split1"></script>
-  <script src="/static/js/gm/08-websocket.js?v=split1"></script>
+  <script src="/static/js/gm/08-websocket.js?v=split3"></script>
   <script src="/static/js/gm/09-items.js?v=split1"></script>
   <script src="/static/js/gm/10-ai-chat.js?v=split1"></script>
   <script src="/static/js/gm/11-combat.js?v=split1"></script>
@@ -979,5 +988,6 @@
   <script src="/static/js/builder_v2/80-edges.js?v=bv2-5"></script>
   <script src="/static/js/builder_v2/90-library.js?v=bv2-6"></script>
   <script src="/static/js/builder_v2/95-interiors.js?v=bv2-7"></script>
+  <script src="/static/js/builder_v2/96-building.js?v=bv2-8"></script>
 </body>
 </html>
