@@ -132,6 +132,9 @@ class MapCanvas {
     this.fx = [];
     this._fxAnimId = null;
 
+    // Phase 12 R4: token portrait image cache (url -> HTMLImageElement)
+    this._tokenImgCache = new Map();
+
     this._bindEvents();
     this._resize();
   }
@@ -981,12 +984,26 @@ class MapCanvas {
         ctx.fillText(initials, px, py);
       }
 
-      // HP bar under token
+      // Phase 12 R4: HP ring around token (3-tier colour)
+      if (t.max_hp > 0) {
+        const hpFrac = Math.max(0, Math.min(1,
+          (t.current_hp ?? 1) / Math.max(1, t.max_hp ?? 1)));
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = hpFrac > 0.5 ? '#4caf50'
+                        : hpFrac > 0.25 ? '#ffc107'
+                        : '#f44336';
+        ctx.beginPath();
+        ctx.arc(px, py, radius + 2, -Math.PI / 2,
+                -Math.PI / 2 + Math.PI * 2 * hpFrac);
+        ctx.stroke();
+      }
+
+      // HP bar under token (kept for compatibility)
       if (t.max_hp > 0) {
         const barW = radius * 2;
         const barH = 3 / this.scale;
         const barX = px - radius;
-        const barY = py + radius + 2 / this.scale;
+        const barY = py + radius + 4 / this.scale;
         const pct = t.current_hp / t.max_hp;
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fillRect(barX, barY, barW, barH);

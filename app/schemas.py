@@ -89,6 +89,8 @@ class CharacterUpdate(BaseModel):
     col: Optional[int] = None
     row: Optional[int] = None
     gm_notes: Optional[str] = None
+    # Phase 12 R4: token portrait image URL
+    token_image_url: Optional[str] = None
     # Rework v2: identity (cosmetic) + inventory cap + decline state
     age: Optional[int] = None
     gender: Optional[str] = None

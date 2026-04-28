@@ -2375,3 +2375,19 @@ async def test_phase12_sprite_assets_present(client):
         r = await client.get(f"/static/assets/tiles/{name}")
         assert r.status_code == 200, f"missing sprite: {name}"
         assert int(r.headers.get("content-length", "0")) > 0
+
+
+@pytest.mark.asyncio
+async def test_phase12_token_image_url_in_payload(client, session_code):
+    """token_image_url and HP fields must surface on the map state
+    response so the canvas can render portraits + rings."""
+    char_id = (await client.post("/api/sessions/join",
+        json={"session_code": session_code,
+              "player_name": "Hero"})).json()["character_id"]
+    # Set a portrait url
+    await client.patch(f"/api/characters/{char_id}",
+                       json={"token_image_url": "/static/portraits/test.png"})
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    tok = next(t for t in state["tokens"] if t["character_id"] == char_id)
+    assert tok["token_image_url"] == "/static/portraits/test.png"
+    assert "current_hp" in tok and "max_hp" in tok
