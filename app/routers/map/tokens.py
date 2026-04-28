@@ -98,21 +98,52 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
             .where(BV2Map.is_active == True)  # noqa: E712
         )).scalar_one_or_none()
         if bv2_map:
-            bv2_loc = (await db.execute(
-                select(BV2Location)
-                .where(BV2Location.map_id == bv2_map.id)
-                .where(BV2Location.is_active == True)  # noqa: E712
-            )).scalar_one_or_none()
+            # Phase 11.5 D: sync against the character's current location, not
+            # session-active. Fall back to session-active only when the character
+            # has no location yet (first placement).
+            bv2_loc = None
+            if c.current_location_id:
+                bv2_loc = await db.get(BV2Location, c.current_location_id)
+                # Defensive: must belong to this session's active map
+                if bv2_loc and bv2_loc.map_id != bv2_map.id:
+                    bv2_loc = None
+            if bv2_loc is None:
+                bv2_loc = (await db.execute(
+                    select(BV2Location)
+                    .where(BV2Location.map_id == bv2_map.id)
+                    .where(BV2Location.is_active == True)  # noqa: E712
+                )).scalar_one_or_none()
+
             if bv2_loc and new_x is not None and new_y is not None:
                 cols = max(1, bv2_loc.cols)
                 rows = max(1, bv2_loc.rows)
                 c.col = max(0, min(cols - 1, int(new_x * cols)))
                 c.row = max(0, min(rows - 1, int(new_y * rows)))
-                c.current_location_id = bv2_loc.id
+                c.current_location_id = bv2_loc.id   # idempotent now
     except Exception:
         pass
 
-    if caller_token and move_distance_cells > 0:
+    # Phase 11 R1: edge transition — if the dragged cell sits on a
+    # location boundary AND that boundary has an edge with a target,
+    # teleport to the target's entry cell.
+    edge_transitioned = False
+    old_loc_id = c.current_location_id
+    if bv2_loc and c.col is not None and c.row is not None:
+        from app.routers.builder_v2.edges import _find_matching_edge
+        edge = await _find_matching_edge(db, bv2_loc.id, c.col, c.row)
+        if edge and edge.target_location_id:
+            target = await db.get(BV2Location, edge.target_location_id)
+            if target:
+                edge_transitioned = True
+                c.current_location_id = edge.target_location_id
+                c.col = max(0, min(target.cols - 1, edge.target_entry_col))
+                c.row = max(0, min(target.rows - 1, edge.target_entry_row))
+                # also update legacy pixel position so the immediate
+                # state response reflects the teleport
+                c.map_x = (c.col + 0.5) / max(1, target.cols)
+                c.map_y = (c.row + 0.5) / max(1, target.rows)
+
+    if caller_token and move_distance_cells > 0 and not edge_transitioned:
         c.movement_used_this_turn = (c.movement_used_this_turn or 0.0) + move_distance_cells
     await db.commit()
 
@@ -122,18 +153,27 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
     try:
         sess = await db.get(Session, c.session_id)
         if sess:
-            speed_total = await _effective_speed_cells(c, db)
-            await manager.broadcast_to_session(sess.code, "map.token_moved", {
-                "character_id": c.id,
-                "x": c.map_x,
-                "y": c.map_y,
-                "visible": c.is_visible_on_map,
-                # Phase 4: ship updated movement info with every move so
-                # the client HUD stays accurate without a follow-up GET.
-                "speed_total": speed_total,
-                "movement_used": float(c.movement_used_this_turn or 0.0),
-                "movement_left": max(0.0, speed_total - float(c.movement_used_this_turn or 0.0)),
-            })
+            if edge_transitioned:
+                await manager.broadcast_to_session(
+                    sess.code, "bv2.character_edge_transitioned", {
+                        "character_id": c.id,
+                        "from_location_id": old_loc_id,
+                        "to_location_id": c.current_location_id,
+                        "col": c.col, "row": c.row,
+                    })
+            else:
+                speed_total = await _effective_speed_cells(c, db)
+                await manager.broadcast_to_session(sess.code, "map.token_moved", {
+                    "character_id": c.id,
+                    "x": c.map_x,
+                    "y": c.map_y,
+                    "visible": c.is_visible_on_map,
+                    # Phase 4: ship updated movement info with every move so
+                    # the client HUD stays accurate without a follow-up GET.
+                    "speed_total": speed_total,
+                    "movement_used": float(c.movement_used_this_turn or 0.0),
+                    "movement_left": max(0.0, speed_total - float(c.movement_used_this_turn or 0.0)),
+                })
     except Exception:
         pass
 

@@ -1842,3 +1842,480 @@ async def test_phase9_door_open_persists_and_surfaces(client, session_code):
     state = (await client.get(f"/api/map/{session_code}")).json()
     assert state["active_floor_tiles"]["2,2"]["type"] == "door"
     assert state["active_floor_tiles"]["2,2"]["is_open"] is True
+
+
+# ── Phase 10 (Building tool / Vision / Shadow casting) ───────────
+
+@pytest.mark.asyncio
+async def test_phase10_building_atomic_walls_floor_door_zone(client, session_code):
+    """Simulate the building tool flow: walls + floor + door + interior zone."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "BuildTest"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 20, "rows": 15},
+    )).json()["id"]
+
+    # Simulate a 5x4 building at (2,2) -> (6,5)
+    cMin, rMin, cMax, rMax = 2, 2, 6, 5
+    set_arr = []
+    for c in range(cMin, cMax + 1):
+        set_arr.append({"col": c, "row": rMin, "tile_type": "wall"})
+        set_arr.append({"col": c, "row": rMax, "tile_type": "wall"})
+    for r in range(rMin + 1, rMax):
+        set_arr.append({"col": cMin, "row": r, "tile_type": "wall"})
+        set_arr.append({"col": cMax, "row": r, "tile_type": "wall"})
+    interior_cells = []
+    for c in range(cMin + 1, cMax):
+        for r in range(rMin + 1, rMax):
+            set_arr.append({"col": c, "row": r, "tile_type": "floor"})
+            interior_cells.append({"col": c, "row": r})
+    door_col = (cMin + cMax) // 2
+    door_row = rMax
+    idx = next((i for i, t in enumerate(set_arr) if t["col"] == door_col and t["row"] == door_row), -1)
+    if idx >= 0:
+        set_arr[idx] = {"col": door_col, "row": door_row, "tile_type": "door"}
+
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={"set": set_arr, "erase": []})
+
+    await client.post(f"/api/builder-v2/locations/{loc_id}/interiors", json={
+        "name": "Shop",
+        "kind": "building",
+        "reveal_mode": "on_enter",
+        "cells": interior_cells,
+    })
+
+    full = (await client.get(f"/api/builder-v2/locations/{loc_id}")).json()
+    tiles = full["tiles"]
+    tile_map = {(t["col"], t["row"]): t for t in tiles}
+
+    # Perimeter walls
+    for c in range(cMin, cMax + 1):
+        assert tile_map[(c, rMin)]["tile_type"] == "wall"
+        if c != door_col:
+            assert tile_map[(c, rMax)]["tile_type"] == "wall"
+        assert tile_map[(c, rMin)]["blocks_movement"] is True
+        assert tile_map[(c, rMin)]["blocks_vision"] is True
+    for r in range(rMin + 1, rMax):
+        assert tile_map[(cMin, r)]["tile_type"] == "wall"
+        assert tile_map[(cMax, r)]["tile_type"] == "wall"
+
+    # Door
+    assert tile_map[(door_col, door_row)]["tile_type"] == "door"
+    assert tile_map[(door_col, door_row)]["blocks_movement"] is False
+    assert tile_map[(door_col, door_row)]["blocks_vision"] is False
+
+    # Interior floor
+    for c in range(cMin + 1, cMax):
+        for r in range(rMin + 1, rMax):
+            assert tile_map[(c, r)]["tile_type"] == "floor"
+
+    # Interior zone
+    assert len(full["interiors"]) == 1
+    zone = full["interiors"][0]
+    assert zone["kind"] == "building"
+    assert zone["reveal_mode"] == "on_enter"
+    assert len(zone["cells"]) == len(interior_cells)
+
+
+@pytest.mark.asyncio
+async def test_phase10_lighting_state_in_bridge(client, session_code):
+    """Ambient light, indoor flag, and lights surface correctly on legacy bridge."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "LightTest"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10},
+    )).json()["id"]
+    await client.patch(f"/api/builder-v2/locations/{loc_id}", json={
+        "ambient_light": 0.3, "is_indoor": True,
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/lights", json={
+        "col": 3, "row": 3, "radius_cells": 5, "intensity": 1, "color_hex": "#ffaa00", "source_kind": "torch",
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/lights", json={
+        "col": 7, "row": 7, "radius_cells": 3, "intensity": 0.8, "color_hex": "#00aaff", "source_kind": "magic",
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert state["bv2_ambient_light"] == 0.3
+    assert state["bv2_is_indoor"] is True
+    assert len(state["bv2_lights"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_phase10_shadowcast_light_blocked_by_wall(client, session_code):
+    """Light payload inputs are persisted correctly for client-side shadow cast."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "ShadowTest"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10},
+    )).json()["id"]
+    # Vertical wall at col=5
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles", json={
+        "set": [{"col": 5, "row": r, "tile_type": "wall"} for r in range(2, 8)],
+        "erase": [],
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/lights", json={
+        "col": 3, "row": 4, "radius_cells": 5, "intensity": 1,
+        "color_hex": "#ffaa00", "source_kind": "torch",
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    assert len(state["bv2_lights"]) == 1
+    light = state["bv2_lights"][0]
+    assert light["col"] == 3
+    assert light["row"] == 4
+    assert light["radius_cells"] == 5
+    assert light["intensity"] == 1
+
+
+@pytest.mark.asyncio
+async def test_phase10_visit_roundtrip_with_walls(client, session_code):
+    """POST /visit stores visible_cells; GET returns union."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "VisitTest"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10},
+    )).json()["id"]
+    # Join a character
+    join_r = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "Scout",
+    })
+    char_id = join_r.json()["character_id"]
+
+    await client.post(f"/api/builder-v2/locations/{loc_id}/visit", json={
+        "character_id": char_id,
+        "visible_cells": [[0, 5], [1, 5], [2, 5], [3, 5], [4, 5]],
+    })
+    visit = (await client.get(
+        f"/api/builder-v2/locations/{loc_id}/visit?character_id={char_id}"
+    )).json()
+    tiles = visit["explored_tiles"]
+    assert [0, 5] in tiles
+    assert [1, 5] in tiles
+    assert [2, 5] in tiles
+    assert [3, 5] in tiles
+    assert [4, 5] in tiles
+
+    # Union with new cells
+    await client.post(f"/api/builder-v2/locations/{loc_id}/visit", json={
+        "character_id": char_id,
+        "visible_cells": [[6, 5], [7, 5]],
+    })
+    visit = (await client.get(
+        f"/api/builder-v2/locations/{loc_id}/visit?character_id={char_id}"
+    )).json()
+    tiles = visit["explored_tiles"]
+    assert [0, 5] in tiles
+    assert [1, 5] in tiles
+    assert [2, 5] in tiles
+    assert [3, 5] in tiles
+    assert [4, 5] in tiles
+    assert [6, 5] in tiles
+    assert [7, 5] in tiles
+
+
+@pytest.mark.asyncio
+async def test_phase10_visit_per_character_isolated(client, session_code):
+    """Two characters in the same session have isolated visit states."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "IsoTest"},
+    )).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 8, "rows": 8},
+    )).json()["id"]
+    join_a = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "A",
+    })
+    join_b = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "B",
+    })
+    a_id = join_a.json()["character_id"]
+    b_id = join_b.json()["character_id"]
+
+    await client.post(f"/api/builder-v2/locations/{loc_id}/visit", json={
+        "character_id": a_id, "visible_cells": [[1, 1]],
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/visit", json={
+        "character_id": b_id, "visible_cells": [[2, 2]],
+    })
+
+    va = (await client.get(
+        f"/api/builder-v2/locations/{loc_id}/visit?character_id={a_id}"
+    )).json()
+    vb = (await client.get(
+        f"/api/builder-v2/locations/{loc_id}/visit?character_id={b_id}"
+    )).json()
+    assert [1, 1] in va["explored_tiles"]
+    assert [2, 2] not in va["explored_tiles"]
+    assert [2, 2] in vb["explored_tiles"]
+    assert [1, 1] not in vb["explored_tiles"]
+
+
+@pytest.mark.asyncio
+async def test_wizard_feature_roll_finds_starting_pool_ability(client, session_code):
+    """Step-5 feature roll must find abilities marked is_in_starting_pool."""
+    # Create a starting-pool ability
+    ab = (await client.post("/api/abilities", json={
+        "name": "Test Pool Ability",
+        "rarity": "common",
+        "is_in_starting_pool": True,
+    })).json()
+    assert ab["is_in_starting_pool"] is True
+    assert ab["rarity"] == "common"
+
+    # Join a character
+    join_r = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "Hero",
+    })
+    char_id = join_r.json()["character_id"]
+
+    # Complete steps 1-4 (minimal)
+    ws = (await client.post(f"/api/wizard/{char_id}/stat-choice", json={"declined": False})).json()
+    assert ws["current_step"] == 4
+
+    # Step 5: roll feature — should succeed because we have a common pool ability
+    roll = (await client.post(f"/api/wizard/{char_id}/roll-feature")).json()
+    assert "roll" in roll
+    assert roll["roll"]["rarity"] == "common"
+    assert roll["roll"]["bucket_size"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_wizard_feature_roll_case_insensitive_rarity(client, session_code):
+    """Rarity values should be matched case-insensitively in starting pool."""
+    # Create ability with capitalized rarity (simulates AI-generated or old data)
+    ab = (await client.post("/api/abilities", json={
+        "name": "Mixed Case Rarity",
+        "rarity": "Common",  # capitalized
+        "is_in_starting_pool": True,
+    })).json()
+    assert ab["rarity"] == "common"  # normalized on storage
+
+    join_r = await client.post("/api/sessions/join", json={
+        "session_code": session_code, "player_name": "Hero2",
+    })
+    char_id = join_r.json()["character_id"]
+
+    await client.post(f"/api/wizard/{char_id}/stat-choice", json={"declined": False})
+
+    # Should find the ability even though input was capitalized
+    roll = (await client.post(f"/api/wizard/{char_id}/roll-feature")).json()
+    assert "roll" in roll
+    assert roll["roll"]["rarity"] == "common"
+    assert roll["roll"]["bucket_size"] >= 1
+
+
+# ── Phase 11 (bugfixes) ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_phase11_legacy_drag_triggers_edge_transition(client, session_code):
+    """Dragging a token to an edge cell via PATCH /api/map/token/{id}
+    must teleport to the target location, not just update the row/col."""
+    # Setup: 2 locations linked by an east-west edge
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    loc_a = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10})).json()["id"]
+    loc_b = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10})).json()["id"]
+    await client.post(f"/api/builder-v2/locations/{loc_a}/edges",
+        json={"side": "east", "range_start": 4, "range_end": 6,
+              "target_location_id": loc_b,
+              "target_entry_col": 0, "target_entry_row": 5})
+    await client.post(f"/api/builder-v2/locations/{loc_a}/activate")
+
+    # Join player, force them onto location A
+    char_id = (await client.post("/api/sessions/join",
+        json={"session_code": session_code,
+              "player_name": "Walker"})).json()["character_id"]
+    # Place at col=0, row=5 in loc_a
+    await client.post(f"/api/builder-v2/characters/{char_id}/move-grid",
+        json={"location_id": loc_a, "col": 0, "row": 5})
+
+    # Now drag east via legacy endpoint to col=9 (the east edge)
+    # Pixel coords: x=0.95 (col 9 of 10), y=0.55 (row 5).
+    r = await client.patch(f"/api/map/token/{char_id}",
+        json={"x": 0.95, "y": 0.55})
+    assert r.status_code == 200, r.text
+
+    # Read character — must be in loc_b at the entry cell.
+    r = await client.get(f"/api/characters/{char_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["current_location_id"] == loc_b
+    assert body["col"] == 0
+    assert body["row"] == 5
+
+
+@pytest.mark.asyncio
+async def test_phase11_interior_zone_full_cells_persist(client, session_code):
+    """A zone created with N cells must round-trip with N cells."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10})).json()["id"]
+    # 12 interior cells (4×3) for a 6×5 building
+    cells = [{"col": c, "row": r}
+             for c in range(3, 7) for r in range(3, 6)]
+    assert len(cells) == 12
+    z = (await client.post(
+        f"/api/builder-v2/locations/{loc_id}/interiors",
+        json={"name": "Inn", "kind": "building",
+              "reveal_mode": "on_enter",
+              "cells": cells})).json()
+    assert len(z["cells"]) == 12
+    # And via list endpoint
+    listed = (await client.get(
+        f"/api/builder-v2/locations/{loc_id}/interiors")).json()
+    assert len(listed[0]["cells"]) == 12
+    # And via legacy bridge
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate")
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    bv2_int = state.get("bv2_interiors") or []
+    assert len(bv2_int) == 1
+    assert len(bv2_int[0]["cells"]) == 12
+
+
+@pytest.mark.asyncio
+async def test_phase11_location_activate_emits_ws(client, session_code):
+    """Activating a location must succeed and update the map's active
+    location flag — the dropdown is purely client-side, but the
+    backend contract must be solid."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    loc_a = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 5, "rows": 5})).json()["id"]
+    loc_b = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 5, "rows": 5})).json()["id"]
+
+    # Activate A then B
+    await client.post(f"/api/builder-v2/locations/{loc_a}/activate")
+    locs = (await client.get(
+        f"/api/builder-v2/maps/{map_id}/locations")).json()
+    assert next(l for l in locs if l["id"] == loc_a)["is_active"]
+    assert not next(l for l in locs if l["id"] == loc_b)["is_active"]
+
+    await client.post(f"/api/builder-v2/locations/{loc_b}/activate")
+    locs = (await client.get(
+        f"/api/builder-v2/maps/{map_id}/locations")).json()
+    assert not next(l for l in locs if l["id"] == loc_a)["is_active"]
+    assert next(l for l in locs if l["id"] == loc_b)["is_active"]
+
+
+@pytest.mark.asyncio
+async def test_phase11_5_player_view_follows_character_location(
+        client, session_code):
+    """Player's GET /api/map/{code}?character_id=X returns the
+    character's current_location_id, not the session-active one."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    loc_a = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 8, "rows": 8})).json()["id"]
+    loc_b = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 8, "rows": 8})).json()["id"]
+    # Activate A at the SESSION level
+    await client.post(f"/api/builder-v2/locations/{loc_a}/activate")
+    # Place a character in B (NOT session-active)
+    char_id = (await client.post("/api/sessions/join",
+        json={"session_code": session_code,
+              "player_name": "Walker"})).json()["character_id"]
+    await client.post(
+        f"/api/builder-v2/characters/{char_id}/move-grid",
+        json={"location_id": loc_b, "col": 3, "row": 3})
+
+    # GM (no character_id) sees A
+    gm = (await client.get(f"/api/map/{session_code}")).json()
+    assert gm["bv2_active_location_id"] == loc_a
+
+    # Player (with character_id) sees B
+    pl = (await client.get(
+        f"/api/map/{session_code}?character_id={char_id}")).json()
+    assert pl["bv2_active_location_id"] == loc_b
+
+
+@pytest.mark.asyncio
+async def test_phase11_5_walls_block_vision_in_bridge(client, session_code):
+    """Wall tiles must round-trip with blocks_vision=true so the JS
+    shadowcaster can use them."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    loc_id = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 5, "rows": 5})).json()["id"]
+    await client.patch(f"/api/builder-v2/locations/{loc_id}/tiles",
+        json={"set": [{"col": 2, "row": 2, "tile_type": "wall"}],
+              "erase": []})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate")
+    state = (await client.get(f"/api/map/{session_code}")).json()
+    tile = state["active_floor_tiles"]["2,2"]
+    assert tile["type"] == "wall"
+    assert tile["blocks_vision"] is True
+    assert tile["blocks_movement"] is True
+
+
+@pytest.mark.asyncio
+async def test_phase11_5_step_inside_target_location_does_not_warp_back(
+        client, session_code):
+    """After an edge transition, taking a step inside the new location
+    must NOT reset the character's current_location_id to session-active."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    loc_a = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10})).json()["id"]
+    loc_b = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 8, "rows": 8})).json()["id"]
+    # A is session-active; B is where the character will live
+    await client.post(f"/api/builder-v2/locations/{loc_a}/activate")
+
+    char_id = (await client.post("/api/sessions/join",
+        json={"session_code": session_code,
+              "player_name": "Walker"})).json()["character_id"]
+    # Place character in B (NOT session-active)
+    await client.post(
+        f"/api/builder-v2/characters/{char_id}/move-grid",
+        json={"location_id": loc_b, "col": 4, "row": 4})
+
+    # Take a step via legacy drag (mid-cell of B)
+    # Pixel coords for col=5, row=5 in 8x8: (5.5/8, 5.5/8) ≈ (0.6875, 0.6875)
+    await client.patch(f"/api/map/token/{char_id}",
+                       json={"x": 0.6875, "y": 0.6875})
+
+    # Character must STILL be in B, at col=5 row=5 of B's grid
+    body = (await client.get(f"/api/characters/{char_id}")).json()
+    assert body["current_location_id"] == loc_b, \
+        f"step warped character to {body['current_location_id']} (expected {loc_b})"
+    assert body["col"] == 5
+    assert body["row"] == 5
