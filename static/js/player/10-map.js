@@ -64,6 +64,14 @@ async function _applyMapStateTo(canvas, state) {
   canvas.setEdges(state.bv2_edges || []);
   // Phase 9: interior zones
   canvas.setInteriors(state.bv2_interiors || []);
+  // Phase 10: lighting HUD
+  const hud = document.getElementById('map-lighting-hud');
+  if (hud) {
+    const a = state.bv2_ambient_light ?? 1.0;
+    const indoor = !!state.bv2_is_indoor;
+    const lights = (state.bv2_lights || []).length;
+    hud.textContent = `Lighting: ${indoor ? 'Indoor ' : ''}ambient ${a.toFixed(2)} · ${lights} light${lights === 1 ? '' : 's'}`;
+  }
   canvas.render();
 }
 
@@ -216,8 +224,8 @@ async function _sendOwnTokenMove(charId, x, y) {
       _eachMapCanvas(c => {
         if (c.revealedCells) {
           for (const key of visibleSet) c.revealedCells.add(key);
-          c.render();
         }
+        if (c.setCurrentVisible) c.setCurrentVisible(visibleSet);
       });
     } catch (e) {
       console.warn('bv2 visit update failed:', e);
@@ -294,9 +302,11 @@ function _playerCanvasOptions() {
 }
 
 // ── Main-tab battle grid: init eagerly on page load ─────────────
-function initPlayerMainGrid() {
+async function initPlayerMainGrid() {
   const canvasEl = document.getElementById('player-grid-canvas');
   if (!canvasEl || playerMainGrid) return;
+  // Phase 12 R1: load tile sprites before first render
+  if (window.SpriteRegistry) await window.SpriteRegistry.load();
   playerMainGrid = new MapCanvas(canvasEl, _playerCanvasOptions());
   // First paint with whatever's cached; real data arrives from loadPlayerMapState.
   playerMainGrid._resize();
@@ -352,6 +362,8 @@ $('#btn-open-map').addEventListener('click', async () => {
   const modal = $('#map-modal');
   modal.style.display = 'flex';
   if (!playerMapCanvas) {
+    // Phase 12 R1: load tile sprites before first render
+    if (window.SpriteRegistry) await window.SpriteRegistry.load();
     // Reuse the exact same options (role, ownCharacterId, callbacks)
     // as the embedded Main-tab canvas so both support Phase 2 drag.
     playerMapCanvas = new MapCanvas($('#player-map-canvas'), _playerCanvasOptions());

@@ -60,6 +60,7 @@ class MapCanvas {
     this.gridType = 'square';
     this.fogEnabled = false;
     this.revealedCells = new Set();
+    this.currentVisible = null; // Phase 10 R5: currently visible cells from token vision
 
     // Overlays (Stage 9)
     this.drawings = [];
@@ -639,6 +640,11 @@ class MapCanvas {
     this.render();
   }
 
+  setCurrentVisible(set) {
+    this.currentVisible = set || null;
+    this.render();
+  }
+
   setFogPaintMode(on) {
     this.fogPaintMode = on;
     if (on) this.drawMode = null;
@@ -831,20 +837,38 @@ class MapCanvas {
       const gs = this.gridSize;
       const cols = Math.ceil(this.mapWidth / gs);
       const rows = Math.ceil(this.mapHeight / gs);
+      const isGm = this.role === 'gm';
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
           const key = `${c},${r}`;
-          if (!this.revealedCells.has(key)) {
-            if (this.role === 'gm') {
+          if (isGm) {
+            if (!this.revealedCells.has(key)) {
               ctx.fillStyle = 'rgba(0,0,0,0.5)';
+              ctx.fillRect(c * gs, r * gs, gs, gs);
+            }
+          } else {
+            // Phase 10 R5: three-layer vision (current visible / explored dim / black)
+            const visible = this.currentVisible && this.currentVisible.has(key);
+            const explored = this.revealedCells.has(key);
+            if (visible) {
+              // Currently visible — no overlay
+            } else if (explored) {
+              ctx.fillStyle = 'rgba(0,0,0,0.55)';
+              ctx.fillRect(c * gs, r * gs, gs, gs);
             } else {
               ctx.fillStyle = 'rgba(0,0,0,0.95)';
+              ctx.fillRect(c * gs, r * gs, gs, gs);
             }
-            ctx.fillRect(c * gs, r * gs, gs, gs);
           }
         }
       }
     }
+
+    // Phase 9: interior zone overlay — drawn AFTER fog so the roof
+    // hides interior cells even if they are "explored" in the fog.
+    // Without this ordering, fog's dim overlay (0.55) would paint
+    // over the roof (0.95) and make the building look partially open.
+    this._renderInteriorOverlay(ctx);
 
     // Phase 4: reachable-cell overlay for the player's own token.
     // Drawn BEFORE the tokens so it sits underneath them. Only active
@@ -1019,9 +1043,6 @@ class MapCanvas {
 
     // Phase 8: lighting overlay (drawn in screen space)
     this._renderLightingOverlay(ctx);
-
-    // Phase 9: interior zone overlay
-    this._renderInteriorOverlay(ctx);
 
     ctx.restore();
   }
@@ -1597,35 +1618,28 @@ class MapCanvas {
         ctx.fillText('🌀', c.x, c.y);
       }
     } else {
-      // Square grid
+      // Square grid — Phase 12 R1: sprite-first with colour fallback
+      const _getSprite = (type, raw) => {
+        const reg = window.SpriteRegistry;
+        if (!reg) return null;
+        if (type === 'door') {
+          const isOpen = (typeof raw === 'object' && raw && raw.is_open);
+          return reg.get(isOpen ? 'door_open' : 'door_closed');
+        }
+        return reg.get(type) || null;
+      };
       for (const [key, raw] of Object.entries(this.tiles)) {
         const type = typeof raw === 'string' ? raw : (raw && raw.type) || 'floor';
         const [col, row] = key.split(',').map(Number);
         const px = col * gs, py = row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
-        ctx.fillStyle = colors[type] || colors.floor;
-        ctx.fillRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
-        // Walls get a solid outline + diagonal hatch so they're
-        // unmistakably solid barriers (matches Map wall tool style).
-        if (type === 'wall') {
-          ctx.save();
-          ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-          ctx.lineWidth = 2 / this.scale;
-          ctx.strokeRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
-          ctx.beginPath();
-          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-          ctx.lineWidth = 1 / this.scale;
-          for (let off = -gs; off < gs; off += 8) {
-            ctx.moveTo(px + off,       py);
-            ctx.lineTo(px + off + gs,  py + gs);
-          }
-          ctx.stroke();
-          ctx.restore();
-        }
-        if (icons[type]) {
-          ctx.font = `${gs * 0.55}px sans-serif`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(icons[type], px + gs / 2, py + gs / 2);
+        const sprite = _getSprite(type, raw);
+        if (sprite) {
+          ctx.drawImage(sprite, px, py, gs, gs);
+        } else {
+          // Fallback to solid colour when sprites aren't loaded
+          ctx.fillStyle = colors[type] || colors.floor;
+          ctx.fillRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
         }
       }
       // Traps (square)
@@ -1749,17 +1763,22 @@ class MapCanvas {
 
     if (this.lights.length) {
       lctx.globalCompositeOperation = 'destination-out';
+      const gs = this.gridSize;
       for (const light of this.lights) {
-        const px = (light.col + 0.5) * this.gridSize * this.scale + this.offsetX;
-        const py = (light.row + 0.5) * this.gridSize * this.scale + this.offsetY;
-        const r = (light.radius_cells ?? 4) * this.gridSize * this.scale;
-        const g = lctx.createRadialGradient(px, py, 0, px, py, r);
-        g.addColorStop(0, `rgba(0,0,0,${Math.min(1, (light.intensity ?? 1.0) * softFactor)})`);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        lctx.fillStyle = g;
-        lctx.beginPath();
-        lctx.arc(px, py, r, 0, Math.PI * 2);
-        lctx.fill();
+        const radius = light.radius_cells ?? 4;
+        const intensity = light.intensity ?? 1.0;
+        const visibleSet = this.computeVisibleCells(light.col, light.row, Math.ceil(radius));
+        for (const key of visibleSet) {
+          const [c, r] = key.split(',').map(Number);
+          const d = Math.sqrt((c - light.col) ** 2 + (r - light.row) ** 2);
+          const alpha = Math.max(0, 1 - d / radius) * intensity * softFactor;
+          if (alpha <= 0) continue;
+          const sx = c * gs * this.scale + this.offsetX;
+          const sy = r * gs * this.scale + this.offsetY;
+          const sz = gs * this.scale;
+          lctx.fillStyle = `rgba(0,0,0,${alpha})`;
+          lctx.fillRect(sx, sy, sz + 1, sz + 1);
+        }
       }
       lctx.globalCompositeOperation = 'source-over';
     }
@@ -1773,6 +1792,11 @@ class MapCanvas {
   //   always   -> no overlay
   //   on_enter -> hidden until a player token steps inside.
   // GM always sees a soft preview (lower alpha).
+  //
+  // RENDER ORDER NOTE (Phase 11.5 B): this MUST be called AFTER
+  // `_renderFog` in `render()`. If it runs before fog, the fog's
+  // dim overlay (0.55 for explored cells) paints over the roof
+  // (0.95) and makes the building look partially open.
   _renderInteriorOverlay(ctx) {
     if (!this.interiors || !this.interiors.length) return;
     const gs = this.gridSize;
@@ -1886,6 +1910,36 @@ class MapCanvas {
           ctx.fillRect(c * gs, r * gs, gs, gs);
         }
         ctx.restore();
+      }
+      // Phase 10 R3: GM debug label
+      if (isGm) {
+        const zCells = Array.from(cellSet).map(k => k.split(',').map(Number));
+        if (zCells.length) {
+          const cx = zCells.reduce((s, [c]) => s + c, 0) / zCells.length;
+          const cy = zCells.reduce((s, [, r]) => s + r, 0) / zCells.length;
+          const px = (cx + 0.5) * gs;
+          const py = (cy + 0.5) * gs;
+          let insideCount = 0;
+          const cols = Math.ceil(this.mapWidth / gs);
+          const rows = Math.ceil(this.mapHeight / gs);
+          for (const t of this.tokens) {
+            if (t.is_npc || !t.visible) continue;
+            const tc = Math.floor(t.x * cols);
+            const tr = Math.floor(t.y * rows);
+            if (cellSet.has(`${tc},${tr}`)) insideCount++;
+          }
+          ctx.save();
+          ctx.font = `${Math.max(10, gs * 0.28)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          const label = `${zone.name || 'Zone'} · ${cells.length}c · ${insideCount}in`;
+          const w = ctx.measureText(label).width + 8;
+          ctx.fillRect(px - w / 2, py - gs * 0.2, w, gs * 0.4);
+          ctx.fillStyle = '#fff';
+          ctx.fillText(label, px, py);
+          ctx.restore();
+        }
       }
     }
   }

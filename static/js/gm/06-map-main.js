@@ -12,9 +12,11 @@ let mapFogEnabled = false;
 let mapFogPaintActive = false;
 let gmBv2LocationId = null;
 
-function initMapCanvas() {
+async function initMapCanvas() {
   const canvasEl = $('#map-canvas');
   if (!canvasEl || mapCanvas) return;
+  // Phase 12 R1: load tile sprites before first render
+  if (window.SpriteRegistry) await window.SpriteRegistry.load();
   mapCanvas = new MapCanvas(canvasEl, {
     role: 'gm',
     sessionCode: SESSION_CODE,
@@ -150,6 +152,14 @@ async function loadMapState() {
     mapCanvas.setEdges(state.bv2_edges || []);
     // Phase 9: interior zones
     mapCanvas.setInteriors(state.bv2_interiors || []);
+    // Phase 10: lighting HUD
+    const hud = document.getElementById('map-lighting-hud');
+    if (hud) {
+      const a = state.bv2_ambient_light ?? 1.0;
+      const indoor = !!state.bv2_is_indoor;
+      const lights = (state.bv2_lights || []).length;
+      hud.textContent = `Lighting: ${indoor ? 'Indoor ' : ''}ambient ${a.toFixed(2)} · ${lights} light${lights === 1 ? '' : 's'}`;
+    }
     // Phase 7: bv2 bridge already populated chests/portals when
     // active_floor_id is null. Only fetch legacy builder entities
     // for a legacy floor.
@@ -175,6 +185,7 @@ async function loadMapState() {
       const t = state.grid_type || 'square';
       styleBtn.textContent = t === 'hex' ? 'Style: ⬡ Hex' : 'Style: ▢ Square';
     }
+    refreshLocationSwitcher();
   } catch { /* no map yet */ }
 }
 
@@ -568,5 +579,41 @@ function openTokenEditModal(token) {
     modal.remove();
   });
 }
+
+// Phase 11 R3: location switcher dropdown in Map tab toolbar.
+async function refreshLocationSwitcher() {
+  const sel = document.getElementById('map-location-switcher');
+  if (!sel) return;
+  try {
+    const maps = await api.get(`/api/builder-v2/sessions/${SESSION_CODE}/maps`);
+    const activeMap = maps.find(m => m.is_active);
+    if (!activeMap) {
+      sel.innerHTML = '<option value="">— No active map —</option>';
+      return;
+    }
+    const locs = await api.get(`/api/builder-v2/maps/${activeMap.id}/locations`);
+    sel.innerHTML = '';
+    for (const loc of locs) {
+      const opt = document.createElement('option');
+      opt.value = loc.id;
+      opt.textContent = (loc.name || `Location ${loc.id}`) +
+                        (loc.is_active ? ' (active)' : '');
+      if (loc.is_active) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  } catch { /* no bv2 data yet */ }
+}
+
+// Wire the switcher — activating a location broadcasts
+// bv2.location_activated which already triggers loadMapState().
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('map-location-switcher');
+  if (!sel) return;
+  sel.addEventListener('change', async (e) => {
+    const locId = e.target.value;
+    if (!locId) return;
+    await api.post(`/api/builder-v2/locations/${locId}/activate`);
+  });
+});
 
 // ══════════════════════════════════════════════════════════════
