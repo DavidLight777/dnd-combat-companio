@@ -570,6 +570,10 @@ class MapCanvas {
     this.render();
   }
 
+  // Phase 13 R2: accessor for the bridge to hide/show the Canvas2D
+  // element when an external Pixi renderer takes over.
+  getCanvasElement() { return this.canvas; }
+
   // Draw a single pointy-top hexagon outline centred on (cx, cy).
   _hexPath(ctx, cx, cy, size) {
     ctx.beginPath();
@@ -699,6 +703,10 @@ class MapCanvas {
 
   // ── Rendering ─────────────────────────────────────────────
   render() {
+    // Phase 13 R2: if an external Pixi renderer is driving the
+    // visual, skip the Canvas2D draw path entirely.
+    if (this.useExternalRenderer) return;
+
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;

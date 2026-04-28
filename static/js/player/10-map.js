@@ -308,6 +308,29 @@ async function initPlayerMainGrid() {
   // Phase 12 R1: load tile sprites before first render
   if (window.SpriteRegistry) await window.SpriteRegistry.load();
   playerMainGrid = new MapCanvas(canvasEl, _playerCanvasOptions());
+  // Phase 13 R2: Pixi lockstep bridge (cookie-gated)
+  if (window.USE_PIXI && window.PixiMapRenderer) {
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:2';
+    canvasEl.parentElement.appendChild(host);
+    canvasEl.style.display = 'none';
+    playerMainGrid.useExternalRenderer = true;
+    const pixi = new PixiMapRenderer(host, { role: 'player', gridSize: 50 });
+    window.__pixiRendererPlayer = pixi;
+    const origSetTiles = playerMainGrid.setTiles.bind(playerMainGrid);
+    playerMainGrid.setTiles = (tiles, gridType) => {
+      origSetTiles(tiles, gridType);
+      pixi.mapWidth = playerMainGrid.mapWidth;
+      pixi.mapHeight = playerMainGrid.mapHeight;
+      pixi.setTiles(tiles, gridType);
+    };
+    const origSetGrid = playerMainGrid.setGrid.bind(playerMainGrid);
+    playerMainGrid.setGrid = (size, enabled, type) => {
+      origSetGrid(size, enabled, type);
+      pixi.gridSize = size;
+      pixi.setGridEnabled(enabled);
+    };
+  }
   // First paint with whatever's cached; real data arrives from loadPlayerMapState.
   playerMainGrid._resize();
   loadPlayerMapState();
@@ -366,7 +389,31 @@ $('#btn-open-map').addEventListener('click', async () => {
     if (window.SpriteRegistry) await window.SpriteRegistry.load();
     // Reuse the exact same options (role, ownCharacterId, callbacks)
     // as the embedded Main-tab canvas so both support Phase 2 drag.
-    playerMapCanvas = new MapCanvas($('#player-map-canvas'), _playerCanvasOptions());
+    const modalCanvas = $('#player-map-canvas');
+    playerMapCanvas = new MapCanvas(modalCanvas, _playerCanvasOptions());
+    // Phase 13 R2: Pixi lockstep bridge (cookie-gated)
+    if (window.USE_PIXI && window.PixiMapRenderer) {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:2';
+      modalCanvas.parentElement.appendChild(host);
+      modalCanvas.style.display = 'none';
+      playerMapCanvas.useExternalRenderer = true;
+      const pixi = new PixiMapRenderer(host, { role: 'player', gridSize: 50 });
+      window.__pixiRendererModal = pixi;
+      const origSetTiles = playerMapCanvas.setTiles.bind(playerMapCanvas);
+      playerMapCanvas.setTiles = (tiles, gridType) => {
+        origSetTiles(tiles, gridType);
+        pixi.mapWidth = playerMapCanvas.mapWidth;
+        pixi.mapHeight = playerMapCanvas.mapHeight;
+        pixi.setTiles(tiles, gridType);
+      };
+      const origSetGrid = playerMapCanvas.setGrid.bind(playerMapCanvas);
+      playerMapCanvas.setGrid = (size, enabled, type) => {
+        origSetGrid(size, enabled, type);
+        pixi.gridSize = size;
+        pixi.setGridEnabled(enabled);
+      };
+    }
   }
   playerMapCanvas._resize();
   await loadPlayerMapState();

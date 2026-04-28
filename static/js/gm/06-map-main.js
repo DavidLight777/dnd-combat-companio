@@ -91,6 +91,30 @@ async function initMapCanvas() {
       } catch { showToast('Failed to place wall'); }
     },
   });
+  // Phase 13 R2: Pixi lockstep bridge (cookie-gated)
+  if (window.USE_PIXI && window.PixiMapRenderer) {
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:2';
+    canvasEl.parentElement.appendChild(host);
+    canvasEl.style.display = 'none';
+    mapCanvas.useExternalRenderer = true;
+    const pixi = new PixiMapRenderer(host, { role: 'gm', gridSize: 50 });
+    window.__pixiRenderer = pixi;
+    // Intercept setTiles / setGrid so Pixi stays in sync
+    const origSetTiles = mapCanvas.setTiles.bind(mapCanvas);
+    mapCanvas.setTiles = (tiles, gridType) => {
+      origSetTiles(tiles, gridType);
+      pixi.mapWidth = mapCanvas.mapWidth;
+      pixi.mapHeight = mapCanvas.mapHeight;
+      pixi.setTiles(tiles, gridType);
+    };
+    const origSetGrid = mapCanvas.setGrid.bind(mapCanvas);
+    mapCanvas.setGrid = (size, enabled, type) => {
+      origSetGrid(size, enabled, type);
+      pixi.gridSize = size;
+      pixi.setGridEnabled(enabled);
+    };
+  }
   loadMapState();
 }
 

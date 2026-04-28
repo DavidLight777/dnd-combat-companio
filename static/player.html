@@ -490,12 +490,23 @@
     <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
   </nav>
 
-  <script src="/static/vendor/pixi/pixi.min.js?v=13r1"></script>
-  <script src="/static/js/pixi/00-loader.js?v=13r1"></script>
+  <script src="/static/vendor/pixi/pixi.min.js?v=13r2"></script>
+  <script>
+    window.USE_PIXI = document.cookie.includes('USE_PIXI=1');
+  </script>
   <script src="/static/js/websocket-client.js?v=reworkv3p18"></script>
   <script src="/static/js/character-sheet-core.js?v=reworkv3p18"></script>
   <script src="/static/js/sprite-loader.js?v=12r1"></script>
   <script src="/static/js/map-canvas.js?v=reworkv3p20"></script>
+  <!-- Phase 13 R2: Pixi atlas loader + renderer (cookie-gated) -->
+  <script>
+    if (window.USE_PIXI) {
+      document.write(
+        '<script src="/static/js/pixi/00-loader.js?v=13r2"></script>' +
+        '<script src="/static/js/pixi/10-renderer.js?v=13r2"></script>'
+      );
+    }
+  </script>
   <script src="/static/js/player/01-core.js?v=split1"></script>
   <script src="/static/js/player/02-starting-wizard.js?v=split1"></script>
   <script src="/static/js/player/03-hp-stats.js?v=split1"></script>
