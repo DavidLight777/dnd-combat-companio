@@ -1642,6 +1642,26 @@ class MapCanvas {
           ctx.fillRect(px + 0.5, py + 0.5, gs - 1, gs - 1);
         }
       }
+      // Phase 12 R3: wall drop-shadow for 3D depth
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      for (const [key, raw] of Object.entries(this.tiles)) {
+        const type = typeof raw === 'string' ? raw : (raw && raw.type) || 'floor';
+        if (type !== 'wall') continue;
+        const [col, row] = key.split(',').map(Number);
+        const px = col * gs, py = row * gs;
+        const southKey = `${col},${row + 1}`;
+        const south = this.tiles[southKey];
+        const southType = typeof south === 'string' ? south : (south && south.type) || 'floor';
+        if (southType !== 'wall') {
+          ctx.fillRect(px, py + gs - 2, gs, 2);  // south shadow
+        }
+        const eastKey = `${col + 1},${row}`;
+        const east = this.tiles[eastKey];
+        const eastType = typeof east === 'string' ? east : (east && east.type) || 'floor';
+        if (eastType !== 'wall') {
+          ctx.fillRect(px + gs - 2, py, 2, gs);  // east shadow
+        }
+      }
       // Traps (square)
       for (const t of (this.traps || [])) {
         const px = t.col * gs, py = t.row * gs;
