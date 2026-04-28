@@ -50,8 +50,11 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
         if not await _is_players_turn_or_no_combat(c, db):
             raise HTTPException(403, "Not your turn in combat")
         # Walls ALWAYS block players, in or out of combat.
-        if await _path_is_blocked(c.session_id, c.map_x or 0.0, c.map_y or 0.0,
-                                  new_x or 0.0, new_y or 0.0, db):
+        # Phase 11.5 E: check walls in the character's current location
+        if await _path_is_blocked(
+                c.session_id, c.map_x or 0.0, c.map_y or 0.0,
+                new_x or 0.0, new_y or 0.0, db,
+                location_id=c.current_location_id):
             raise HTTPException(403, "Path is blocked by a wall")
         # Phase 4: speed budget — only while combat is active. Outside
         # combat we let the player roam freely. The check runs BEFORE

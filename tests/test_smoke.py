@@ -2319,3 +2319,43 @@ async def test_phase11_5_step_inside_target_location_does_not_warp_back(
         f"step warped character to {body['current_location_id']} (expected {loc_b})"
     assert body["col"] == 5
     assert body["row"] == 5
+
+
+@pytest.mark.asyncio
+async def test_phase11_5_wall_check_uses_character_location(client, session_code):
+    """A character in Location B must not be blocked by walls that exist
+    in the session-active Location A (where they are NOT standing)."""
+    map_id = (await client.post(
+        f"/api/builder-v2/sessions/{session_code}/maps",
+        json={"name": "M"})).json()["id"]
+    # Location A (session-active) — 10x10 with a wall at (5, 5)
+    loc_a = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10})).json()["id"]
+    await client.patch(f"/api/builder-v2/locations/{loc_a}/tiles",
+        json={"set": [{"col": 5, "row": 5, "tile_type": "wall"}],
+              "erase": []})
+    await client.post(f"/api/builder-v2/locations/{loc_a}/activate")
+    # Location B — 10x10, no walls, character lives here
+    loc_b = (await client.post(
+        f"/api/builder-v2/maps/{map_id}/locations",
+        json={"cols": 10, "rows": 10})).json()["id"]
+
+    char_id = (await client.post("/api/sessions/join",
+        json={"session_code": session_code,
+              "player_name": "Walker"})).json()["character_id"]
+    # Place in B at col=4 row=5
+    await client.post(
+        f"/api/builder-v2/characters/{char_id}/move-grid",
+        json={"location_id": loc_b, "col": 4, "row": 5})
+
+    # Drag to col=5 row=5 in B (same coords as the wall in A)
+    # Pixel: 5.5/10 = 0.55
+    r = await client.patch(f"/api/map/token/{char_id}",
+                           json={"x": 0.55, "y": 0.55})
+    # Must succeed, NOT 403
+    assert r.status_code == 200, \
+        f"step rejected: {r.status_code} {r.text}"
+    body = (await client.get(f"/api/characters/{char_id}")).json()
+    assert body["col"] == 5 and body["row"] == 5
+    assert body["current_location_id"] == loc_b

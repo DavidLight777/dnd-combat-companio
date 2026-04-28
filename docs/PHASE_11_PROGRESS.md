@@ -56,6 +56,13 @@ Three concrete defects discovered during Phase 10 demo playthrough, fixed with n
   - `move_token` now resolves `bv2_loc` from `c.current_location_id` first, falling back to session-active only when the character has no location. This prevents the "snap back to Center" bug after edge transitions.
   - Test: `test_phase11_5_step_inside_target_location_does_not_warp_back`
 
+- [x] **11.5 E — Wall check uses character location**
+  - Commit: `Phase 11.5 E: wall check uses character location`
+  - Date: 2026-04-28
+  - File: `app/routers/map/common.py`, `app/routers/map/tokens.py`
+  - `_path_is_blocked` now accepts `location_id` parameter. `tokens.py` passes `c.current_location_id` so wall checks use the character's current location instead of session-active. Prevents "Path is blocked by a wall" false positives when the session-active location has walls at the same coordinates.
+  - Test: `test_phase11_5_wall_check_uses_character_location`
+
 ## Verification
 
 - `pytest tests/ -q` — 84 tests passing (was 78, +6 new).

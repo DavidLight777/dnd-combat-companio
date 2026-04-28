@@ -139,6 +139,7 @@ async def _effective_speed_cells(character: Character, db: AsyncSession) -> int:
 async def _path_is_blocked(
     session_id: int, x0: float, y0: float, x1: float, y1: float,
     db: AsyncSession,
+    location_id: int | None = None,
 ) -> bool:
     """Return True if the straight line (x0,y0)->(x1,y1) crosses any
     `blocks_movement=True` MapObject rectangle.
@@ -164,17 +165,29 @@ async def _path_is_blocked(
         # every bv2 wall.
         bv2_blocked_cells: set[tuple[int, int]] = set()
         bv2_loc = None
-        bv2_map_row = (await db.execute(
-            select(BV2Map)
-            .where(BV2Map.session_id == session_id)
-            .where(BV2Map.is_active == True)  # noqa: E712
-        )).scalar_one_or_none()
-        if bv2_map_row:
-            bv2_loc = (await db.execute(
-                select(BV2Location)
-                .where(BV2Location.map_id == bv2_map_row.id)
-                .where(BV2Location.is_active == True)  # noqa: E712
+
+        # Phase 11.5 E: prefer the character's own location if provided
+        if location_id is not None:
+            bv2_loc = await db.get(BV2Location, location_id)
+            if bv2_loc:
+                bv2_map_row = await db.get(BV2Map, bv2_loc.map_id)
+                if not bv2_map_row or bv2_map_row.session_id != session_id:
+                    bv2_loc = None
+
+        if bv2_loc is None:
+            # Fallback: session-active location (pre-11.5 behaviour for
+            # callers that don't know the character).
+            bv2_map_row = (await db.execute(
+                select(BV2Map)
+                .where(BV2Map.session_id == session_id)
+                .where(BV2Map.is_active == True)  # noqa: E712
             )).scalar_one_or_none()
+            if bv2_map_row:
+                bv2_loc = (await db.execute(
+                    select(BV2Location)
+                    .where(BV2Location.map_id == bv2_map_row.id)
+                    .where(BV2Location.is_active == True)  # noqa: E712
+                )).scalar_one_or_none()
         if bv2_loc:
             tile_rows = (await db.execute(
                 select(BV2Tile)
