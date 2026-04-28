@@ -130,6 +130,22 @@ a listener that re-fetches state. Existing wirings:
 
 When adding a new mutation endpoint: broadcast → both listeners updated.
 
+## RULE-11 — GM and Player views are independent
+
+`get_map_state` returns DIFFERENT locations for GM (no character_id,
+session-active) vs Player (character_id passed, character's
+current_location_id). Edge transitions move the character but NOT the
+session-active. The GM's location switcher controls ONLY the GM's view.
+
+To force a player to a location, use
+`POST /api/builder-v2/characters/{id}/move-grid` with `location_id`.
+
+## RULE-12 — Cache-bust JS files on every behavioural change
+
+Bump the `?v=N` query string in BOTH gm.html and player.html script
+tags. This is the ONLY reliable way to force connected clients to
+reload modified JS without asking the user to Ctrl+Shift+R.
+
 ---
 
 ## Verification checklist (run before "done")
