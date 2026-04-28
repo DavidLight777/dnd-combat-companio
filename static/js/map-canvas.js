@@ -134,6 +134,9 @@ class MapCanvas {
 
     // Phase 12 R4: token portrait image cache (url -> HTMLImageElement)
     this._tokenImgCache = new Map();
+    // Phase 12 R5: smooth token movement interpolation
+    // charId -> {prevX, prevY, targetX, targetY, startTime}
+    this._tokenAnims = new Map();
 
     this._bindEvents();
     this._resize();
@@ -158,6 +161,19 @@ class MapCanvas {
     });
     if (opts.screenShake) this._triggerScreenShake(type === 'crit' ? 'hard' : 'soft');
     this._startFxLoop();
+  }
+
+  // Phase 12 R5: animate a token to a new position over 200ms.
+  animateTokenTo(charId, x, y) {
+    const t = (this.tokens || []).find(tok => tok.character_id === charId);
+    if (!t) return;
+    this._tokenAnims.set(charId, {
+      prevX: t.x ?? x,
+      prevY: t.y ?? y,
+      targetX: x,
+      targetY: y,
+      startTime: performance.now(),
+    });
   }
 
   // Convenience: find the token for a character_id and play FX there.
@@ -713,18 +729,8 @@ class MapCanvas {
       ctx.restore();
     }
 
-    // Grid
-    //
-    // Many user-uploaded maps come with a square grid already baked
-    // into the texture. At the old opacity (0.12) the canvas overlay
-    // was invisible under that texture, which made the hex toggle
-    // look like "squares still showing". Two fixes applied here:
-    //   1) In hex mode, paint a faint dark wash over the image so the
-    //      baked squares recede and the hex lines can dominate.
-    //   2) Stroke the grid in TWO passes — a dark outline + a bright
-    //      inner line — so it stays legible on any background, bright
-    //      or dark, without squinting.
-    if (this.gridEnabled && this.mapWidth > 0) {
+    // Grid — Phase 12 R5: GM-only. Players see seamless floor textures.
+    if (this.role === 'gm' && this.gridEnabled && this.mapWidth > 0) {
       if (this.gridType === 'hex' && this.mapImage) {
         // Dim the baked-in texture just enough for the hex overlay
         // to read clearly. 18% black is invisible on dark maps and
@@ -910,6 +916,25 @@ class MapCanvas {
           }
         }
         ctx.restore();
+      }
+    }
+
+    // Phase 12 R5: interpolate animated token positions
+    const now = performance.now();
+    for (const [charId, anim] of this._tokenAnims) {
+      const t = (this.tokens || []).find(tok => tok.character_id === charId);
+      if (!t) { this._tokenAnims.delete(charId); continue; }
+      const elapsed = now - anim.startTime;
+      const duration = 200;
+      if (elapsed >= duration) {
+        t.x = anim.targetX;
+        t.y = anim.targetY;
+        this._tokenAnims.delete(charId);
+      } else {
+        const p = elapsed / duration;
+        const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic
+        t.x = anim.prevX + (anim.targetX - anim.prevX) * ease;
+        t.y = anim.prevY + (anim.targetY - anim.prevY) * ease;
       }
     }
 

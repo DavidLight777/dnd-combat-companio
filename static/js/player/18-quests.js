@@ -166,14 +166,16 @@ ws.on('map.token_moved', d => {
   _eachMapCanvas(c => {
     const t = (c.tokens || []).find(x => x.character_id === d.character_id);
     if (!t) return;  // unknown token; next full refresh will add it
-    if (d.x != null) t.x = d.x;
-    if (d.y != null) t.y = d.y;
     if (d.visible != null) t.visible = d.visible;
     // Phase 4: carry over the authoritative movement info so the
     // overlay + HUD stay in sync without a refetch.
     if (d.speed_total   != null) t.speed_total   = d.speed_total;
     if (d.movement_used != null) t.movement_used = d.movement_used;
     if (d.movement_left != null) t.movement_left = d.movement_left;
+    // Phase 12 R5: smooth interpolation instead of snap
+    if (d.x != null && d.y != null) {
+      c.animateTokenTo(d.character_id, d.x, d.y);
+    }
     c.render();
   });
   // Mirror the same fields into the cached state so HUD helpers that

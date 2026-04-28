@@ -41,9 +41,11 @@ ws.on('map.token_moved', d => {
   if (!d || d.character_id == null || !mapCanvas) return;
   const t = (mapCanvas.tokens || []).find(x => x.character_id === d.character_id);
   if (!t) return;
-  if (d.x != null) t.x = d.x;
-  if (d.y != null) t.y = d.y;
   if (d.visible != null) t.visible = d.visible;
+  // Phase 12 R5: smooth interpolation instead of snap
+  if (d.x != null && d.y != null) {
+    mapCanvas.animateTokenTo(d.character_id, d.x, d.y);
+  }
   mapCanvas.render();
 });
 ws.on('map.chest_added', () => { if (typeof loadMapState === 'function') loadMapState(); });
@@ -56,6 +58,11 @@ ws.on('map.portal_deleted', () => { if (typeof loadMapState === 'function') load
 // Phase 7 bridge: refresh GM map when a bv2 map / location is activated.
 ws.on('bv2.map_activated',      () => { if (typeof loadMapState === 'function') loadMapState(); });
 ws.on('bv2.location_activated', () => { if (typeof loadMapState === 'function') loadMapState(); });
+// Phase 11 R1: character walked through an edge transition — reload map
+// so the token appears in the new location.
+ws.on('bv2.character_edge_transitioned', d => {
+  if (typeof loadMapState === 'function') loadMapState();
+});
 
 ws.on('session.state', data => {
   const s = data.session;
