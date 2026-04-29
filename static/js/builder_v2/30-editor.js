@@ -210,8 +210,17 @@
 
   async function deleteCurrentMap() {
     if (!S.currentMapId) return;
+    if (S._deletingMap) return;          // re-entry guard
     const m = S.maps.find(x => x.id === S.currentMapId);
     if (!confirm(`Delete map "${m?.name || ''}" and all its locations?`)) return;
+
+    S._deletingMap = true;
+    const btn = document.getElementById('bv2-btn-delete-map');
+    if (btn) {
+      btn.disabled = true;
+      btn._originalText = btn.textContent;
+      btn.textContent = 'Deleting…';
+    }
     try {
       await S.api.deleteMap(S.currentMapId);
       S.maps = S.maps.filter(x => x.id !== S.currentMapId);
@@ -222,6 +231,13 @@
       else { S.locations = []; renderLocSelect(); updateEmptyMsg(); S.view && S.view.loadLocation({ location: null, tiles: [] }); }
     } catch (e) {
       console.error('bv2 deleteMap', e);
+      alert('Failed to delete map: ' + (e.message || e));
+    } finally {
+      S._deletingMap = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = btn._originalText || 'Delete map';
+      }
     }
   }
 
@@ -248,8 +264,17 @@
 
   async function deleteCurrentLocation() {
     if (!S.currentLocId) return;
+    if (S._deletingLoc) return;          // re-entry guard
     const loc = S.locations.find(x => x.id === S.currentLocId);
     if (!confirm(`Delete location "${loc?.name || ''}"?`)) return;
+
+    S._deletingLoc = true;
+    const btn = document.getElementById('bv2-btn-delete-loc');
+    if (btn) {
+      btn.disabled = true;
+      btn._originalText = btn.textContent;
+      btn.textContent = 'Deleting…';
+    }
     try {
       await S.api.deleteLoc(S.currentLocId);
       S.locations = S.locations.filter(x => x.id !== S.currentLocId);
@@ -259,6 +284,13 @@
       else { S.view.loadLocation({ location: null, tiles: [] }); updateEmptyMsg(); }
     } catch (e) {
       console.error('bv2 deleteLoc', e);
+      alert('Failed to delete location: ' + (e.message || e));
+    } finally {
+      S._deletingLoc = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = btn._originalText || 'Delete';
+      }
     }
   }
 

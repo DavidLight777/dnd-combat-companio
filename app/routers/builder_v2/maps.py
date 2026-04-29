@@ -12,6 +12,8 @@ from app.models import (
     BV2CoverZone,
     BV2Edge,
     BV2Entity,
+    BV2InteriorCell,
+    BV2InteriorZone,
     BV2Light,
     BV2Location,
     BV2Map,
@@ -115,6 +117,12 @@ async def delete_map(map_id: int, db: AsyncSession = Depends(get_session)):
         await db.execute(sa_delete(BV2Light).where(BV2Light.location_id.in_(loc_ids)))
         await db.execute(sa_delete(BV2Edge).where(BV2Edge.location_id.in_(loc_ids)))
         await db.execute(sa_delete(BV2VisitState).where(BV2VisitState.location_id.in_(loc_ids)))
+        # Interior zones/cells explicit cleanup (SQLite ignores ON DELETE CASCADE)
+        zone_ids_q = await db.execute(sa_select(BV2InteriorZone.id).where(BV2InteriorZone.location_id.in_(loc_ids)))
+        zone_ids = [r[0] for r in zone_ids_q.all()]
+        if zone_ids:
+            await db.execute(sa_delete(BV2InteriorCell).where(BV2InteriorCell.zone_id.in_(zone_ids)))
+            await db.execute(sa_delete(BV2InteriorZone).where(BV2InteriorZone.id.in_(zone_ids)))
         await db.execute(sa_delete(BV2Location).where(BV2Location.id.in_(loc_ids)))
 
     await db.delete(m)

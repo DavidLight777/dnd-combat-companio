@@ -1,6 +1,8 @@
 import json
 import os
 import socket
+import subprocess
+import sys
 import threading
 import webbrowser
 from contextlib import asynccontextmanager
@@ -10,6 +12,24 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Static files with aggressive no-cache headers.
+
+    Eliminates the 'I hard-reloaded and still see old code' class of bug.
+    Every JS/CSS/PNG edit is visible on the next normal F5, no Ctrl+Shift+R
+    dance, no manual ?v= bumping. Dev-friendly; for production serve via
+    nginx with proper hash-based asset URLs instead.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
 # Registers SQLAlchemy after_commit listeners that fan out
 # `entity.invalidated` WS events for every DB mutation. Must be imported
@@ -42,6 +62,13 @@ from app.routers.sessions import router as sessions_router
 from app.routers.status_effects import router as status_effects_router
 from app.routers.websocket import router as websocket_router
 from app.routers.wizard import router as wizard_router
+
+# ── Auto cache-bust on startup ───────────────────────────────
+if os.getenv("AUTO_CACHE_BUST", "1") == "1":
+    try:
+        subprocess.run([sys.executable, "scripts/cache_bust.py"], check=False)
+    except Exception as e:
+        print(f"cache_bust skipped: {e}")
 
 # ── Load config ──────────────────────────────────────────────
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
@@ -96,28 +123,35 @@ app.include_router(cards_router)
 app.include_router(chests_router)
 app.include_router(builder_v2_router)
 
-# Static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Static files — no-cache in dev so edits are visible without Ctrl+F5 gymnastics
+app.mount("/static", NoCacheStaticFiles(directory="static"), name="static")
+
+
+def _no_cache(response: FileResponse) -> FileResponse:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/")
 async def root():
-    return FileResponse("static/lobby.html")
+    return _no_cache(FileResponse("static/lobby.html"))
 
 
 @app.get("/gm")
 async def gm_page():
-    return FileResponse("static/gm.html")
+    return _no_cache(FileResponse("static/gm.html"))
 
 
 @app.get("/player")
 async def player_page():
-    return FileResponse("static/player.html")
+    return _no_cache(FileResponse("static/player.html"))
 
 
 @app.get("/settings")
 async def settings_page():
-    return FileResponse("static/settings.html")
+    return _no_cache(FileResponse("static/settings.html"))
 
 
 @app.get("/api/server-info")

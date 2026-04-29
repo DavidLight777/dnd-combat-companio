@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Player</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p18">
-  <link rel="stylesheet" href="/static/css/player.css?v=reworkv3p18">
+  <link rel="stylesheet" href="/static/css/base.css?v=5c9db4df">
+  <link rel="stylesheet" href="/static/css/player.css?v=e7e11905">
 </head>
 <body>
   <!-- ── TOP BAR ──────────────────────────────────────────── -->
@@ -28,8 +28,7 @@
       <span style="font-weight:700;flex:1">🗺️ Map</span>
       <button class="btn btn-ghost btn-sm" id="btn-close-map">✕ Close</button>
     </div>
-    <div style="flex:1;position:relative;overflow:hidden">
-      <canvas id="player-map-canvas" style="display:block;width:100%;height:100%"></canvas>
+    <div id="player-modal-map-slot" style="flex:1;position:relative;overflow:hidden">
       <div id="map-lighting-hud" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.45);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 10px;font-size:0.75rem;font-weight:500;color:#fff;pointer-events:none;z-index:5"></div>
     </div>
   </div>
@@ -490,52 +489,58 @@
     <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
   </nav>
 
-  <script src="/static/vendor/pixi/pixi.min.js?v=13r2"></script>
+  <script src="/static/vendor/pixi/pixi.min.js?v=d94f6636"></script>
   <script>
     window.USE_PIXI = document.cookie.includes('USE_PIXI=1');
   </script>
-  <script src="/static/js/websocket-client.js?v=reworkv3p18"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv3p18"></script>
-  <script src="/static/js/sprite-loader.js?v=12r1"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv3p20"></script>
-  <!-- Phase 13 R2: Pixi atlas loader + renderer (cookie-gated) -->
+  <script src="/static/js/websocket-client.js?v=fa4e4b73"></script>
+  <script src="/static/js/character-sheet-core.js?v=79250ea3"></script>
+  <script src="/static/js/sprite-loader.js?v=c49054d2"></script>
+  <script src="/static/js/map-canvas/index.js?v=02ce9aa2"></script>
+  <script src="/static/js/map-canvas/state.js?v=09516b88"></script>
+  <script src="/static/js/map-canvas/render.js?v=4f5de36d"></script>
+  <script src="/static/js/map-canvas/events.js?v=d32f8a31"></script>
+  <script src="/static/js/map-canvas/lighting.js?v=5d31ca21"></script>
+  <script src="/static/js/map-canvas/hex-math.js?v=e7f00c5a"></script>
+  <script src="/static/js/map-canvas/token-anim.js?v=99deb281"></script>
+  <script src="/static/js/map-canvas/fog.js?v=85919ea5"></script>
   <script>
     if (window.USE_PIXI) {
       document.write(
-        '<script src="/static/js/pixi/00-loader.js?v=13r2"></script>' +
-        '<script src="/static/js/pixi/10-renderer.js?v=13r2"></script>'
+        '<script src="/static/js/pixi/00-loader.js?v=57835e43"><\/script>' +
+        '<script src="/static/js/pixi/10-renderer.js?v=63d16a04"><\/script>'
       );
     }
   </script>
-  <script src="/static/js/player/01-core.js?v=split1"></script>
-  <script src="/static/js/player/02-starting-wizard.js?v=split1"></script>
-  <script src="/static/js/player/03-hp-stats.js?v=split1"></script>
-  <script src="/static/js/player/04-attack.js?v=split1"></script>
-  <script src="/static/js/player/05-damage-recovery.js?v=split1"></script>
-  <script src="/static/js/player/06-turn-effects.js?v=split1"></script>
-  <script src="/static/js/player/07-enemy-calc.js?v=split1"></script>
-  <script src="/static/js/player/08-log-inventory.js?v=split1"></script>
-  <script src="/static/js/player/09-target-picker.js?v=split1"></script>
-  <script src="/static/js/player/10-map.js?v=split3"></script>
-  <script src="/static/js/player/11-status-currency.js?v=split1"></script>
-  <script src="/static/js/player/12-modals-trade.js?v=split1"></script>
-  <script src="/static/js/player/13-websocket.js?v=split3"></script>
-  <script src="/static/js/player/14-combat-banner.js?v=split1"></script>
-  <script src="/static/js/player/15-combat-fx.js?v=split1"></script>
-  <script src="/static/js/player/16-defense.js?v=split1"></script>
-  <script src="/static/js/player/17-char-roll.js?v=split1"></script>
-  <script src="/static/js/player/18-quests.js?v=split1"></script>
-  <script src="/static/js/player/19-chest-portal.js?v=split1"></script>
-  <script src="/static/js/player/20-stage10.js?v=split1"></script>
-  <script src="/static/js/player/21-tabs.js?v=split1"></script>
-  <script src="/static/js/player/22-table-view.js?v=split1"></script>
-  <script src="/static/js/player/23-action-menu.js?v=split1"></script>
-  <script src="/static/js/player/24-reactions.js?v=split1"></script>
-  <script src="/static/js/player/25-bonuses.js?v=split1"></script>
-  <script src="/static/js/player/26-abilities.js?v=split1"></script>
-  <script src="/static/js/player/27-memory.js?v=split1"></script>
-  <script src="/static/js/player/28-free-roll.js?v=split1"></script>
-  <script src="/static/js/player/29-level-up.js?v=split1"></script>
-  <script src="/static/js/player/30-init.js?v=split1"></script>
-</body>
+  <script src="/static/js/player/01-core.js?v=e308169a"></script>
+  <script src="/static/js/player/02-starting-wizard.js?v=666075ab"></script>
+  <script src="/static/js/player/03-hp-stats.js?v=c7692200"></script>
+  <script src="/static/js/player/04-attack.js?v=e9127920"></script>
+  <script src="/static/js/player/05-damage-recovery.js?v=18fb142c"></script>
+  <script src="/static/js/player/06-turn-effects.js?v=09c6eb1f"></script>
+  <script src="/static/js/player/07-enemy-calc.js?v=7657acef"></script>
+  <script src="/static/js/player/08-log-inventory.js?v=6a00ac5b"></script>
+  <script src="/static/js/player/09-target-picker.js?v=62c1f3c3"></script>
+  <script src="/static/js/player/10-map.js?v=7d01e2f8"></script>
+  <script src="/static/js/player/11-status-currency.js?v=0e71b389"></script>
+  <script src="/static/js/player/12-modals-trade.js?v=afbd8c24"></script>
+  <script src="/static/js/player/13-websocket.js?v=35299867"></script>
+  <script src="/static/js/player/14-combat-banner.js?v=0211dbad"></script>
+  <script src="/static/js/player/15-combat-fx.js?v=f14306d5"></script>
+  <script src="/static/js/player/16-defense.js?v=dbcbe565"></script>
+  <script src="/static/js/player/17-char-roll.js?v=f854673f"></script>
+  <script src="/static/js/player/18-quests.js?v=494e4bea"></script>
+  <script src="/static/js/player/19-chest-portal.js?v=b00de555"></script>
+  <script src="/static/js/player/20-stage10.js?v=2ed15bde"></script>
+  <script src="/static/js/player/21-tabs.js?v=c714264a"></script>
+  <script src="/static/js/player/22-table-view.js?v=028a8ff7"></script>
+  <script src="/static/js/player/23-action-menu.js?v=020c5d7b"></script>
+  <script src="/static/js/player/24-reactions.js?v=54295a8c"></script>
+  <script src="/static/js/player/25-bonuses.js?v=d6a2a1c5"></script>
+  <script src="/static/js/player/26-abilities.js?v=a5f5670b"></script>
+  <script src="/static/js/player/27-memory.js?v=32953f7d"></script>
+  <script src="/static/js/player/28-free-roll.js?v=69778117"></script>
+  <script src="/static/js/player/29-level-up.js?v=0312f5c9"></script>
+  <script src="/static/js/player/30-init.js?v=1ba3a611"></script></body>
 </html>
+

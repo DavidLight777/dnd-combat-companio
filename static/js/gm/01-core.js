@@ -113,8 +113,9 @@ $$('.gm-tab').forEach(tab => {
     if (tab.dataset.tab === 'map' || tab.dataset.tab === 'builder' || tab.dataset.tab === 'builder-v2') {
       panel.style.display = 'flex';
       if (tab.dataset.tab === 'map') {
-        initMapCanvas();
-        if (mapCanvas) { mapCanvas._resize(); mapCanvas.render(); }
+        initMapCanvas().then(() => {
+          if (mapCanvas) { mapCanvas._resize(); mapCanvas.render(); }
+        });
       }
     } else {
       panel.style.display = 'block';

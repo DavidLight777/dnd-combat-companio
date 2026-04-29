@@ -18,7 +18,6 @@ loadAnnouncements();
 loadSessionTimer();
 loadGmAbilities();
 loadWizardPending();
-loadBuilder();
 loadMapState();
 loadCards();
 loadChests();

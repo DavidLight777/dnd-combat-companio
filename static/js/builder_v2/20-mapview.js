@@ -208,6 +208,30 @@
       return { x: (col + 0.5) * gs, y: (row + 0.5) * gs };
     }
 
+    _visibleCellRect() {
+      // World-space rect of the canvas
+      const minX = -this.offsetX / this.scale;
+      const minY = -this.offsetY / this.scale;
+      const maxX = (this.canvas.width  - this.offsetX) / this.scale;
+      const maxY = (this.canvas.height - this.offsetY) / this.scale;
+      const gs = this._gridSize();
+      if (this._isHex()) {
+        const rowH = gs * Math.sqrt(3) / 2;
+        return {
+          cMin: Math.max(0, Math.floor(minX / gs) - 1),
+          cMax: Math.min(this._cols() - 1, Math.ceil(maxX / gs) + 1),
+          rMin: Math.max(0, Math.floor(minY / rowH) - 1),
+          rMax: Math.min(this._rows() - 1, Math.ceil(maxY / rowH) + 1),
+        };
+      }
+      return {
+        cMin: Math.max(0, Math.floor(minX / gs) - 1),
+        cMax: Math.min(this._cols() - 1, Math.ceil(maxX / gs) + 1),
+        rMin: Math.max(0, Math.floor(minY / gs) - 1),
+        rMax: Math.min(this._rows() - 1, Math.ceil(maxY / gs) + 1),
+      };
+    }
+
     // ── Rendering ─────────────────────────────────────────────
     render() {
       const ctx = this.ctx;
@@ -244,20 +268,20 @@
         const [c, r] = key.split(',').map(Number);
         const type = typeof tile === 'string' ? tile : tile.tile_type;
         const visual = TILE_VISUAL[type] || TILE_VISUAL.floor;
-        const cx = isHex ? gs * (c + r / 2) : c * gs;
-        const cy = isHex ? gs * (sqrt3 / 2 * r) : r * gs;
 
         if (isHex) {
-          this._hexPath(ctx, cx, cy, hexSize - 1);
+          const ctr = this._tileCenterPx(c, r);
+          this._hexPath(ctx, ctr.x, ctr.y, hexSize - 1);
           ctx.fillStyle = visual.color;
           ctx.fill();
           if (visual.outline) {
             ctx.strokeStyle = visual.outline;
             ctx.lineWidth = 2 / this.scale;
-            this._hexPath(ctx, cx, cy, hexSize - 1);
+            this._hexPath(ctx, ctr.x, ctr.y, hexSize - 1);
             ctx.stroke();
           }
         } else {
+          const cx = c * gs, cy = r * gs;
           ctx.fillStyle = visual.color;
           ctx.fillRect(cx + 0.5, cy + 0.5, gs - 1, gs - 1);
           if (visual.outline) {
@@ -266,7 +290,7 @@
             ctx.strokeRect(cx + 1, cy + 1, gs - 2, gs - 2);
           }
           if (visual.glow) {
-            const grad = ctx.createRadialGradient(cx + gs / 2, cy + gs / 2, 0, cx + gs / 2, cy + gs / 2, gs);
+            const grad = ctx.createRadialGradient(cx + gs/2, cy + gs/2, 0, cx + gs/2, cy + gs/2, gs);
             grad.addColorStop(0, visual.glow);
             grad.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = grad;
@@ -277,7 +301,7 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#fff';
-            ctx.fillText(visual.icon, cx + gs / 2, cy + gs / 2);
+            ctx.fillText(visual.icon, cx + gs/2, cy + gs/2);
           }
         }
       }
@@ -286,28 +310,21 @@
     _drawFOV(ctx) {
       if (!this.visibleSet || !this.exploredSet) return;
       const gs = this._gridSize();
-      const cols = this._cols();
-      const rows = this._rows();
       const isHex = this._isHex();
-      const sqrt3 = Math.sqrt(3);
-      const hexSize = gs / sqrt3;
+      const hexSize = gs / Math.sqrt(3);
+      const rect = this._visibleCellRect();
 
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
+      for (let r = rect.rMin; r <= rect.rMax; r++) {
+        for (let c = rect.cMin; c <= rect.cMax; c++) {
           const key = `${c},${r}`;
           if (this.visibleSet.has(key)) continue;
-          const cx = isHex ? gs * (c + r / 2) : c * gs;
-          const cy = isHex ? gs * (sqrt3 / 2 * r) : r * gs;
-          if (this.exploredSet.has(key)) {
-            ctx.fillStyle = 'rgba(0,0,0,0.55)';
-          } else {
-            ctx.fillStyle = '#000';
-          }
+          ctx.fillStyle = this.exploredSet.has(key) ? 'rgba(0,0,0,0.55)' : '#000';
           if (isHex) {
-            this._hexPath(ctx, cx, cy, hexSize - 1);
+            const ctr = this._tileCenterPx(c, r);
+            this._hexPath(ctx, ctr.x, ctr.y, hexSize - 1);
             ctx.fill();
           } else {
-            ctx.fillRect(cx, cy, gs, gs);
+            ctx.fillRect(c * gs, r * gs, gs, gs);
           }
         }
       }
@@ -337,22 +354,22 @@
       }
 
       // Apply darkness overlay based on computed illumination
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
+      const rect = this._visibleCellRect();
+      for (let r = rect.rMin; r <= rect.rMax; r++) {
+        for (let c = rect.cMin; c <= rect.cMax; c++) {
           const val = illum[r][c];
           if (val >= 0.7) continue;
-          const cx = isHex ? gs * (c + r / 2) : c * gs;
-          const cy = isHex ? gs * (Math.sqrt(3) / 2 * r) : r * gs;
           if (val < 0.2) {
             ctx.fillStyle = 'rgba(0,0,0,0.92)';
           } else {
             ctx.fillStyle = `rgba(0,0,0,${0.3 * (0.7 - val)})`;
           }
           if (isHex) {
-            this._hexPath(ctx, cx, cy, gs / Math.sqrt(3) - 1);
+            const ctr = this._tileCenterPx(c, r);
+            this._hexPath(ctx, ctr.x, ctr.y, gs / Math.sqrt(3) - 1);
             ctx.fill();
           } else {
-            ctx.fillRect(cx, cy, gs, gs);
+            ctx.fillRect(c * gs, r * gs, gs, gs);
           }
         }
       }
@@ -368,10 +385,14 @@
           if (!permanent) continue;
         }
         const visual = ENTITY_VISUAL[ent.entity_type] || { icon: '?', color: '#fff' };
-        const cx = isHex ? gs * (ent.col + ent.row / 2) : ent.col * gs;
-        const cy = isHex ? gs * (Math.sqrt(3) / 2 * ent.row) : ent.row * gs;
-        const centerX = cx + gs / 2;
-        const centerY = cy + gs / 2;
+        let centerX, centerY;
+        if (isHex) {
+          const ctr = this._tileCenterPx(ent.col, ent.row);
+          centerX = ctr.x; centerY = ctr.y;
+        } else {
+          centerX = ent.col * gs + gs / 2;
+          centerY = ent.row * gs + gs / 2;
+        }
         const radius = gs * 0.35;
 
         // Highlight if hovered
@@ -405,10 +426,14 @@
       const isHex = this._isHex();
       for (const ch of this.characters) {
         if (ch.col == null || ch.row == null) continue;
-        const cx = isHex ? gs * (ch.col + ch.row / 2) : ch.col * gs;
-        const cy = isHex ? gs * (Math.sqrt(3) / 2 * ch.row) : ch.row * gs;
-        const centerX = cx + gs / 2;
-        const centerY = cy + gs / 2;
+        let centerX, centerY;
+        if (isHex) {
+          const ctr = this._tileCenterPx(ch.col, ch.row);
+          centerX = ctr.x; centerY = ctr.y;
+        } else {
+          centerX = ch.col * gs + gs / 2;
+          centerY = ch.row * gs + gs / 2;
+        }
         const radius = gs * 0.3;
         ctx.beginPath();
         ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
@@ -438,11 +463,10 @@
       for (const key of this.pendingZoneCells) {
         const [c, r] = key.split(',').map(Number);
         if (isHex) {
-          const cx = gs * (c + r / 2);
-          const cy = gs * (Math.sqrt(3) / 2 * r);
-          this._hexPath(ctx, cx, cy, gs / Math.sqrt(3) - 1);
+          const ctr = this._tileCenterPx(c, r);
+          this._hexPath(ctx, ctr.x, ctr.y, gs / Math.sqrt(3) - 1);
           ctx.fill();
-          this._hexPath(ctx, cx, cy, gs / Math.sqrt(3) - 1);
+          this._hexPath(ctx, ctr.x, ctr.y, gs / Math.sqrt(3) - 1);
           ctx.stroke();
         } else {
           ctx.fillRect(c * gs + 0.5, r * gs + 0.5, gs - 1, gs - 1);
@@ -454,6 +478,11 @@
 
     _drawGrid(ctx) {
       const gs = this._gridSize();
+      const cellPx = gs * this.scale;
+      // If a cell renders smaller than 6px on screen, the grid is
+      // visual noise, not information. Skip it. User can still zoom in.
+      if (cellPx < 6) return;
+
       const cols = this._cols();
       const rows = this._rows();
       ctx.strokeStyle = 'rgba(255,255,255,0.08)';
@@ -462,24 +491,26 @@
       if (this._isHex()) {
         const sqrt3 = Math.sqrt(3);
         const size = gs / sqrt3;
-        for (let r = 0; r < rows; r++) {
-          for (let c = 0; c < cols; c++) {
+        const rect = this._visibleCellRect();
+        for (let r = rect.rMin; r <= rect.rMax; r++) {
+          for (let c = rect.cMin; c <= rect.cMax; c++) {
             const { x, y } = this._tileCenterPx(c, r);
             this._hexPath(ctx, x, y, size);
             ctx.stroke();
           }
         }
       } else {
-        for (let c = 0; c <= cols; c++) {
+        const rect = this._visibleCellRect();
+        for (let c = rect.cMin; c <= rect.cMax + 1; c++) {
           ctx.beginPath();
-          ctx.moveTo(c * gs, 0);
-          ctx.lineTo(c * gs, rows * gs);
+          ctx.moveTo(c * gs, rect.rMin * gs);
+          ctx.lineTo(c * gs, (rect.rMax + 1) * gs);
           ctx.stroke();
         }
-        for (let r = 0; r <= rows; r++) {
+        for (let r = rect.rMin; r <= rect.rMax + 1; r++) {
           ctx.beginPath();
-          ctx.moveTo(0, r * gs);
-          ctx.lineTo(cols * gs, r * gs);
+          ctx.moveTo(rect.cMin * gs, r * gs);
+          ctx.lineTo((rect.cMax + 1) * gs, r * gs);
           ctx.stroke();
         }
       }

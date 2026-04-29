@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv4p0">
-  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv4p2">
+  <link rel="stylesheet" href="/static/css/base.css?v=5c9db4df">
+  <link rel="stylesheet" href="/static/css/gm.css?v=11d6d857">
 </head>
 <body>
 
@@ -954,54 +954,60 @@
   </label>
 </div>
 
-  <script src="/static/vendor/pixi/pixi.min.js?v=13r2"></script>
+  <script src="/static/vendor/pixi/pixi.min.js?v=d94f6636"></script>
   <script>
     window.USE_PIXI = document.cookie.includes('USE_PIXI=1');
   </script>
-  <script src="/static/js/websocket-client.js?v=reworkv4p0"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv4p0"></script>
-  <script src="/static/js/sprite-loader.js?v=12r1"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv4p2"></script>
-  <!-- Phase 13 R2: Pixi atlas loader + renderer (cookie-gated) -->
+  <script src="/static/js/websocket-client.js?v=fa4e4b73"></script>
+  <script src="/static/js/character-sheet-core.js?v=79250ea3"></script>
+  <script src="/static/js/sprite-loader.js?v=c49054d2"></script>
+  <script src="/static/js/map-canvas/index.js?v=02ce9aa2"></script>
+  <script src="/static/js/map-canvas/state.js?v=09516b88"></script>
+  <script src="/static/js/map-canvas/render.js?v=4f5de36d"></script>
+  <script src="/static/js/map-canvas/events.js?v=d32f8a31"></script>
+  <script src="/static/js/map-canvas/lighting.js?v=5d31ca21"></script>
+  <script src="/static/js/map-canvas/hex-math.js?v=e7f00c5a"></script>
+  <script src="/static/js/map-canvas/token-anim.js?v=99deb281"></script>
+  <script src="/static/js/map-canvas/fog.js?v=85919ea5"></script>
   <script>
     if (window.USE_PIXI) {
       document.write(
-        '<script src="/static/js/pixi/00-loader.js?v=13r2"><\/script>' +
-        '<script src="/static/js/pixi/10-renderer.js?v=13r2"><\/script>'
+        '<script src="/static/js/pixi/00-loader.js?v=57835e43"><\/script>' +
+        '<script src="/static/js/pixi/10-renderer.js?v=63d16a04"><\/script>'
       );
     }
-  </script>
-  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
-  <script src="/static/js/gm/01-core.js?v=split1"></script>
-  <script src="/static/js/gm/02-characters.js?v=split1"></script>
-  <script src="/static/js/gm/03-level-up.js?v=split1"></script>
-  <script src="/static/js/gm/04-status-effects.js?v=split1"></script>
-  <script src="/static/js/gm/05-npc-sidebar.js?v=split1"></script>
-  <script src="/static/js/gm/06-map-main.js?v=split3"></script>
-  <script src="/static/js/gm/07-session-ops.js?v=split1"></script>
-  <script src="/static/js/gm/08-websocket.js?v=split3"></script>
-  <script src="/static/js/gm/09-items.js?v=split1"></script>
-  <script src="/static/js/gm/10-ai-chat.js?v=split1"></script>
-  <script src="/static/js/gm/11-combat.js?v=split1"></script>
-  <script src="/static/js/gm/12-races-classes.js?v=split1"></script>
-  <script src="/static/js/gm/13-quests.js?v=split1"></script>
-  <script src="/static/js/gm/14-npc-library.js?v=split1"></script>
-  <script src="/static/js/gm/15-meta-stage10.js?v=split1"></script>
-  <script src="/static/js/gm/16-abilities.js?v=split1"></script>
-  <script src="/static/js/gm/17-npc-panels.js?v=split1"></script>
-  <script src="/static/js/gm/19-chests.js?v=split1"></script>
-  <script src="/static/js/gm/20-init.js?v=split1"></script>
-  <script src="/static/js/builder_v2/00-state.js?v=bv2-1"></script>
-  <script src="/static/js/builder_v2/10-api.js?v=bv2-1"></script>
-  <script src="/static/js/builder_v2/20-mapview.js?v=bv2-1"></script>
-  <script src="/static/js/builder_v2/30-editor.js?v=bv2-1"></script>
-  <script src="/static/js/builder_v2/40-websocket.js?v=bv2-1"></script>
-  <script src="/static/js/builder_v2/50-entities.js?v=bv2-2"></script>
-  <script src="/static/js/builder_v2/60-fov.js?v=bv2-3"></script>
-  <script src="/static/js/builder_v2/70-lights.js?v=bv2-4"></script>
-  <script src="/static/js/builder_v2/80-edges.js?v=bv2-5"></script>
-  <script src="/static/js/builder_v2/90-library.js?v=bv2-6"></script>
-  <script src="/static/js/builder_v2/95-interiors.js?v=bv2-7"></script>
-  <script src="/static/js/builder_v2/96-building.js?v=bv2-8"></script>
+  </script>  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
+  <script src="/static/js/gm/01-core.js?v=93197955"></script>
+  <script src="/static/js/gm/02-characters.js?v=77050435"></script>
+  <script src="/static/js/gm/03-level-up.js?v=c7001bc4"></script>
+  <script src="/static/js/gm/04-status-effects.js?v=990f9e4d"></script>
+  <script src="/static/js/gm/05-npc-sidebar.js?v=124a08ba"></script>
+  <script src="/static/js/gm/06-map-main.js?v=64252abd"></script>
+  <script src="/static/js/gm/07-session-ops.js?v=458b41e4"></script>
+  <script src="/static/js/gm/08-websocket.js?v=06e99d87"></script>
+  <script src="/static/js/gm/09-items.js?v=d916d660"></script>
+  <script src="/static/js/gm/10-ai-chat.js?v=3a6ce006"></script>
+  <script src="/static/js/gm/11-combat.js?v=e42458ed"></script>
+  <script src="/static/js/gm/12-races-classes.js?v=c90bcad8"></script>
+  <script src="/static/js/gm/13-quests.js?v=a3737178"></script>
+  <script src="/static/js/gm/14-npc-library.js?v=84546120"></script>
+  <script src="/static/js/gm/15-meta-stage10.js?v=bd282fba"></script>
+  <script src="/static/js/gm/16-abilities.js?v=0f651965"></script>
+  <script src="/static/js/gm/17-npc-panels.js?v=8d30c997"></script>
+  <script src="/static/js/gm/19-chests.js?v=a2298fe5"></script>
+  <script src="/static/js/gm/20-init.js?v=df88a1f4"></script>
+  <script src="/static/js/builder_v2/00-state.js?v=66efba55"></script>
+  <script src="/static/js/builder_v2/10-api.js?v=3c76e9e0"></script>
+  <script src="/static/js/builder_v2/20-mapview.js?v=6df06f73"></script>
+  <script src="/static/js/builder_v2/30-editor.js?v=991bda66"></script>
+  <script src="/static/js/builder_v2/40-websocket.js?v=0831c400"></script>
+  <script src="/static/js/builder_v2/50-entities.js?v=5a87cc81"></script>
+  <script src="/static/js/builder_v2/60-fov.js?v=8d02af1e"></script>
+  <script src="/static/js/builder_v2/70-lights.js?v=d7d01a8f"></script>
+  <script src="/static/js/builder_v2/80-edges.js?v=af63cb44"></script>
+  <script src="/static/js/builder_v2/90-library.js?v=eee7c1f5"></script>
+  <script src="/static/js/builder_v2/95-interiors.js?v=000be9fd"></script>
+  <script src="/static/js/builder_v2/96-building.js?v=335dae43"></script>
 </body>
 </html>
+
