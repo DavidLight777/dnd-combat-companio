@@ -166,7 +166,7 @@ tests + a manual smoke-test screenshot handed to Cascade in chat
 before starting the next.
 
 ### R1 — Polygon-based light shapes with soft edges
-**Done — `5c9fdd7`**
+**Done — `cccac31`**
 
 **Goal:** replace cell-based clip path with a true ray-cast polygon.
 End result: gentle curves where walls cut the light, not stair
