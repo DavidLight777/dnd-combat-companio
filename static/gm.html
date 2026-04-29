@@ -6,6 +6,17 @@
   <title>Combat Companion — Game Master</title>
   <link rel="stylesheet" href="/static/css/base.css?v=5c9db4df">
   <link rel="stylesheet" href="/static/css/gm.css?v=11d6d857">
+  <style>
+    @keyframes pulse-border {
+      0%   { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+      70%  { box-shadow: 0 0 0 6px rgba(255, 193, 7, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+    }
+    .zone-highlight {
+      animation: pulse-border 2s ease-out;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
 
@@ -427,7 +438,7 @@
                   <button class="bv2-brush" data-brush="door"  title="Door (6)">🚪<span>Door</span></button>
                   <button class="bv2-brush" data-brush="rough" title="Rough (7)">⛰<span>Rough</span></button>
                   <button class="bv2-brush" data-brush="erase" title="Erase (E)">🧹<span>Erase</span></button>
-                  <button class="bv2-brush" data-brush="zone" title="Interior Zone (Z)">▦<span>Zone</span></button>
+                  <button class="bv2-brush" data-brush="zone" title="Zone — marks an interior area (room, building). Assign a roof via the Interiors panel.">▦<span>Zone</span></button>
                   <button class="bv2-brush" data-brush="building" title="Building: drag rectangle = walls + floor + door + interior zone (B)">🏠<span>Building</span></button>
                 </div>
                 <button id="bv2-btn-clear" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All Tiles</button>
@@ -962,7 +973,7 @@
   <script src="/static/js/map-canvas/state.js?v=1e92a56c"></script>
   <script src="/static/js/map-canvas/render.js?v=4f5de36d"></script>
   <script src="/static/js/map-canvas/events.js?v=d32f8a31"></script>
-  <script src="/static/js/map-canvas/lighting.js?v=b24328fb"></script>
+  <script src="/static/js/map-canvas/lighting.js?v=db298f9c"></script>
   <script src="/static/js/map-canvas/hex-math.js?v=e7f00c5a"></script>
   <script src="/static/js/map-canvas/token-anim.js?v=99deb281"></script>
   <script src="/static/js/map-canvas/fog.js?v=85919ea5"></script>
@@ -988,7 +999,7 @@
   <script src="/static/js/gm/20-init.js?v=df88a1f4"></script>
   <script src="/static/js/builder_v2/00-state.js?v=66efba55"></script>
   <script src="/static/js/builder_v2/10-api.js?v=3c76e9e0"></script>
-  <script src="/static/js/builder_v2/20-mapview.js?v=6df06f73"></script>
+  <script src="/static/js/builder_v2/20-mapview.js?v=03dafd0f"></script>
   <script src="/static/js/builder_v2/30-editor.js?v=991bda66"></script>
   <script src="/static/js/builder_v2/40-websocket.js?v=0831c400"></script>
   <script src="/static/js/builder_v2/50-entities.js?v=74756da7"></script>
@@ -996,7 +1007,7 @@
   <script src="/static/js/builder_v2/70-lights.js?v=a359d82b"></script>
   <script src="/static/js/builder_v2/80-edges.js?v=b574baa0"></script>
   <script src="/static/js/builder_v2/90-library.js?v=eee7c1f5"></script>
-  <script src="/static/js/builder_v2/95-interiors.js?v=742d5f83"></script>
+  <script src="/static/js/builder_v2/95-interiors.js?v=6e72efbb"></script>
   <script src="/static/js/builder_v2/96-building.js?v=1653fc40"></script>
 </body>
 </html>

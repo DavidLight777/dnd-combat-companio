@@ -88,6 +88,7 @@ ws.on('status_effect.expired', d => {
 // Phase 9: character walked through an edge transition
 ws.on('bv2.character_edge_transitioned', d => {
   if (d.character_id == CHAR_ID) {
+    showToast('You move to a new area…');
     loadPlayerMapState();
   }
 });

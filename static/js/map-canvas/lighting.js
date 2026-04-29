@@ -38,8 +38,8 @@
     const poly = this._raycastPolygon(cxWorld, cyWorld, radiusPx, blocksAt, 120);
     const sx = cxWorld * this.scale + this.offsetX;
     const sy = cyWorld * this.scale + this.offsetY;
-    const rPx = radiusPx * this.scale;
-    const brightPx = bright * gs * this.scale;
+    const rPx = (isFinite(radiusPx) && radiusPx > 0 ? radiusPx : 1) * this.scale;
+    const brightPx = (isFinite(bright) && bright > 0 ? bright : 0) * gs * this.scale;
 
     // Polygon clip
     lctx.save();
