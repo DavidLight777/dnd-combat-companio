@@ -427,6 +427,7 @@ likely here.
 ---
 
 ### R2 — Coloured lights, bright/dim radii, additive blending
+**Done — `f1d1bb5`**
 
 **Goal:** lights tint their area with their `color_hex`.
 Overlapping lights blend additively. Introduce `bright_radius_cells`

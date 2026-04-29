@@ -38,12 +38,17 @@ async def create_light(location_id: int, body: dict, db: AsyncSession = Depends(
     col = max(0, min(loc.cols - 1, int(body.get("col", 0))))
     row = max(0, min(loc.rows - 1, int(body.get("row", 0))))
 
+    radius = max(0.5, min(50.0, float(body.get("radius_cells", 6.0))))
+    bright = body.get("bright_radius_cells")
+    if bright is not None:
+        bright = max(0.0, min(radius, float(bright)))
     li = BV2Light(
         location_id=location_id,
         character_id=None,
         col=col,
         row=row,
-        radius_cells=max(0.5, min(50.0, float(body.get("radius_cells", 6.0)))),
+        radius_cells=radius,
+        bright_radius_cells=bright if bright is not None else 0.0,
         color_hex=str(body.get("color_hex") or "#ffd9a0")[:9],
         intensity=max(0.0, min(5.0, float(body.get("intensity", 1.0)))),
         source_kind=str(body.get("source_kind") or "torch")[:20],
@@ -81,6 +86,8 @@ async def update_light(light_id: int, body: dict, db: AsyncSession = Depends(get
         li.row = max(0, min(loc.rows - 1, int(body["row"])))
     if "radius_cells" in body:
         li.radius_cells = max(0.5, min(50.0, float(body["radius_cells"])))
+    if "bright_radius_cells" in body:
+        li.bright_radius_cells = max(0.0, min(li.radius_cells, float(body["bright_radius_cells"])))
     if "color_hex" in body:
         li.color_hex = str(body["color_hex"])[:9]
     if "intensity" in body:
@@ -139,12 +146,17 @@ async def attach_light_to_character(
     if not character:
         raise HTTPException(404, "Character not found")
 
+    radius = max(0.5, min(50.0, float(body.get("radius_cells", 6.0))))
+    bright = body.get("bright_radius_cells")
+    if bright is not None:
+        bright = max(0.0, min(radius, float(bright)))
     li = BV2Light(
         location_id=None,
         character_id=character_id,
         col=0,
         row=0,
-        radius_cells=max(0.5, min(50.0, float(body.get("radius_cells", 6.0)))),
+        radius_cells=radius,
+        bright_radius_cells=bright if bright is not None else 0.0,
         color_hex=str(body.get("color_hex") or "#ffd9a0")[:9],
         intensity=max(0.0, min(5.0, float(body.get("intensity", 1.0)))),
         source_kind=str(body.get("source_kind") or "torch")[:20],

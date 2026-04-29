@@ -79,6 +79,7 @@
     const colEl = $('bv2-light-col');
     const rowEl = $('bv2-light-row');
     const radiusEl = $('bv2-light-radius');
+    const brightEl = $('bv2-light-bright');
     const colorEl = $('bv2-light-color');
     const intensityEl = $('bv2-light-intensity');
     const kindEl = $('bv2-light-kind');
@@ -91,6 +92,7 @@
       rowEl.value = createOpts.row;
       const preset = LIGHT_PRESETS[createOpts.preset] || LIGHT_PRESETS.torch;
       radiusEl.value = preset.radius_cells;
+      brightEl.value = '0';
       colorEl.value = preset.color_hex;
       intensityEl.value = preset.intensity;
       kindEl.value = createOpts.preset;
@@ -101,6 +103,7 @@
       colEl.value = li.col;
       rowEl.value = li.row;
       radiusEl.value = li.radius_cells;
+      brightEl.value = (li.bright_radius_cells != null ? li.bright_radius_cells : 0);
       colorEl.value = li.color_hex;
       intensityEl.value = li.intensity;
       kindEl.value = li.source_kind;
@@ -118,12 +121,15 @@
     if (Number.isNaN(row)) row = 0;
     let radius = parseFloat($('bv2-light-radius').value);
     if (Number.isNaN(radius)) radius = 4;
+    let bright = parseFloat($('bv2-light-bright').value);
+    if (Number.isNaN(bright)) bright = 0;
     let intensity = parseFloat($('bv2-light-intensity').value);
     if (Number.isNaN(intensity)) intensity = 1.0;
     const body = {
       col: col,
       row: row,
       radius_cells: radius,
+      bright_radius_cells: bright,
       color_hex: $('bv2-light-color').value || '#ffd9a0',
       intensity: intensity,
       source_kind: $('bv2-light-kind').value || 'torch',
