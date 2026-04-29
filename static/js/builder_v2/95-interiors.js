@@ -19,6 +19,16 @@
     }
     const section = $('bv2-interior-section');
     if (section) section.style.display = on ? 'block' : 'none';
+    // Highlight the Interiors panel header for 2s when Zone is selected
+    const header = section && section.querySelector('div');
+    if (header) {
+      header.classList.remove('zone-highlight');
+      if (on) {
+        void header.offsetWidth; // force reflow
+        header.classList.add('zone-highlight');
+        setTimeout(() => header.classList.remove('zone-highlight'), 2000);
+      }
+    }
   }
 
   function toggleZoneCell(col, row) {

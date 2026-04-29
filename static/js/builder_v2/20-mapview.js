@@ -192,7 +192,10 @@
     }
 
     _inBounds(col, row) {
-      return col >= 0 && row >= 0 && col < this._cols() && row < this._rows();
+      const cols = this._cols();
+      const rows = this._rows();
+      if (!cols || !rows) return true; // no bounds set = allow
+      return col >= 0 && row >= 0 && col < cols && row < rows;
     }
 
     _tileCenterPx(col, row) {
@@ -676,8 +679,9 @@
           } else if (brush.startsWith('light:')) {
             // Light brush mode
             const { col, row } = this._screenToTile(e.offsetX, e.offsetY);
-            if (this._inBounds(col, row) && typeof S.openLightModal === 'function') {
-              S.openLightModal(null, 'create', { col, row, preset: brush.replace('light:', '') });
+            const bv2 = window.bv2;
+            if (this._inBounds(col, row) && bv2 && typeof bv2.openLightModal === 'function') {
+              bv2.openLightModal(null, 'create', { col, row, preset: brush.replace('light:', '') });
             }
           } else if (ent && !e.shiftKey) {
             // Non-entity brush clicking on entity = edit entity

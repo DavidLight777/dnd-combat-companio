@@ -31,6 +31,7 @@ TILE_DEFAULTS: dict[str, dict] = {
     "pit":   {"blocks_movement": True,  "blocks_vision": False},
     "door":  {"blocks_movement": False, "blocks_vision": False},  # default open
     "rough": {"blocks_movement": False, "blocks_vision": False},
+    "zone":  {"blocks_movement": False, "blocks_vision": False},  # interior marker
 }
 
 VALID_ENTITY_TYPES: set[str] = {
