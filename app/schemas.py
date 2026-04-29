@@ -6,6 +6,7 @@ from pydantic import BaseModel
 # ── Session ──────────────────────────────────────────────────
 class SessionCreate(BaseModel):
     name: str = "New Session"
+    code: str | None = None
 
 
 class SessionJoin(BaseModel):

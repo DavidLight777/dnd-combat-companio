@@ -41,14 +41,20 @@ def _generate_code() -> str:
 # ── Create session ───────────────────────────────────────────
 @router.post("/create", response_model=SessionCreated)
 async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_session)):
-    # Generate unique code
-    for _ in range(20):
-        code = _generate_code()
+    code = body.code
+    if code:
         existing = await db.execute(select(Session).where(Session.code == code))
-        if not existing.scalar_one_or_none():
-            break
+        if existing.scalar_one_or_none():
+            raise HTTPException(400, "Session code already exists")
     else:
-        raise HTTPException(500, "Could not generate unique session code")
+        # Generate unique code
+        for _ in range(20):
+            code = _generate_code()
+            existing = await db.execute(select(Session).where(Session.code == code))
+            if not existing.scalar_one_or_none():
+                break
+        else:
+            raise HTTPException(500, "Could not generate unique session code")
 
     gm_token = secrets.token_hex(16)
     session = Session(code=code, name=body.name, gm_token=gm_token)

@@ -40,6 +40,8 @@ VALID_ENTITY_TYPES: set[str] = {
     "npc_spawn",
     "cover_zone",
     "light_marker",
+    "stairs_down",
+    "furniture",
 }
 
 
