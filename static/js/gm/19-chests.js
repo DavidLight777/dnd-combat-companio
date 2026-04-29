@@ -539,23 +539,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (openLibBtn) {
     openLibBtn.addEventListener('click', openLibraryModal);
   }
-  // Tab switch hook
-  $$('.gm-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      if (tab.dataset.tab === 'builder') {
-        if (!builderCanvas) {
-          const el = document.getElementById('builder-canvas');
-          if (el) builderCanvas = new BuilderCanvas(el);
-        }
-        loadBuilder().then(async () => {
-          if (!builderFloors.length) {
-            await createBuilderFloor(false);
-          }
-          if (builderCanvas) builderCanvas._resize();
-        });
-      }
-    });
-  });
   // Map tab floor switcher
   const mapFloorSel = document.getElementById('map-floor-select');
   if (mapFloorSel) {

@@ -5,22 +5,14 @@
 
 // MAP / BATTLE GRID  (Rework v3 Phase 1)
 // ══════════════════════════════════════════════════════════════
-// The player now has two canvases of the same map:
-//   • `playerMainGrid` — always-on, embedded in the Main tab (primary view).
-//   • `playerMapCanvas` — legacy modal, opened on demand for a fullscreen
-//     look. Both are fed from a single `loadPlayerMapState()` so they
-//     never drift; every WS map event fans out to both.
-// Token click on the main grid selects it as the combat target (same
-// `selectedTargetId` path as the old chip cards used), so the Actions
-// panel keeps working without any changes downstream.
-let playerMapCanvas = null;  // modal fullscreen
+// The player has a single canvas that moves between the Main tab
+// and the fullscreen modal. State lives in one place — no drift.
 let playerMainGrid  = null;  // always-on, in Main tab
 let _lastMapState   = null;  // cached for re-renders after tab switch
 
-// Iterate both canvases in one place.
+// Iterate the single player canvas in one place.
 function _eachMapCanvas(fn) {
-  if (playerMainGrid)  fn(playerMainGrid);
-  if (playerMapCanvas) fn(playerMapCanvas);
+  if (playerMainGrid) fn(playerMainGrid);
 }
 
 // Apply a freshly fetched /api/map state to a canvas (or all of them).
@@ -165,8 +157,7 @@ async function loadPlayerMapState() {
       : 'no map';
   }
   // Apply to each live canvas.
-  if (playerMainGrid)  await _applyMapStateTo(playerMainGrid,  state);
-  if (playerMapCanvas) await _applyMapStateTo(playerMapCanvas, state);
+  if (playerMainGrid) await _applyMapStateTo(playerMainGrid, state);
   // Phase 4: once the fresh tokens are on-canvas, push the updated
   // speed/movement numbers into the overlay + HUD.
   if (typeof _refreshMovementBudget === 'function') _refreshMovementBudget();
@@ -221,12 +212,12 @@ async function _sendOwnTokenMove(charId, x, y) {
         body: JSON.stringify({ character_id: CHAR_ID, visible_cells: visibleCells }),
       });
       // Merge into local revealedCells for instant UI feedback.
-      _eachMapCanvas(c => {
-        if (c.revealedCells) {
-          for (const key of visibleSet) c.revealedCells.add(key);
+      if (playerMainGrid) {
+        if (playerMainGrid.revealedCells) {
+          for (const key of visibleSet) playerMainGrid.revealedCells.add(key);
         }
-        if (c.setCurrentVisible) c.setCurrentVisible(visibleSet);
-      });
+        if (playerMainGrid.setCurrentVisible) playerMainGrid.setCurrentVisible(visibleSet);
+      }
     } catch (e) {
       console.warn('bv2 visit update failed:', e);
     }
@@ -247,7 +238,7 @@ function _computeCanPlayerMove() {
 
 function _refreshMovementGating() {
   const can = _computeCanPlayerMove();
-  _eachMapCanvas(c => c.setCanPlayerMove(can));
+  if (playerMainGrid) playerMainGrid.setCanPlayerMove(can);
   _refreshMovementBudget();
 }
 
@@ -265,7 +256,7 @@ function _refreshMovementBudget() {
       left  = Number(own.movement_left ?? total);
     }
   }
-  _eachMapCanvas(c => c.setMovementBudget(left, total));
+  if (playerMainGrid) playerMainGrid.setMovementBudget(left, total);
   // HUD text in the grid panel header.
   const hud = document.getElementById('player-grid-status');
   if (hud) {
@@ -278,7 +269,7 @@ function _refreshMovementBudget() {
   }
 }
 
-// Common constructor options shared by both player canvases.
+// Common constructor options for the player canvas.
 function _playerCanvasOptions() {
   return {
     role: 'player',
@@ -357,23 +348,28 @@ async function initPlayerMainGrid() {
   });
 })();
 
-// ── Fullscreen modal (kept as a convenience) ────────────────────
-$('#btn-open-map').addEventListener('click', async () => {
+// ── Fullscreen modal: move the single canvas into modal and back ─
+$('#btn-open-map').addEventListener('click', () => {
   const modal = $('#map-modal');
   modal.style.display = 'flex';
-  if (!playerMapCanvas) {
-    // Phase 12 R1: load tile sprites before first render
-    if (window.SpriteRegistry) await window.SpriteRegistry.load();
-    // Reuse the exact same options (role, ownCharacterId, callbacks)
-    // as the embedded Main-tab canvas so both support Phase 2 drag.
-    playerMapCanvas = new MapCanvas($('#player-map-canvas'), _playerCanvasOptions());
+  const modalSlot = $('#player-modal-map-slot');
+  if (modalSlot && $('#player-grid-canvas')) {
+    modalSlot.insertBefore($('#player-grid-canvas'), modalSlot.firstChild);
+    requestAnimationFrame(() => {
+      if (playerMainGrid) { playerMainGrid._resize(); playerMainGrid.centerView(); }
+    });
   }
-  playerMapCanvas._resize();
-  await loadPlayerMapState();
 });
 
 $('#btn-close-map').addEventListener('click', () => {
   $('#map-modal').style.display = 'none';
+  const mainSlot = $('#player-grid-wrap');
+  if (mainSlot && $('#player-grid-canvas')) {
+    mainSlot.appendChild($('#player-grid-canvas'));
+    requestAnimationFrame(() => {
+      if (playerMainGrid) { playerMainGrid._resize(); }
+    });
+  }
 });
 
 // Phase 7 bridge: refresh map when GM activates a bv2 map / location.

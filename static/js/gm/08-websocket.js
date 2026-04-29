@@ -64,6 +64,34 @@ ws.on('bv2.character_edge_transitioned', d => {
   if (typeof loadMapState === 'function') loadMapState();
 });
 
+// Live-sync: refresh the Map tab on every builder mutation. Builder v2
+// already broadcasts these via app/routers/builder_v2/*; the Map tab
+// just needs to listen. Coalesced so a tile-paint burst doesn't spam
+// loadMapState. 200ms feels instant to humans.
+let _bv2MapRefreshScheduled = false;
+function _scheduleBv2MapRefresh() {
+  if (_bv2MapRefreshScheduled) return;
+  _bv2MapRefreshScheduled = true;
+  setTimeout(() => {
+    _bv2MapRefreshScheduled = false;
+    if (typeof loadMapState === 'function') loadMapState();
+  }, 200);
+}
+[
+  'bv2.map_added', 'bv2.map_updated', 'bv2.map_deleted',
+  'bv2.location_added', 'bv2.location_updated', 'bv2.location_deleted',
+  'bv2.tiles_patched', 'bv2.tiles_replaced',
+  'bv2.entity_added', 'bv2.entity_updated', 'bv2.entity_deleted',
+  'bv2.light_added', 'bv2.light_updated', 'bv2.light_deleted',
+  'bv2.edge_added', 'bv2.edge_updated', 'bv2.edge_deleted',
+  'bv2.portal_added', 'bv2.portal_updated', 'bv2.portal_deleted',
+  'bv2.interior_zone_added', 'bv2.interior_zone_updated', 'bv2.interior_zone_deleted',
+  'bv2.cover_zone_added', 'bv2.cover_zone_updated', 'bv2.cover_zone_deleted',
+  'bv2.chest_added', 'bv2.chest_updated', 'bv2.chest_deleted',
+  'bv2.trap_added', 'bv2.trap_updated', 'bv2.trap_deleted',
+  'bv2.npc_spawn_added', 'bv2.npc_spawn_updated', 'bv2.npc_spawn_deleted',
+].forEach(evt => ws.on(evt, _scheduleBv2MapRefresh));
+
 ws.on('session.state', data => {
   const s = data.session;
   $('#session-name').textContent = s.name;
