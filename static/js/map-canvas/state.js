@@ -92,7 +92,14 @@
 
   MapCanvas.prototype.setIndoor = function(v) { this.isIndoor = !!v; this.render(); }
 
-  MapCanvas.prototype.setLights = function(arr) { this.lights = arr || []; this.render(); }
+  MapCanvas.prototype.setLights = function(arr) {
+    this.lights = arr || [];
+    const animated = this.lights.some(function(l) {
+      return l.source_kind === 'torch' || l.source_kind === 'magic';
+    });
+    if (animated) this._startLightAnim(); else this._stopLightAnim();
+    this.render();
+  }
 
   MapCanvas.prototype.setEdges = function(arr) { this.edges = arr || []; this.render(); }
 

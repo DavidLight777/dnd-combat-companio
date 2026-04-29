@@ -1,62 +1,4 @@
 (function () {
-  // Phase 13 REDO R1 — legacy cell-based lighting (kept for reference).
-  // TODO: delete in R3 final.
-  MapCanvas.prototype._renderLightingOverlay_legacy = function(ctx) {
-    const isGm = this.role === 'gm';
-    const softFactor = isGm ? 0.35 : 1.0;
-    const darkAlpha = (this.isIndoor ? 0.88 : Math.max(0, 1 - (this.ambientLight ?? 1.0))) * softFactor;
-    if (darkAlpha <= 0 && !this.lights.length) return;
-
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    if (!this._lightLayer) {
-      this._lightLayer = document.createElement('canvas');
-      this._lightLayerCtx = this._lightLayer.getContext('2d');
-    }
-    this._lightLayer.width = w;
-    this._lightLayer.height = h;
-    const lctx = this._lightLayerCtx;
-
-    lctx.clearRect(0, 0, w, h);
-    lctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
-    lctx.fillRect(0, 0, w, h);
-
-    if (this.lights.length) {
-      lctx.globalCompositeOperation = 'destination-out';
-      const gs = this.gridSize;
-      for (const light of this.lights) {
-        const radius = light.radius_cells ?? 4;
-        const intensity = light.intensity ?? 1.0;
-        const visibleSet = this.computeVisibleCells(light.col, light.row, Math.ceil(radius));
-
-        const path = new Path2D();
-        for (const key of visibleSet) {
-          const [c, r] = key.split(',').map(Number);
-          const sx = c * gs * this.scale + this.offsetX;
-          const sy = r * gs * this.scale + this.offsetY;
-          const sz = gs * this.scale;
-          path.rect(sx, sy, sz + 1, sz + 1);
-        }
-
-        lctx.save();
-        lctx.clip(path);
-        const cx = (light.col + 0.5) * gs * this.scale + this.offsetX;
-        const cy = (light.row + 0.5) * gs * this.scale + this.offsetY;
-        const rPx = radius * gs * this.scale;
-        const grad = lctx.createRadialGradient(cx, cy, 0, cx, cy, rPx);
-        grad.addColorStop(0,   `rgba(0,0,0,${intensity * softFactor})`);
-        grad.addColorStop(0.6, `rgba(0,0,0,${intensity * 0.5 * softFactor})`);
-        grad.addColorStop(1,   'rgba(0,0,0,0)');
-        lctx.fillStyle = grad;
-        lctx.fillRect(cx - rPx, cy - rPx, rPx * 2, rPx * 2);
-        lctx.restore();
-      }
-      lctx.globalCompositeOperation = 'source-over';
-    }
-
-    ctx.drawImage(this._lightLayer, 0, 0);
-  }
-
   function _hexToRgb(hex) {
     const h = hex.replace('#', '');
     return {
@@ -67,15 +9,32 @@
   }
 
   // Phase 13 REDO R2 — coloured additive lighting with bright/dim radii.
+  // Phase 13 REDO R3 — animation perturbation added.
   MapCanvas.prototype._drawOneLight = function(lctx, light, blocksAt) {
     const gs = this.gridSize;
     const radius = light.radius_cells ?? 4;
     const bright = (light.bright_radius_cells && light.bright_radius_cells > 0)
         ? light.bright_radius_cells
         : radius * 0.5;
-    const radiusPx = radius * gs;
+    let radiusPx = radius * gs;
     const cxWorld = (light.col + 0.5) * gs;
     const cyWorld = (light.row + 0.5) * gs;
+
+    // Phase 13 REDO R3: perturb intensity / radius per source_kind.
+    let intensityMod = 1.0, radiusMod = 1.0;
+    const phase = this._lightAnimPhase || 0;
+    if (light.source_kind === 'torch') {
+      // Value-noise flicker at ~8Hz, ±10%
+      const n = Math.sin(phase * 8 + light.id * 1.7) * 0.5
+              + Math.sin(phase * 13 + light.id * 0.3) * 0.5;
+      intensityMod = 1 + n * 0.1;
+    } else if (light.source_kind === 'magic') {
+      // Pulse at 2Hz, ±5% radius
+      radiusMod = 1 + Math.sin(phase * 2 * Math.PI * 2 + light.id) * 0.05;
+    }
+    const intensity = Math.min(1.5, (light.intensity ?? 1.0) * intensityMod);
+    radiusPx = radiusPx * radiusMod;
+
     const poly = this._raycastPolygon(cxWorld, cyWorld, radiusPx, blocksAt, 120);
     const sx = cxWorld * this.scale + this.offsetX;
     const sy = cyWorld * this.scale + this.offsetY;
@@ -95,7 +54,6 @@
 
     // Colour gradient. Bright radius = full colour, dim = fade out.
     const rgb = _hexToRgb(light.color_hex || '#ffd9a0');
-    const intensity = Math.min(1.5, light.intensity ?? 1.0);
     const a0 = 1.0 * intensity;
     const a1 = 0.5 * intensity;
     const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, rPx);
@@ -123,7 +81,12 @@
     dctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
     dctx.fillRect(0, 0, w, h);
 
-    if (!this.lights.length) {
+    const hasLights = this.lights.length > 0;
+    const hasTokenVision = (this.tokens || []).some(function(t) {
+      return t.sight_range_cells && t.sight_range_cells > 0;
+    });
+
+    if (!hasLights && !hasTokenVision) {
       ctx.drawImage(this._darkLayer, 0, 0);
       return;
     }
@@ -135,6 +98,23 @@
     for (const light of this.lights) {
       this._drawOneLight(lctx, light, blocksAt);
     }
+
+    // Phase 13 REDO R3: token-carried vision as colourless lights
+    for (const t of this.tokens) {
+      if (!t.sight_range_cells || t.sight_range_cells <= 0) continue;
+      const fake = {
+        id: -t.character_id,
+        col: Math.floor(t.x * this.mapWidth / this.gridSize),
+        row: Math.floor(t.y * this.mapHeight / this.gridSize),
+        radius_cells: t.sight_range_cells,
+        bright_radius_cells: t.sight_range_cells * 0.5,
+        color_hex: '#ffffff',
+        intensity: 0.8,
+        source_kind: 'sight',
+      };
+      this._drawOneLight(lctx, fake, blocksAt);
+    }
+
     lctx.globalCompositeOperation = 'source-over';
 
     // ── Subtract light from darkness ──
@@ -143,13 +123,37 @@
     dctx.globalCompositeOperation = 'source-over';
 
     // ── Composite onto the main canvas ──
-    // Step A: darken the map where unlit.
     ctx.drawImage(this._darkLayer, 0, 0);
-    // Step B: multiply the map by the coloured light (tints it).
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(this._lightLayer, 0, 0);
     ctx.restore();
+  }
+
+  // Phase 13 REDO R3 — RAF animation loop for light sources.
+  MapCanvas.prototype._startLightAnim = function() {
+    if (this._lightRaf) return;
+    const tick = () => {
+      this._lightAnimPhase = performance.now() / 1000;
+      // Throttle re-render to ~30fps to avoid CPU hogging.
+      if (!this._lightAnimFramePending) {
+        this._lightAnimFramePending = true;
+        requestAnimationFrame(() => {
+          this._lightAnimFramePending = false;
+          this.render();
+        });
+      }
+      this._lightRaf = requestAnimationFrame(tick);
+    };
+    this._lightRaf = requestAnimationFrame(tick);
+  }
+
+  MapCanvas.prototype._stopLightAnim = function() {
+    if (this._lightRaf) {
+      cancelAnimationFrame(this._lightRaf);
+      this._lightRaf = null;
+    }
+    this._lightAnimFramePending = false;
   }
 
   // ── Phase 9: interior zone overlay ──────────────────────────
