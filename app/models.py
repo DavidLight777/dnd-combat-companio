@@ -1400,6 +1400,8 @@ class BV2Light(Base):
     col: Mapped[int] = mapped_column(Integer, default=0)
     row: Mapped[int] = mapped_column(Integer, default=0)
     radius_cells: Mapped[float] = mapped_column(Float, default=6.0)
+    bright_radius_cells: Mapped[float] = mapped_column(Float, default=0.0)
+    # 0.0 = auto (radius_cells * 0.5). >0 = explicit.
     color_hex: Mapped[str] = mapped_column(String(9), default="#ffd9a0")
     intensity: Mapped[float] = mapped_column(Float, default=1.0)
     source_kind: Mapped[str] = mapped_column(String(20), default="torch")

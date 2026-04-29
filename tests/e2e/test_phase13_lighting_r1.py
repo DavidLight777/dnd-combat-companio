@@ -50,16 +50,14 @@ def _seed_lighting_canvas(page: Page, grid_type: str):
         mc.setLights([light]);
         mc.render();
 
-        // Read the offscreen light layer directly — the main canvas has an
-        // opaque background fill, so alpha there is always 255.  The light
-        // layer alpha directly tells us how much darkness remains.
-        const lctx = mc._lightLayer.getContext('2d');
-        // Sample just inside the wall cell (close to the light so the
-        // gradient still has meaningful alpha).  With the old cell-based
-        // clip-path the wall cell itself is lit; with ray-cast it is dark.
+        // In R2 the darkness lives on _darkLayer and light is subtracted
+        // from it with destination-out.  A pixel inside the wall cell
+        // should still be dark (high alpha) because the ray-cast polygon
+        // stops at the wall edge and does not punch a hole there.
+        const dctx = mc._darkLayer.getContext('2d');
         const sx = gridType === 'hex' ? 101 : 401;
         const sy = gridType === 'hex' ? 0  : 275;
-        const d = lctx.getImageData(sx, sy, 1, 1).data;
+        const d = dctx.getImageData(sx, sy, 1, 1).data;
         return d[3]; // alpha channel
     }""", grid_type)
 

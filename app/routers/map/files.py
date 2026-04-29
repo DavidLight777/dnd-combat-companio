@@ -268,18 +268,22 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
 
     # Lights
     lights_q = await db.execute(select(BV2Light).where(BV2Light.location_id == loc.id))
-    lights = [
-        {
+    lights = []
+    for li in lights_q.scalars().all():
+        radius = float(li.radius_cells) if li.radius_cells is not None else 0.0
+        bright = float(li.bright_radius_cells) if li.bright_radius_cells is not None else 0.0
+        if bright <= 0:
+            bright = radius * 0.5
+        lights.append({
             "id": li.id,
             "col": li.col,
             "row": li.row,
-            "radius_cells": li.radius_cells,
+            "radius_cells": radius,
+            "bright_radius_cells": bright,
             "color_hex": li.color_hex,
             "intensity": li.intensity,
             "source_kind": li.source_kind,
-        }
-        for li in lights_q.scalars().all()
-    ]
+        })
 
     # Edges
     edges_q = await db.execute(select(BV2Edge).where(BV2Edge.location_id == loc.id))

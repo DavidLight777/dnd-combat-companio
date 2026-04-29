@@ -89,6 +89,8 @@ class MapCanvas {
     this.edges = [];
     this._lightLayer = null;
     this._lightLayerCtx = null;
+    this._darkLayer = null;
+    this._darkLayerCtx = null;
 
     // Transform
     this.offsetX = 0;
@@ -390,14 +392,16 @@ MapCanvas.prototype._makeBlocksAt = function() {
   };
 };
 
-MapCanvas.prototype._ensureLightLayer = function(w, h) {
-  if (!this._lightLayer) {
-    this._lightLayer = document.createElement('canvas');
-    this._lightLayerCtx = this._lightLayer.getContext('2d');
+MapCanvas.prototype._ensureLayer = function(kind, w, h) {
+  const layerProp = kind === 'dark' ? '_darkLayer' : '_lightLayer';
+  const ctxProp = kind === 'dark' ? '_darkLayerCtx' : '_lightLayerCtx';
+  if (!this[layerProp]) {
+    this[layerProp] = document.createElement('canvas');
+    this[ctxProp] = this[layerProp].getContext('2d');
   }
-  if (this._lightLayer.width !== w || this._lightLayer.height !== h) {
-    this._lightLayer.width = w;
-    this._lightLayer.height = h;
+  if (this[layerProp].width !== w || this[layerProp].height !== h) {
+    this[layerProp].width = w;
+    this[layerProp].height = h;
   }
 };
 

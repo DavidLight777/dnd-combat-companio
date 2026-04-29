@@ -129,13 +129,18 @@ def ser_entity(e: BV2Entity) -> dict:
 
 
 def ser_light(li: BV2Light) -> dict:
+    radius = float(li.radius_cells) if li.radius_cells is not None else 0.0
+    bright = float(li.bright_radius_cells) if li.bright_radius_cells is not None else 0.0
+    if bright <= 0:
+        bright = radius * 0.5
     return {
         "id": li.id,
         "location_id": li.location_id,
         "character_id": li.character_id,
         "col": li.col,
         "row": li.row,
-        "radius_cells": float(li.radius_cells) if li.radius_cells is not None else 0.0,
+        "radius_cells": radius,
+        "bright_radius_cells": bright,
         "color_hex": li.color_hex,
         "intensity": float(li.intensity) if li.intensity is not None else 0.0,
         "source_kind": li.source_kind,

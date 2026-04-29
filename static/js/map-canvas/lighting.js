@@ -57,66 +57,99 @@
     ctx.drawImage(this._lightLayer, 0, 0);
   }
 
-  // Phase 13 REDO R1 — polygon-based ray-cast lighting.
-  MapCanvas.prototype._renderLightingOverlay = function(ctx) {
-    const isGm = this.role === 'gm';
-    const softFactor = isGm ? 0.35 : 1.0;
-    const darkAlpha = (this.isIndoor
-        ? 0.88
-        : Math.max(0, 1 - (this.ambientLight ?? 1.0))) * softFactor;
-    if (darkAlpha <= 0 && !this.lights.length) return;
+  function _hexToRgb(hex) {
+    const h = hex.replace('#', '');
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+    };
+  }
 
+  // Phase 13 REDO R2 — coloured additive lighting with bright/dim radii.
+  MapCanvas.prototype._drawOneLight = function(lctx, light, blocksAt) {
+    const gs = this.gridSize;
+    const radius = light.radius_cells ?? 4;
+    const bright = (light.bright_radius_cells && light.bright_radius_cells > 0)
+        ? light.bright_radius_cells
+        : radius * 0.5;
+    const radiusPx = radius * gs;
+    const cxWorld = (light.col + 0.5) * gs;
+    const cyWorld = (light.row + 0.5) * gs;
+    const poly = this._raycastPolygon(cxWorld, cyWorld, radiusPx, blocksAt, 120);
+    const sx = cxWorld * this.scale + this.offsetX;
+    const sy = cyWorld * this.scale + this.offsetY;
+    const rPx = radiusPx * this.scale;
+    const brightPx = bright * gs * this.scale;
+
+    // Polygon clip
+    lctx.save();
+    lctx.beginPath();
+    for (let i = 0; i < poly.length; i++) {
+      const px = poly[i][0] * this.scale + this.offsetX;
+      const py = poly[i][1] * this.scale + this.offsetY;
+      if (i === 0) lctx.moveTo(px, py); else lctx.lineTo(px, py);
+    }
+    lctx.closePath();
+    lctx.clip();
+
+    // Colour gradient. Bright radius = full colour, dim = fade out.
+    const rgb = _hexToRgb(light.color_hex || '#ffd9a0');
+    const intensity = Math.min(1.5, light.intensity ?? 1.0);
+    const a0 = 1.0 * intensity;
+    const a1 = 0.5 * intensity;
+    const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, rPx);
+    const stopAtBright = Math.min(0.99, brightPx / rPx);
+    grad.addColorStop(0,             `rgba(${rgb.r},${rgb.g},${rgb.b},${a0})`);
+    grad.addColorStop(stopAtBright,  `rgba(${rgb.r},${rgb.g},${rgb.b},${a1})`);
+    grad.addColorStop(1,             `rgba(${rgb.r},${rgb.g},${rgb.b},0)`);
+    lctx.fillStyle = grad;
+    lctx.fillRect(sx - rPx, sy - rPx, rPx * 2, rPx * 2);
+    lctx.restore();
+  };
+
+  MapCanvas.prototype._renderLightingOverlay = function(ctx) {
     const w = this.canvas.width, h = this.canvas.height;
-    this._ensureLightLayer(w, h);
-    const lctx = this._lightLayerCtx;
-    lctx.clearRect(0, 0, w, h);
-    lctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
-    lctx.fillRect(0, 0, w, h);
+    if (w === 0 || h === 0) return;
+    this._ensureLayer('dark', w, h);
+    this._ensureLayer('light', w, h);
+    const dctx = this._darkLayer.getContext('2d');
+    const lctx = this._lightLayer.getContext('2d');
+
+    // ── Darkness veil ──
+    const ambient = this.ambientLight ?? 1.0;
+    const darkAlpha = this.isIndoor ? 0.88 : Math.max(0, 1 - ambient);
+    dctx.clearRect(0, 0, w, h);
+    dctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
+    dctx.fillRect(0, 0, w, h);
 
     if (!this.lights.length) {
-      ctx.drawImage(this._lightLayer, 0, 0);
+      ctx.drawImage(this._darkLayer, 0, 0);
       return;
     }
 
-    const gs = this.gridSize;
+    // ── Light layer (additive) ──
+    lctx.clearRect(0, 0, w, h);
+    lctx.globalCompositeOperation = 'lighter';
     const blocksAt = this._makeBlocksAt();
-
-    lctx.globalCompositeOperation = 'destination-out';
     for (const light of this.lights) {
-      const radius = light.radius_cells ?? 4;
-      const radiusPx = radius * gs;
-      const cxWorld = (light.col + 0.5) * gs;
-      const cyWorld = (light.row + 0.5) * gs;
-      const poly = this._raycastPolygon(cxWorld, cyWorld, radiusPx, blocksAt, 120);
-
-      // World → screen
-      const sx = cxWorld * this.scale + this.offsetX;
-      const sy = cyWorld * this.scale + this.offsetY;
-      const rPx = radiusPx * this.scale;
-
-      // Build screen-space polygon path
-      lctx.save();
-      lctx.beginPath();
-      for (let i = 0; i < poly.length; i++) {
-        const px = poly[i][0] * this.scale + this.offsetX;
-        const py = poly[i][1] * this.scale + this.offsetY;
-        if (i === 0) lctx.moveTo(px, py); else lctx.lineTo(px, py);
-      }
-      lctx.closePath();
-      lctx.clip();
-
-      // Soft radial gradient inside the polygon
-      const intensity = light.intensity ?? 1.0;
-      const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, rPx);
-      grad.addColorStop(0,   `rgba(0,0,0,${intensity * softFactor})`);
-      grad.addColorStop(0.6, `rgba(0,0,0,${intensity * 0.5 * softFactor})`);
-      grad.addColorStop(1,   'rgba(0,0,0,0)');
-      lctx.fillStyle = grad;
-      lctx.fillRect(sx - rPx, sy - rPx, rPx * 2, rPx * 2);
-      lctx.restore();
+      this._drawOneLight(lctx, light, blocksAt);
     }
     lctx.globalCompositeOperation = 'source-over';
+
+    // ── Subtract light from darkness ──
+    dctx.globalCompositeOperation = 'destination-out';
+    dctx.drawImage(this._lightLayer, 0, 0);
+    dctx.globalCompositeOperation = 'source-over';
+
+    // ── Composite onto the main canvas ──
+    // Step A: darken the map where unlit.
+    ctx.drawImage(this._darkLayer, 0, 0);
+    // Step B: multiply the map by the coloured light (tints it).
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(this._lightLayer, 0, 0);
+    ctx.restore();
   }
 
   // ── Phase 9: interior zone overlay ──────────────────────────
