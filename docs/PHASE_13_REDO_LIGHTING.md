@@ -611,6 +611,7 @@ markup style for radius/intensity inputs.
 ---
 
 ### R3 — Animation, token vision, day/night
+**Done — `b539c83`**
 
 **Goal:** polish. Lights feel alive; darkness slider controls mood.
 

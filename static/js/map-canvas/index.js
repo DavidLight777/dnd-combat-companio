@@ -142,6 +142,9 @@ class MapCanvas {
 
     this._bindEvents();
     this._resize();
+    // Phase 13 REDO R3: register for global lifecycle hooks
+    if (!window._allMapCanvases) window._allMapCanvases = [];
+    window._allMapCanvases.push(this);
   }
 
   // Public: trigger a combat effect anchored on normalised map coords.
@@ -404,5 +407,23 @@ MapCanvas.prototype._ensureLayer = function(kind, w, h) {
     this[layerProp].height = h;
   }
 };
+
+// Phase 13 REDO R3: pause light animation when tab is hidden.
+document.addEventListener('visibilitychange', function() {
+  const arr = window._allMapCanvases || [];
+  if (document.hidden) {
+    for (let i = 0; i < arr.length; i++) {
+      arr[i]._stopLightAnim();
+    }
+  } else {
+    for (let i = 0; i < arr.length; i++) {
+      const mc = arr[i];
+      const animated = mc.lights && mc.lights.some(function(l) {
+        return l.source_kind === 'torch' || l.source_kind === 'magic';
+      });
+      if (animated) mc._startLightAnim();
+    }
+  }
+});
 
 window.MapCanvas = MapCanvas;
