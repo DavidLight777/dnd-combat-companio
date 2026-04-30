@@ -149,6 +149,10 @@ async def get_location_full(location_id: int, db: AsyncSession = Depends(get_ses
                 "save_ability": t.save_ability, "is_triggered": t.is_triggered,
                 "is_disarmed": t.is_disarmed, "trigger_mode": t.trigger_mode,
                 "reset_on_trigger": t.reset_on_trigger,
+                "undodgeable": t.undodgeable, "attack_bonus": t.attack_bonus,
+                "charges": t.charges, "charges_used": t.charges_used,
+                "is_armed": t.is_armed, "dot_effect_json": t.dot_effect_json,
+                "size_cells": t.size_cells, "dot_template_id": t.dot_template_id,
             })
         elif e.entity_type == "portal" and e.id in portals:
             p = portals[e.id]
@@ -157,6 +161,7 @@ async def get_location_full(location_id: int, db: AsyncSession = Depends(get_ses
                 "target_col": p.target_col, "target_row": p.target_row,
                 "is_one_way": p.is_one_way, "requires_key_item_id": p.requires_key_item_id,
                 "label": p.label, "is_active": p.is_active,
+                "size_cells": p.size_cells,
             })
         elif e.entity_type == "npc_spawn" and e.id in spawns:
             s = spawns[e.id]
@@ -165,6 +170,7 @@ async def get_location_full(location_id: int, db: AsyncSession = Depends(get_ses
                 "auto_spawn_trigger": s.auto_spawn_trigger,
                 "spawn_count": s.spawn_count, "has_spawned": s.has_spawned,
                 "is_hostile": s.is_hostile,
+                "trigger_zone_size": s.trigger_zone_size,
             })
         elif e.entity_type == "cover_zone" and e.id in covers:
             z = covers[e.id]
@@ -193,12 +199,35 @@ async def get_location_full(location_id: int, db: AsyncSession = Depends(get_ses
             "cells": [{"col": c.col, "row": c.row} for c in cells_q.scalars().all()],
         })
 
+    # Phase 18: edges
+    edges_r = await db.execute(
+        select(BV2Edge).where(BV2Edge.location_id == location_id).order_by(BV2Edge.id)
+    )
+    edges = []
+    for edge in edges_r.scalars().all():
+        target_name = None
+        if edge.target_location_id:
+            target = await db.get(BV2Location, edge.target_location_id)
+            if target:
+                target_name = target.name
+        edges.append({
+            "id": edge.id,
+            "side": edge.side,
+            "range_start": edge.range_start,
+            "range_end": edge.range_end,
+            "target_location_id": edge.target_location_id,
+            "target_location_name": target_name,
+            "target_entry_col": edge.target_entry_col,
+            "target_entry_row": edge.target_entry_row,
+        })
+
     return {
         "location": ser_location(loc),
         "tiles": [ser_tile(t) for t in tiles_r.scalars().all()],
         "entities": [_enrich(e) for e in entities],
         "lights": [ser_light(li) for li in lights_r.scalars().all()],
         "interiors": interiors,
+        "edges": edges,
     }
 
 
