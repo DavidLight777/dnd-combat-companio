@@ -87,6 +87,8 @@ async def _trap_detail(entity_id: int, db: AsyncSession) -> dict:
         "charges_used": t.charges_used,
         "is_armed": t.is_armed,
         "dot_effect_json": t.dot_effect_json,
+        "size_cells": t.size_cells,
+        "dot_template_id": t.dot_template_id,
     })
     return base
 
@@ -132,6 +134,8 @@ async def create_trap(location_id: int, body: dict, db: AsyncSession = Depends(g
         charges_used=0,
         is_armed=bool(body.get("is_armed", True)),
         dot_effect_json=body.get("dot_effect_json") if body.get("dot_effect_json") else None,
+        size_cells=max(1, int(body.get("size_cells", 1))),
+        dot_template_id=body.get("dot_template_id") if body.get("dot_template_id") else None,
     )
     db.add(t)
     await db.commit()
@@ -165,9 +169,9 @@ async def update_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
     for k in ("trap_type", "damage_dice", "damage_type", "save_ability", "trigger_mode"):
         if k in body:
             setattr(t, k, str(body[k]))
-    for k in ("dc_detect", "dc_disarm", "dc_save", "attack_bonus", "charges"):
+    for k in ("dc_detect", "dc_disarm", "dc_save", "attack_bonus", "charges", "size_cells"):
         if k in body:
-            setattr(t, k, int(body[k]))
+            setattr(t, k, max(1, int(body[k])))
     for k in ("is_triggered", "is_disarmed", "reset_on_trigger", "undodgeable", "is_armed"):
         if k in body:
             setattr(t, k, bool(body[k]))
@@ -176,6 +180,9 @@ async def update_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
     if "dot_effect_json" in body:
         val = body["dot_effect_json"]
         t.dot_effect_json = json.dumps(val) if isinstance(val, dict) else (str(val) if val else None)
+    if "dot_template_id" in body:
+        val = body["dot_template_id"]
+        t.dot_template_id = int(val) if val is not None else None
 
     await db.commit()
     await db.refresh(e)
@@ -216,22 +223,26 @@ async def check_trap_trigger(
     character: Character,
     session_code: str,
 ):
-    """Fire trap if character stepped on its cell."""
+    """Fire trap if character stepped inside its zone."""
+    from sqlalchemy import and_
     result = await db.execute(
-        select(BV2Entity).where(
+        select(BV2Entity, BV2Trap)
+        .join(BV2Trap, BV2Entity.id == BV2Trap.entity_id)
+        .where(
             BV2Entity.location_id == location_id,
             BV2Entity.entity_type == "trap",
-            BV2Entity.col == character.col,
-            BV2Entity.row == character.row,
+            and_(
+                character.col >= BV2Entity.col,
+                character.col < BV2Entity.col + BV2Trap.size_cells,
+                character.row >= BV2Entity.row,
+                character.row < BV2Entity.row + BV2Trap.size_cells,
+            ),
         )
     )
-    entity = result.scalar_one_or_none()
-    if not entity:
+    row = result.first()
+    if not row:
         return
-
-    trap = await db.get(BV2Trap, entity.id)
-    if not trap:
-        return
+    entity, trap = row
 
     if not trap.is_armed or trap.is_disarmed:
         return
@@ -239,12 +250,19 @@ async def check_trap_trigger(
     if trap.charges != -1 and trap.charges_used >= trap.charges:
         return
 
-    missed = False
+    # Dodge check — offer dodge roll if not undodgeable
     if not trap.undodgeable:
-        hit_roll = random.randint(1, 20) + (trap.attack_bonus or 0)
-        if hit_roll < (character.armor_class or 0):
-            missed = True
+        await manager.broadcast_to_session(session_code, "trap.dodge_offer", {
+            "character_id": character.id,
+            "character_name": character.name,
+            "trap_id": trap.entity_id,
+            "trap_name": entity.name or "Trap",
+            "attack_bonus": trap.attack_bonus or 0,
+        })
+        # Dodge resolution is handled by player response; defer damage
+        return
 
+    missed = False
     damage = 0
     dot_applied = False
     dot_name = None
@@ -297,3 +315,66 @@ async def check_trap_trigger(
         "dot_name": dot_name,
         "dot_turns": dot_turns,
     })
+
+
+@router.post("/traps/{entity_id}/dodge")
+async def dodge_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    """Player attempts to dodge a trap."""
+    e = await _get_trap_entity(entity_id, db)
+    t = await db.get(BV2Trap, entity_id)
+    if not t or not t.is_armed or t.is_disarmed:
+        raise HTTPException(400, "Trap not active")
+    char_id = int(body.get("character_id", 0))
+    char = await db.get(Character, char_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+    dodge_roll = random.randint(1, 20) + (char.dexterity or 0)
+    missed = dodge_roll >= (t.attack_bonus or 0) + 10  # simple dodge threshold
+    if not missed:
+        # apply damage
+        damage = 0
+        if t.damage_dice:
+            _, damage = roll_dice(t.damage_dice)
+            char.current_hp = max(0, (char.current_hp or 0) - damage)
+        t.charges_used = (t.charges_used or 0) + 1
+        if t.charges != -1 and t.charges_used >= t.charges:
+            t.is_armed = False
+        await db.commit()
+        await db.refresh(char)
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await manager.broadcast_to_session(sess_code, "trap.dodge_resolved", {
+            "character_id": char.id,
+            "trap_id": entity_id,
+            "missed": missed,
+            "new_hp": char.current_hp,
+            "damage": damage if not missed else 0,
+        })
+    return {"missed": missed, "new_hp": char.current_hp}
+
+
+@router.post("/traps/{entity_id}/disarm")
+async def disarm_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    """Player attempts to disarm a trap."""
+    e = await _get_trap_entity(entity_id, db)
+    t = await db.get(BV2Trap, entity_id)
+    if not t or not t.is_armed or t.is_disarmed:
+        raise HTTPException(400, "Trap not active")
+    char_id = int(body.get("character_id", 0))
+    char = await db.get(Character, char_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+    disarm_roll = random.randint(1, 20) + (char.dexterity or 0)
+    success = disarm_roll >= t.dc_disarm
+    if success:
+        t.is_disarmed = True
+        await db.commit()
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await manager.broadcast_to_session(sess_code, "trap.disarm_resolved", {
+            "character_id": char.id,
+            "trap_id": entity_id,
+            "success": success,
+            "is_disarmed": t.is_disarmed,
+        })
+    return {"success": success, "is_disarmed": t.is_disarmed}
