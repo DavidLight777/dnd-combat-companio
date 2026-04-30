@@ -10,8 +10,10 @@ from app.models import (
     BV2ChestItem,
     BV2Entity,
     BV2Location,
+    Character,
     Item,
 )
+import random
 from app.routers.builder_v2.common import (
     broadcast,
     router,
@@ -125,11 +127,6 @@ async def update_chest(entity_id: int, body: dict, db: AsyncSession = Depends(ge
         chest.is_locked = bool(body["is_locked"])
     if "lock_dc" in body:
         chest.lock_dc = int(body["lock_dc"])
-    if "icon" in body:
-        chest.icon = str(body["icon"])[:20]
-    if "is_opened" in body:
-        chest.is_opened = bool(body["is_opened"])
-
     await db.commit()
     await db.refresh(e)
     await db.refresh(chest)
@@ -141,6 +138,33 @@ async def update_chest(entity_id: int, body: dict, db: AsyncSession = Depends(ge
             "entity": await _chest_detail(entity_id, db),
         })
     return await _chest_detail(entity_id, db)
+
+
+@router.post("/chests/{entity_id}/pick-lock")
+async def pick_lock(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    e = await _get_chest_entity(entity_id, db)
+    chest = await db.get(BV2Chest, entity_id)
+    if not chest:
+        raise HTTPException(404, "Chest detail missing")
+    if not chest.is_locked:
+        return {"success": True, "is_locked": False}
+    char_id = int(body.get("character_id", 0))
+    char = await db.get(Character, char_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+    roll = random.randint(1, 20) + (char.dexterity or 0)
+    success = roll >= chest.lock_dc
+    if success:
+        chest.is_locked = False
+        chest.is_opened = True
+        await db.commit()
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.entity_updated", {
+            "location_id": e.location_id,
+            "entity": await _chest_detail(entity_id, db),
+        })
+    return {"success": success, "is_locked": chest.is_locked, "roll": roll}
 
 
 @router.delete("/chests/{entity_id}")
