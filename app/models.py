@@ -1501,6 +1501,11 @@ class BV2Trap(Base):
     charges: Mapped[int] = mapped_column(Integer, default=1)
     charges_used: Mapped[int] = mapped_column(Integer, default=0)
     is_armed: Mapped[bool] = mapped_column(Boolean, default=True, server_default='1')
+    # Phase 18: size and DoT template reference
+    size_cells: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
+    dot_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("status_effect_templates.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class BV2Portal(Base):
@@ -1519,6 +1524,8 @@ class BV2Portal(Base):
     )
     label: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Phase 18: portal size (square N×N)
+    size_cells: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
 
 
 class BV2NPCSpawn(Base):
@@ -1533,6 +1540,8 @@ class BV2NPCSpawn(Base):
     spawn_count: Mapped[int] = mapped_column(Integer, default=1)
     has_spawned: Mapped[bool] = mapped_column(Boolean, default=False)
     is_hostile: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Phase 18: NPC spawn trigger zone size (square N×N)
+    trigger_zone_size: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
 
 
 class BV2CoverZone(Base):
