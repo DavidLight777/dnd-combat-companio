@@ -435,7 +435,7 @@
     entDelete.style.display = (mode === 'create') ? 'none' : 'inline-flex';
 
     // Build typed form
-    const data = (mode === 'edit' && ent) ? ent : {};
+    const data = (mode === 'edit' && ent) ? ent : (createOpts || {});
     let formApi = null;
     if (type === 'chest') formApi = _buildChestForm(data);
     else if (type === 'trap') formApi = await _buildTrapForm(data);

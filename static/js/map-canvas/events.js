@@ -86,7 +86,7 @@
     const gs = this.gridSize;
     for (let i = this.mapChests.length - 1; i >= 0; i--) {
       const ch = this.mapChests[i];
-      if (this.role !== 'gm' && ch.is_hidden) continue;
+      if (this.role !== 'gm' && ch.is_hidden && ch.visible_to_players !== true) continue;
       const px = ch.col * gs, py = ch.row * gs;
       if (mx >= px && mx <= px + gs && my >= py && my <= py + gs) return ch;
     }
@@ -99,8 +99,21 @@
     const gs = this.gridSize;
     for (let i = this.portals.length - 1; i >= 0; i--) {
       const p = this.portals[i];
+      const size = p.size_cells || 1;
       const px = p.col * gs, py = p.row * gs;
-      if (mx >= px && mx <= px + gs && my >= py && my <= py + gs) return p;
+      if (mx >= px && mx <= px + size * gs && my >= py && my <= py + size * gs) return p;
+    }
+    return null;
+  }
+
+  MapCanvas.prototype._hitTrap = function(mx, my) {
+    if (!this.traps || !this.traps.length) return null;
+    const gs = this.gridSize;
+    for (let i = this.traps.length - 1; i >= 0; i--) {
+      const t = this.traps[i];
+      const size = t.size_cells || 1;
+      const px = t.col * gs, py = t.row * gs;
+      if (mx >= px && mx <= px + size * gs && my >= py && my <= py + size * gs) return t;
     }
     return null;
   }
@@ -471,6 +484,9 @@
       // Check portal click
       const portal = this._hitPortal(m.x, m.y);
       if (portal && this.onPortalClick) { this.onPortalClick(portal); return; }
+      // Check trap click (GM only — shows trap details)
+      const trap = this._hitTrap(m.x, m.y);
+      if (trap && this.role === 'gm' && this.onTrapClick) { this.onTrapClick(trap); return; }
       const token = this._hitToken(m.x, m.y);
       if (token && this.onTokenClick) { this.onTokenClick(token, e.shiftKey); return; }
       // If nothing was clicked, fire onMapClick with normalized coords
