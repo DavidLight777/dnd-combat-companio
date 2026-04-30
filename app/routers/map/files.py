@@ -230,7 +230,7 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         if not e.visible_to_players:
             continue
         items = []
-        if chest.is_opened:
+        if not chest.is_locked:
             ci_q = await db.execute(
                 select(BV2ChestItem, Item)
                 .join(Item, BV2ChestItem.item_id == Item.id)
