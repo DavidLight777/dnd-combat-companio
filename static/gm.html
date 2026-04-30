@@ -906,7 +906,7 @@
         </div>
       </div>
       <div class="form-group"><label>Color</label><input type="color" id="bv2-light-color" style="width:100%;height:32px"></div>
-      <div class="form-group"><label>Kind</label><input type="text" id="bv2-light-kind"></div>
+      <div class="form-group"><label>Kind</label><select id="bv2-light-kind"><option value="torch">torch</option><option value="lamp">lamp</option><option value="magic">magic</option><option value="sun">sun</option><option value="custom">custom</option></select></div>
     </div>
   </div>
   <div class="floating-panel-footer">
@@ -938,7 +938,7 @@
           <div style="flex:1"><label>Range Start</label><input type="number" id="bv2-edge-range-start" min="0" style="width:100%"></div>
           <div style="flex:1"><label>Range End</label><input type="number" id="bv2-edge-range-end" min="0" style="width:100%"></div>
         </div>
-        <div class="form-group"><label>Target Location ID</label><input type="number" id="bv2-edge-target-loc" min="1" style="width:100%"></div>
+        <div class="form-group"><label>Target Location</label><select id="bv2-edge-target-loc" style="width:100%"><option value="">None</option></select></div>
         <div class="form-group" style="display:flex;gap:8px">
           <div style="flex:1"><label>Target Col</label><input type="number" id="bv2-edge-target-col" min="0" style="width:100%"></div>
           <div style="flex:1"><label>Target Row</label><input type="number" id="bv2-edge-target-row" min="0" style="width:100%"></div>
@@ -1031,13 +1031,13 @@
   <script src="/static/js/gm/20-init.js?v=df88a1f4"></script>
   <script src="/static/js/builder_v2/00-state.js?v=66efba55"></script>
   <script src="/static/js/builder_v2/10-api.js?v=3c76e9e0"></script>
-  <script src="/static/js/builder_v2/20-mapview.js?v=988fcc08"></script>
+  <script src="/static/js/builder_v2/20-mapview.js?v=8523ba03"></script>
   <script src="/static/js/builder_v2/30-editor.js?v=991bda66"></script>
   <script src="/static/js/builder_v2/40-websocket.js?v=0831c400"></script>
   <script src="/static/js/builder_v2/50-entities.js?v=3e892a58"></script>
   <script src="/static/js/builder_v2/60-fov.js?v=8d02af1e"></script>
   <script src="/static/js/builder_v2/70-lights.js?v=b9a8dc77"></script>
-  <script src="/static/js/builder_v2/80-edges.js?v=af63cb44"></script>
+  <script src="/static/js/builder_v2/80-edges.js?v=28713c9a"></script>
   <script src="/static/js/builder_v2/90-library.js?v=eee7c1f5"></script>
   <script src="/static/js/builder_v2/95-interiors.js?v=6e72efbb"></script>
   <script src="/static/js/builder_v2/96-building.js?v=1653fc40"></script>

@@ -23,13 +23,47 @@
 
   function showError(msg) { alert(msg); }
 
+  // ── Populate target location dropdown ─────────────────────
+  function _populateTargetLocSelect(selectedId) {
+    const sel = $('bv2-edge-target-loc');
+    if (!sel) return;
+    const locs = (S.maps && S.maps.find(m => m.id === S.currentMapId)?.locations) || [];
+    const opts = locs
+      .filter(l => l.id !== S.currentLocId)
+      .map(l => ({ value: l.id, label: l.name || `Loc ${l.id}` }));
+    sel.innerHTML = '<option value="">None</option>' +
+      opts.map(o => `<option value="${o.value}" ${o.value === selectedId ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+  }
+
   // ── Render edge list ──────────────────────────────────────
   function renderEdgeList() {
     const listEl = $('bv2-edge-list');
     if (!listEl) return;
-    // Edges are not stored separately on the client; they come with location payload.
-    // For now we stub this until the backend includes edges in get_location_full.
-    listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:4px 0">Edge list deferred to Phase 6</div>';
+    const edges = (S.view && S.view.location && S.view.location.edges) || [];
+    if (!edges.length) {
+      listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:4px 0">No edges</div>';
+      return;
+    }
+    listEl.innerHTML = edges.map(ed => {
+      const label = `${ed.side} [${ed.range_start}-${ed.range_end}] → ${ed.target_location_name || ed.target_location_id}`;
+      return `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem">${escapeHtml(label)}</span>
+        <button class="btn-icon btn-xs" data-del-edge="${ed.id}" title="Delete">🗑</button>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('[data-del-edge]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = parseInt(btn.dataset.delEdge, 10);
+        if (!confirm('Delete this edge?')) return;
+        try {
+          await S.api.deleteEdge(id);
+        } catch (e) {
+          console.error('bv2 deleteEdge', e);
+          showError('Failed to delete edge');
+        }
+      });
+    });
   }
 
   // ── Public: open modal ────────────────────────────────────
@@ -38,16 +72,16 @@
     const sideEl = $('bv2-edge-side');
     const rangeStartEl = $('bv2-edge-range-start');
     const rangeEndEl = $('bv2-edge-range-end');
-    const targetLocEl = $('bv2-edge-target-loc');
     const targetColEl = $('bv2-edge-target-col');
     const targetRowEl = $('bv2-edge-target-row');
 
     if (sideEl) sideEl.value = opts.side || 'east';
     if (rangeStartEl) rangeStartEl.value = opts.range_start ?? 0;
     if (rangeEndEl) rangeEndEl.value = opts.range_end ?? 1;
-    if (targetLocEl) targetLocEl.value = opts.target_location_id || '';
     if (targetColEl) targetColEl.value = opts.target_entry_col ?? 0;
     if (targetRowEl) targetRowEl.value = opts.target_entry_row ?? 0;
+
+    _populateTargetLocSelect(opts.target_location_id || null);
 
     openModal();
   }
@@ -103,6 +137,13 @@
     document.querySelectorAll('.bv2-edge-brush').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   });
+
+  // ── Refresh list when location loads ──────────────────────
+  const origLoadLocation = S.loadLocation;
+  S.loadLocation = async function (locId) {
+    await origLoadLocation.call(this, locId);
+    renderEdgeList();
+  };
 
   // ── Expose ────────────────────────────────────────────────
   S.openEdgeModal = openEdgeModal;

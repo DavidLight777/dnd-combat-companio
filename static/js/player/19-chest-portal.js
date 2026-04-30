@@ -38,7 +38,21 @@ async function openPlayerChestModal(chest) {
           <div style="font-size:1.5rem;margin-bottom:8px">🔒</div>
           <div>This chest is locked</div>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">Lock DC: ${data.lock_dc}</div>
+          <button class="btn btn-primary btn-sm" id="pc-pick-lock" style="margin-top:12px">🔓 Pick Lock</button>
         </div>`;
+      content.querySelector('#pc-pick-lock').addEventListener('click', async () => {
+        try {
+          const res = await api.post(`/api/chests/${chest.id}/pick-lock`, { character_id: CHAR_ID });
+          showToast(res.success ? '🔓 Lock picked!' : '🔒 Lockpick failed!');
+          if (res.success) {
+            overlay.remove();
+            openPlayerChestModal(chest); // Re-open to show contents
+          }
+        } catch (e) {
+          showToast('Lockpick failed');
+          console.error(e);
+        }
+      });
       return;
     }
 
