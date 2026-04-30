@@ -88,7 +88,7 @@ async function openPlayerChestModal(chest) {
 
 async function takeChestItems(chestId, itemIndices, overlay) {
   try {
-    const res = await api.post(`/api/map-builder/chests/${chestId}/take`, {
+    const res = await api.post(`/api/builder-v2/chests/${chestId}/take`, {
       character_id: CHAR_ID,
       item_indices: itemIndices,
     });

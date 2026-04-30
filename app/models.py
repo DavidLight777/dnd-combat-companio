@@ -1506,6 +1506,9 @@ class BV2Trap(Base):
     dot_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("status_effect_templates.id", ondelete="SET NULL"), nullable=True
     )
+    # Phase 17 R5: structured damage dice (e.g. 2d6)
+    damage_dice_count: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
+    damage_dice_type: Mapped[int] = mapped_column(Integer, default=6, server_default='6')
 
 
 class BV2Portal(Base):
