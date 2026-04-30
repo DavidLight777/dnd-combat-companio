@@ -16,6 +16,7 @@ from app.routers.builder_v2.common import (
     router,
     session_code_for_location,
 )
+from app.routers.builder_v2.traps import check_trap_trigger
 
 VALID_SIDES = {"north", "south", "east", "west"}
 
@@ -223,6 +224,17 @@ async def move_character_grid(character_id: int, body: dict, db: AsyncSession = 
 
     await db.commit()
     await db.refresh(character)
+
+    # Phase 17 Round 5: check trap trigger after grid move
+    if not is_placement:
+        try:
+            loc_id_for_trap = character.current_location_id
+            if loc_id_for_trap:
+                s = await db.get(Session, character.session_id)
+                if s:
+                    await check_trap_trigger(db, loc_id_for_trap, character, s.code)
+        except Exception:
+            pass
 
     s = await db.get(Session, character.session_id)
     if s:

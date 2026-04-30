@@ -55,6 +55,14 @@ ws.on('map.portal_added', () => { if (typeof loadMapState === 'function') loadMa
 ws.on('map.portal_updated', () => { if (typeof loadMapState === 'function') loadMapState(); });
 ws.on('map.portal_deleted', () => { if (typeof loadMapState === 'function') loadMapState(); });
 
+// Phase 17 Round 5: trap triggered
+ws.on('trap.triggered', d => {
+  const msg = d.missed
+    ? `⚠️ ${d.character_name} avoided ${d.trap_name}`
+    : `☠️ ${d.trap_name} hit ${d.character_name} for ${d.damage} ${d.damage_type} damage`;
+  addLog('combat', msg);
+});
+
 // Phase 7 bridge: refresh GM map when a bv2 map / location is activated.
 ws.on('bv2.map_activated',      () => { if (typeof loadMapState === 'function') loadMapState(); });
 ws.on('bv2.location_activated', () => { if (typeof loadMapState === 'function') loadMapState(); });

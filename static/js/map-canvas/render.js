@@ -209,32 +209,18 @@
     }
 
     // Fog of war
-    if (this.fogEnabled && this.mapWidth > 0) {
+    // Phase 15 Round 3: player fog is unified inside _renderLightingOverlay.
+    // Only GM gets the old fog preview here.
+    if (this.fogEnabled && this.mapWidth > 0 && this.role === 'gm') {
       const gs = this.gridSize;
       const cols = Math.ceil(this.mapWidth / gs);
       const rows = Math.ceil(this.mapHeight / gs);
-      const isGm = this.role === 'gm';
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
           const key = `${c},${r}`;
-          if (isGm) {
-            if (!this.revealedCells.has(key)) {
-              ctx.fillStyle = 'rgba(0,0,0,0.5)';
-              ctx.fillRect(c * gs, r * gs, gs, gs);
-            }
-          } else {
-            // Phase 10 R5: three-layer vision (current visible / explored dim / black)
-            const visible = this.currentVisible && this.currentVisible.has(key);
-            const explored = this.revealedCells.has(key);
-            if (visible) {
-              // Currently visible — no overlay
-            } else if (explored) {
-              ctx.fillStyle = 'rgba(0,0,0,0.55)';
-              ctx.fillRect(c * gs, r * gs, gs, gs);
-            } else {
-              ctx.fillStyle = 'rgba(0,0,0,0.95)';
-              ctx.fillRect(c * gs, r * gs, gs, gs);
-            }
+          if (!this.revealedCells.has(key)) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(c * gs, r * gs, gs, gs);
           }
         }
       }
@@ -309,6 +295,13 @@
     for (const t of this.tokens) {
       if (!t.visible && this.role !== 'gm') continue;
       if (t.x == null || t.y == null) continue;
+      // Phase 15 Round 2: hide enemy tokens outside player vision
+      if (this.role === 'player' && t.is_npc && this.currentVisible) {
+        const gs = this.gridSize || 50;
+        const col = Math.floor(t.x * this.mapWidth / gs);
+        const row = Math.floor(t.y * this.mapHeight / gs);
+        if (!this.currentVisible.has(`${col},${row}`)) continue; // not visible
+      }
       const px = t.x * this.mapWidth;
       const py = t.y * this.mapHeight;
       const radius = (this.gridSize / 2) * 0.8;
@@ -406,6 +399,25 @@
       ctx.globalAlpha = 1;
     }
 
+    // Ghost preview token during player drag (doesn't reveal FOV)
+    if (this.role === 'player' && this._ghostTokenPos) {
+      const gx = this._ghostTokenPos.x * this.mapWidth;
+      const gy = this._ghostTokenPos.y * this.mapHeight;
+      const r = (this.gridSize / 2) * 0.8;
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.arc(gx, gy, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,215,96,0.7)';
+      ctx.lineWidth = 2 / this.scale;
+      ctx.setLineDash([4 / this.scale, 4 / this.scale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // Chests (rendered under tokens but above map)
     if (this.chests && this.chests.length) {
       for (const ch of this.chests) {
@@ -450,7 +462,7 @@
     // without the rest of the scene having to be rebuilt by hand.
     this._renderFx(ctx);
 
-    // Phase 8: lighting overlay (drawn in screen space)
+    // Phase 15: lighting overlay drawn in WORLD space (inside save/restore)
     this._renderLightingOverlay(ctx);
 
     ctx.restore();

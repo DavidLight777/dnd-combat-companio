@@ -165,6 +165,9 @@
           // Phase 2: remember where the drag started so mouseup can
           // suppress the PATCH if the user didn't actually move.
           this._dragStartPos = { x: token.x, y: token.y };
+          // Phase 17 Round 4: track start for movement budget check.
+          this._dragStartX = token.x;
+          this._dragStartY = token.y;
           return;
         }
       }
@@ -209,8 +212,15 @@
       }
 
       if (this.dragToken) {
-        this.dragToken.x = Math.max(0, Math.min(1, n.x));
-        this.dragToken.y = Math.max(0, Math.min(1, n.y));
+        const nx = Math.max(0, Math.min(1, n.x));
+        const ny = Math.max(0, Math.min(1, n.y));
+        if (this.role === 'player') {
+          // Ghost preview — real token stays put, FOV stays locked.
+          this._ghostTokenPos = { x: nx, y: ny };
+        } else {
+          this.dragToken.x = nx;
+          this.dragToken.y = ny;
+        }
         this._requestRender();
         return;
       }
@@ -279,7 +289,39 @@
         // callback for a pure click-with-no-movement — otherwise every
         // tap on the own token would PATCH the server with unchanged
         // coordinates and round-trip a WS echo for nothing.
-        const snapped = this._snapNorm(this.dragToken.x, this.dragToken.y);
+        const raw = (this.role === 'player' && this._ghostTokenPos)
+          ? this._ghostTokenPos
+          : this.dragToken;
+        const snapped = this._snapNorm(raw.x, raw.y);
+
+        // Phase 17 Round 4: movement budget check for player tokens.
+        if (this.role === 'player') {
+          const own = (this.tokens || []).find(
+            t => t.character_id === this.dragToken?.character_id
+          );
+          if (own && own.movement_left != null) {
+            const gs = this.gridSize ?? 50;
+            const startCol = Math.floor(this._dragStartX * this.mapWidth / gs);
+            const startRow = Math.floor(this._dragStartY * this.mapHeight / gs);
+            const endCol   = Math.floor(snapped.x * this.mapWidth / gs);
+            const endRow   = Math.floor(snapped.y * this.mapHeight / gs);
+            const dist = Math.max(Math.abs(endCol - startCol), Math.abs(endRow - startRow));
+            if (dist > own.movement_left + 0.5) {
+              this._ghostTokenPos = null;
+              this.dragToken = null;
+              this._dragStartPos = null;
+              this._dragStartX = null;
+              this._dragStartY = null;
+              this.isDragging = false;
+              this.render();
+              this._showMovementError(
+                `Not enough movement (need ${dist}, have ${Math.floor(own.movement_left)})`
+              );
+              return;
+            }
+          }
+        }
+
         this.dragToken.x = snapped.x;
         this.dragToken.y = snapped.y;
         const moved = !this._dragStartPos
@@ -288,16 +330,51 @@
         if (moved && this.onTokenMove) {
           this.onTokenMove(this.dragToken.character_id, snapped.x, snapped.y);
         }
+        this._ghostTokenPos = null;
         this.render();
         this.dragToken = null;
         this._dragStartPos = null;
+        this._dragStartX = null;
+        this._dragStartY = null;
       }
       this.isDragging = false;
     });
 
     c.addEventListener('mouseleave', () => {
       if (this.dragToken) {
-        const snapped = this._snapNorm(this.dragToken.x, this.dragToken.y);
+        const raw = (this.role === 'player' && this._ghostTokenPos)
+          ? this._ghostTokenPos
+          : this.dragToken;
+        const snapped = this._snapNorm(raw.x, raw.y);
+
+        // Phase 17 Round 4: movement budget check on mouseleave too.
+        if (this.role === 'player') {
+          const own = (this.tokens || []).find(
+            t => t.character_id === this.dragToken?.character_id
+          );
+          if (own && own.movement_left != null) {
+            const gs = this.gridSize ?? 50;
+            const startCol = Math.floor(this._dragStartX * this.mapWidth / gs);
+            const startRow = Math.floor(this._dragStartY * this.mapHeight / gs);
+            const endCol   = Math.floor(snapped.x * this.mapWidth / gs);
+            const endRow   = Math.floor(snapped.y * this.mapHeight / gs);
+            const dist = Math.max(Math.abs(endCol - startCol), Math.abs(endRow - startRow));
+            if (dist > own.movement_left + 0.5) {
+              this._ghostTokenPos = null;
+              this.dragToken = null;
+              this._dragStartPos = null;
+              this._dragStartX = null;
+              this._dragStartY = null;
+              this.isDragging = false;
+              this.render();
+              this._showMovementError(
+                `Not enough movement (need ${dist}, have ${Math.floor(own.movement_left)})`
+              );
+              return;
+            }
+          }
+        }
+
         this.dragToken.x = snapped.x;
         this.dragToken.y = snapped.y;
         const moved = !this._dragStartPos
@@ -306,9 +383,12 @@
         if (moved && this.onTokenMove) {
           this.onTokenMove(this.dragToken.character_id, snapped.x, snapped.y);
         }
+        this._ghostTokenPos = null;
         this.render();
         this.dragToken = null;
         this._dragStartPos = null;
+        this._dragStartX = null;
+        this._dragStartY = null;
       }
       this.isDragging = false;
       this._isDrawing = false;

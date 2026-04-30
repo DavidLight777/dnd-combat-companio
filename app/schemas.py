@@ -26,6 +26,7 @@ class SessionOut(BaseModel):
     status: str
     turn_number: int
     player_count: int
+    map_locked_for_players: bool = False
 
 
 class SessionCreated(BaseModel):
@@ -79,6 +80,8 @@ class CharacterUpdate(BaseModel):
     mana_regen_per_turn: Optional[int] = None
     can_edit_own_items: Optional[bool] = None
     place_at_table: Optional[bool] = None
+    base_speed_cells: Optional[int] = None
+    movement_used_this_turn: Optional[float] = None
     show_hp_to_players: Optional[bool] = None
     level: Optional[int] = None
     experience: Optional[int] = None
@@ -98,6 +101,7 @@ class CharacterUpdate(BaseModel):
     max_inventory_slots: Optional[int] = None
     kill_xp_reward: Optional[int] = None
     declined_stats: Optional[bool] = None
+    sight_range_cells: Optional[int] = None
 
 
 class HpPatch(BaseModel):

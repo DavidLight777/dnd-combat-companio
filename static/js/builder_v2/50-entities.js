@@ -118,31 +118,49 @@
     return typedSectionEl;
   }
 
+  function _section(title, html) {
+    return `<div class="form-section">
+      <div class="form-section-title">${title}</div>
+      ${html}
+    </div>`;
+  }
   function _field(label, html) {
     return `<div class="form-group"><label>${label}</label>${html}</div>`;
   }
-
+  function _row(...fields) {
+    return `<div style="display:flex;gap:8px">${fields.join('')}</div>`;
+  }
   function _sel(id, opts, val) {
-    return `<select id="${id}" style="width:100%">${opts.map(o =>
+    return `<select id="${id}">${opts.map(o =>
       `<option value="${o.value}" ${o.value === val ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`;
   }
-
   function _inp(id, val, type = 'text') {
-    return `<input type="${type}" id="${id}" value="${val !== undefined ? escapeHtml(String(val)) : ''}" style="width:100%">`;
+    return `<input type="${type}" id="${id}" value="${val !== undefined ? escapeHtml(String(val)) : ''}">`;
   }
-
-  function _chk(id, checked) {
-    return `<label style="flex-direction:row;gap:4px"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''}> ${id.replace(/_/g, ' ')}</label>`;
+  function _toggle(id, checked, label) {
+    return `<label class="toggle-switch" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}>
+      <span class="slider"></span>
+      <span style="font-size:0.75rem;color:var(--text-muted)">${label}</span>
+    </label>`;
   }
 
   function _buildChestForm(data) {
     const sec = _createSection();
     sec.innerHTML = [
-      _field('Locked', _chk('bv2-chest-locked', data.is_locked)),
-      _field('Lock DC', _inp('bv2-chest-lock-dc', data.lock_dc, 'number')),
-      _field('Icon', _inp('bv2-chest-icon', data.icon)),
-      _field('Opened', _chk('bv2-chest-opened', data.is_opened)),
-      _field('Items', '<div id="bv2-chest-items"></div><div style="display:flex;gap:4px;margin-top:4px"><select id="bv2-chest-item-select" style="flex:1"><option value="">Loading items...</option></select><input type="number" id="bv2-chest-item-qty" value="1" min="1" style="width:50px"><button class="btn btn-primary btn-xs" id="bv2-chest-add-item">Add</button></div>'),
+      _section('🔒 Lock',
+        _field('Locked', _toggle('bv2-chest-locked', data.is_locked, 'Locked')) +
+        _field('Lock DC', _inp('bv2-chest-lock-dc', data.lock_dc, 'number'))
+      ),
+      _section('🎨 Appearance',
+        _field('Icon', _inp('bv2-chest-icon', data.icon))
+      ),
+      _section('📦 State',
+        _field('Opened', _toggle('bv2-chest-opened', data.is_opened, 'Opened'))
+      ),
+      _section('🎒 Contents',
+        '<div id="bv2-chest-items"></div><div style="display:flex;gap:4px;margin-top:4px"><select id="bv2-chest-item-select" style="flex:1"><option value="">Loading items...</option></select><input type="number" id="bv2-chest-item-qty" value="1" min="1" style="width:50px"><button class="btn btn-primary btn-xs" id="bv2-chest-add-item">Add</button></div>'
+      ),
     ].join('');
 
     // Load items picker
@@ -192,19 +210,48 @@
     const dmgTypes = ['piercing','slashing','bludgeoning','fire','cold','lightning','poison','necrotic','radiant','psychic','acid','thunder','force'];
     const abilities = ['str','dex','con','int','wis','cha'];
     const triggers = ['on_enter','on_exit','proximity','manual'];
+
+    const dotVal = data.dot_effect_json || '';
+
     sec.innerHTML = [
-      _field('Trap type', _sel('bv2-trap-type', types.map(t => ({value:t,label:t})), data.trap_type)),
-      _field('Damage dice', _inp('bv2-trap-dice', data.damage_dice)),
-      _field('Damage type', _sel('bv2-trap-dmg-type', dmgTypes.map(t => ({value:t,label:t})), data.damage_type)),
-      _field('DC Detect', _inp('bv2-trap-dc-detect', data.dc_detect, 'number')),
-      _field('DC Disarm', _inp('bv2-trap-dc-disarm', data.dc_disarm, 'number')),
-      _field('DC Save', _inp('bv2-trap-dc-save', data.dc_save, 'number')),
-      _field('Save ability', _sel('bv2-trap-save-abil', abilities.map(t => ({value:t,label:t.toUpperCase()})), data.save_ability)),
-      _field('Trigger mode', _sel('bv2-trap-trigger', triggers.map(t => ({value:t,label:t})), data.trigger_mode)),
-      _field('Reset on trigger', _chk('bv2-trap-reset', data.reset_on_trigger)),
-      _field('Triggered', _chk('bv2-trap-triggered', data.is_triggered)),
-      _field('Disarmed', _chk('bv2-trap-disarmed', data.is_disarmed)),
+      _section('⚙️ Configuration',
+        _field('Trap type', _sel('bv2-trap-type', types.map(t => ({value:t,label:t})), data.trap_type)) +
+        _field('Trigger mode', _sel('bv2-trap-trigger', triggers.map(t => ({value:t,label:t})), data.trigger_mode))
+      ),
+      _section('🗡️ Damage',
+        _field('Damage dice', _inp('bv2-trap-dice', data.damage_dice)) +
+        _field('Damage type', _sel('bv2-trap-dmg-type', dmgTypes.map(t => ({value:t,label:t})), data.damage_type)) +
+        _row(
+          _field('Undodgeable', _toggle('bv2-trap-undodgeable', data.undodgeable, 'Skip AC check')),
+          _field('Attack bonus', _inp('bv2-trap-atk', data.attack_bonus, 'number'))
+        )
+      ),
+      _section('🔍 Detection',
+        _row(
+          _field('DC Detect', _inp('bv2-trap-dc-detect', data.dc_detect, 'number')),
+          _field('DC Disarm', _inp('bv2-trap-dc-disarm', data.dc_disarm, 'number'))
+        ) +
+        _row(
+          _field('DC Save', _inp('bv2-trap-dc-save', data.dc_save, 'number')),
+          _field('Save ability', _sel('bv2-trap-save-abil', abilities.map(t => ({value:t,label:t.toUpperCase()})), data.save_ability))
+        )
+      ),
+      _section('📦 State',
+        _row(
+          _field('Charges', _inp('bv2-trap-charges', data.charges, 'number')),
+          _field('Charges used', _inp('bv2-trap-charges-used', data.charges_used, 'number'))
+        ) +
+        _row(
+          _field('Armed', _toggle('bv2-trap-armed', data.is_armed, 'Active')),
+          _field('Disarmed', _toggle('bv2-trap-disarmed', data.is_disarmed, 'Disabled'))
+        ) +
+        _field('Reset on trigger', _toggle('bv2-trap-reset', data.reset_on_trigger, 'Auto-reset'))
+      ),
+      _section('☠️ DoT Effect',
+        _field('Effect JSON', `<textarea id="bv2-trap-dot" rows="2" placeholder='{"type":"poison","dice":"1d4","turns":3}'>${escapeHtml(dotVal)}</textarea>`)
+      ),
     ].join('');
+
     return { getPayload: () => ({
       trap_type: $('bv2-trap-type').value,
       damage_dice: $('bv2-trap-dice').value || '1d6',
@@ -215,8 +262,14 @@
       save_ability: $('bv2-trap-save-abil').value,
       trigger_mode: $('bv2-trap-trigger').value,
       reset_on_trigger: $('bv2-trap-reset').checked,
-      is_triggered: $('bv2-trap-triggered').checked,
+      is_triggered: false,
       is_disarmed: $('bv2-trap-disarmed').checked,
+      undodgeable: $('bv2-trap-undodgeable').checked,
+      attack_bonus: parseInt($('bv2-trap-atk').value, 10) || 0,
+      charges: parseInt($('bv2-trap-charges').value, 10) ?? 1,
+      charges_used: parseInt($('bv2-trap-charges-used').value, 10) || 0,
+      is_armed: $('bv2-trap-armed').checked,
+      dot_effect_json: $('bv2-trap-dot').value || null,
     })};
   }
 
@@ -227,12 +280,20 @@
     const locOpts = locs.map(l => ({ value: l.id, label: l.name || `Loc ${l.id}` }));
     locOpts.unshift({ value: '', label: 'None' });
     sec.innerHTML = [
-      _field('Target location', _sel('bv2-portal-target-loc', locOpts, data.target_location_id || '')),
-      _field('Target col', _inp('bv2-portal-target-col', data.target_col, 'number')),
-      _field('Target row', _inp('bv2-portal-target-row', data.target_row, 'number')),
-      _field('One way', _chk('bv2-portal-oneway', data.is_one_way)),
-      _field('Label', _inp('bv2-portal-label', data.label)),
-      _field('Active', _chk('bv2-portal-active', data.is_active !== false)),
+      _section('🎯 Destination',
+        _field('Target location', _sel('bv2-portal-target-loc', locOpts, data.target_location_id || '')) +
+        _row(
+          _field('Target col', _inp('bv2-portal-target-col', data.target_col, 'number')),
+          _field('Target row', _inp('bv2-portal-target-row', data.target_row, 'number'))
+        )
+      ),
+      _section('⚙️ Settings',
+        _field('Label', _inp('bv2-portal-label', data.label)) +
+        _row(
+          _field('One way', _toggle('bv2-portal-oneway', data.is_one_way, 'One way')),
+          _field('Active', _toggle('bv2-portal-active', data.is_active !== false, 'Active'))
+        )
+      ),
     ].join('');
     return { getPayload: () => {
       const tid = $('bv2-portal-target-loc').value;
@@ -259,10 +320,14 @@
       console.error('bv2 failed to load NPC templates', e);
     }
     sec.innerHTML = [
-      _field('NPC Template', _sel('bv2-npc-tpl-id', tplOptions, data.npc_template_id)),
-      _field('Trigger', _sel('bv2-npc-trigger', triggers.map(t => ({value:t,label:t})), data.auto_spawn_trigger)),
-      _field('Count', _inp('bv2-npc-count', data.spawn_count, 'number')),
-      _field('Hostile', _chk('bv2-npc-hostile', data.is_hostile !== false)),
+      _section('👤 NPC',
+        _field('NPC Template', _sel('bv2-npc-tpl-id', tplOptions, data.npc_template_id))
+      ),
+      _section('⚙️ Spawn Settings',
+        _field('Trigger', _sel('bv2-npc-trigger', triggers.map(t => ({value:t,label:t})), data.auto_spawn_trigger)) +
+        _field('Count', _inp('bv2-npc-count', data.spawn_count, 'number')) +
+        _field('Hostile', _toggle('bv2-npc-hostile', data.is_hostile !== false, 'Hostile'))
+      ),
     ].join('');
     return { getPayload: () => ({
       npc_template_id: parseInt($('bv2-npc-tpl-id').value, 10) || 0,
@@ -277,13 +342,25 @@
     const levels = ['half','three_quarters','full'];
     const materials = ['wooden','stone','magical','natural'];
     sec.innerHTML = [
-      _field('Cover level', _sel('bv2-cover-level', levels.map(t => ({value:t,label:t})), data.cover_level)),
-      _field('Material', _sel('bv2-cover-material', materials.map(t => ({value:t,label:t})), data.material)),
-      _field('Blocks LOS', _chk('bv2-cover-los', data.blocks_line_of_sight)),
-      _field('Destructible', _chk('bv2-cover-destruct', data.is_destructible)),
-      _field('Current HP', _inp('bv2-cover-hp', data.current_hp, 'number')),
-      _field('Max HP', _inp('bv2-cover-max-hp', data.max_hp, 'number')),
-      _field('Cells', '<div id="bv2-cover-cells" style="font-size:0.75rem"></div>'),
+      _section('🛡️ Cover Properties',
+        _row(
+          _field('Cover level', _sel('bv2-cover-level', levels.map(t => ({value:t,label:t})), data.cover_level)),
+          _field('Material', _sel('bv2-cover-material', materials.map(t => ({value:t,label:t})), data.material))
+        ) +
+        _row(
+          _field('Blocks LOS', _toggle('bv2-cover-los', data.blocks_line_of_sight, 'Blocks LOS')),
+          _field('Destructible', _toggle('bv2-cover-destruct', data.is_destructible, 'Destructible'))
+        )
+      ),
+      _section('❤️ Durability',
+        _row(
+          _field('Current HP', _inp('bv2-cover-hp', data.current_hp, 'number')),
+          _field('Max HP', _inp('bv2-cover-max-hp', data.max_hp, 'number'))
+        )
+      ),
+      _section('📍 Cells',
+        '<div id="bv2-cover-cells" style="font-size:0.75rem"></div>'
+      ),
     ].join('');
     const cells = (data.cells || []).slice();
     function renderCells() {

@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════
-// Map Builder v2 — Light editor (Phase 4).
-// Sidebar light brushes, placed-light list, and modal CRUD.
+// Map Builder v2 — Light editor (Phase 4 + Phase 17 redesign).
+// Floating draggable panel with sectioned layout and Preview button.
 // ════════════════════════════════════════════════════════════
 
 (function () {
@@ -21,14 +21,83 @@
   // ── DOM helpers ───────────────────────────────────────────
   function $(id) { return document.getElementById(id); }
 
-  function openModal() {
-    const m = $('bv2-light-modal');
-    if (m) m.classList.remove('hidden');
+  function openPanel() {
+    const p = $('bv2-light-panel');
+    if (p) p.classList.remove('hidden');
   }
-  function closeModal() {
-    const m = $('bv2-light-modal');
-    if (m) m.classList.add('hidden');
+  function closePanel() {
+    const p = $('bv2-light-panel');
+    if (p) p.classList.add('hidden');
+    // Remove preview light
+    if (_previewLightId && S.view && S.view.lights) {
+      S.view.lights = S.view.lights.filter(l => l.id !== _previewLightId);
+      _previewLightId = null;
+      S.view.render();
+    }
   }
+  let _previewLightId = null;
+
+  function _syncSliderLabels() {
+    ['bv2-light-radius', 'bv2-light-bright', 'bv2-light-intensity'].forEach(id => {
+      const el = $(id);
+      if (el && el.nextElementSibling) el.nextElementSibling.textContent = el.value;
+    });
+  }
+
+  function _updateLightPreview() {
+    if (!S.view || !S.view.lights) return;
+    const col = parseInt($('bv2-light-col').value, 10) || 0;
+    const row = parseInt($('bv2-light-row').value, 10) || 0;
+    const radius = parseFloat($('bv2-light-radius').value) ?? 4;
+    const bright = parseFloat($('bv2-light-bright').value) ?? 0;
+    const intensity = parseFloat($('bv2-light-intensity').value) ?? 1;
+    const color = $('bv2-light-color').value || '#ffd9a0';
+    const kind = $('bv2-light-kind').value || 'torch';
+
+    if (!_previewLightId) _previewLightId = -Date.now();
+    const existing = S.view.lights.find(l => l.id === _previewLightId);
+    const payload = {
+      id: _previewLightId,
+      col, row,
+      radius_cells: radius,
+      bright_radius_cells: bright,
+      intensity,
+      color_hex: color,
+      source_kind: kind,
+    };
+    if (existing) {
+      Object.assign(existing, payload);
+    } else {
+      S.view.lights.push(payload);
+    }
+    S.view.render();
+  }
+
+  // ── Draggable panel ───────────────────────────────────────
+  function _makeDraggable() {
+    const panel = $('bv2-light-panel');
+    const header = $('bv2-light-panel-header');
+    if (!panel || !header) return;
+    let isDragging = false, startX, startY, rect;
+    header.addEventListener('mousedown', e => {
+      isDragging = true;
+      rect = panel.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      header.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      panel.style.left = (e.clientX - startX) + 'px';
+      panel.style.top = (e.clientY - startY) + 'px';
+      panel.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      header.style.cursor = 'grab';
+    });
+  }
+  _makeDraggable();
 
   function showError(msg) { alert(msg); }
 
@@ -54,7 +123,7 @@
     listEl.querySelectorAll('[data-edit-light]').forEach(btn => {
       btn.addEventListener('click', () => {
         const li = lights.find(x => x.id === parseInt(btn.dataset.editLight, 10));
-        if (li) openLightModal(li, 'edit');
+        if (li) openLightPanel(li, 'edit');
       });
     });
     listEl.querySelectorAll('[data-del-light]').forEach(btn => {
@@ -69,12 +138,12 @@
     });
   }
 
-  // ── Public: open modal ────────────────────────────────────
-  function openLightModal(li, mode, createOpts) {
+  // ── Public: open panel ────────────────────────────────────
+  function openLightPanel(li, mode, createOpts) {
     if (!S.currentLocId) { showError('Select a location first.'); return; }
 
-    const modal = $('bv2-light-modal');
-    const title = $('bv2-light-modal-title');
+    const panel = $('bv2-light-panel');
+    const title = $('bv2-light-panel-title');
     const lightIdEl = $('bv2-light-id');
     const colEl = $('bv2-light-col');
     const rowEl = $('bv2-light-row');
@@ -109,7 +178,8 @@
       kindEl.value = li.source_kind;
       if (deleteBtn) deleteBtn.style.display = 'inline-flex';
     }
-    modal.classList.remove('hidden');
+    _syncSliderLabels();
+    panel.classList.remove('hidden');
   }
 
   // ── Save handler ──────────────────────────────────────────
@@ -137,40 +207,46 @@
     try {
       if (id) {
         await S.api.updateLight(id, body);
+        const idx = (S.view.lights || []).findIndex(l => l.id === id);
+        if (idx >= 0) S.view.lights[idx] = { ...S.view.lights[idx], ...body, id };
       } else {
         if (!S.currentLocId) { showError('No location selected'); return; }
-        await S.api.createLight(S.currentLocId, body);
+        const created = await S.api.createLight(S.currentLocId, body);
+        if (created && created.id) {
+          S.view.lights = S.view.lights || [];
+          S.view.lights.push({ ...body, id: created.id });
+        }
       }
-      closeModal();
+      if (S.view) S.view.render();
+      closePanel();
     } catch (e) {
       console.error('bv2 saveLight', e);
       showError('Failed to save light: ' + (e.message || e));
     }
   }
 
-  // ── Wire modal events ─────────────────────────────────────
+  // ── Wire panel events ─────────────────────────────────────
   document.addEventListener('click', e => {
     if (e.target.id === 'bv2-light-save') onSaveLight();
-    if (e.target.id === 'bv2-light-cancel') closeModal();
-    if (e.target.id === 'bv2-light-modal-close') closeModal();
+    if (e.target.id === 'bv2-light-cancel') closePanel();
+    if (e.target.id === 'bv2-light-panel-close') closePanel();
+    if (e.target.id === 'bv2-light-preview') _updateLightPreview();
     if (e.target.id === 'bv2-light-delete') {
       const id = $('bv2-light-id').value ? parseInt($('bv2-light-id').value, 10) : null;
       if (!id) return;
       if (!confirm('Delete this light?')) return;
-      S.api.deleteLight(id).then(() => closeModal()).catch(e => {
+      S.api.deleteLight(id).then(() => closePanel()).catch(e => {
         console.error('bv2 deleteLight', e);
         showError('Failed to delete light');
       });
     }
   });
 
-  // Close on backdrop click
-  const modalEl = $('bv2-light-modal');
-  if (modalEl) {
-    modalEl.addEventListener('click', e => {
-      if (e.target === modalEl) closeModal();
-    });
-  }
+  // Slider labels sync (no live preview)
+  ['bv2-light-radius', 'bv2-light-bright', 'bv2-light-intensity', 'bv2-light-color'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('input', () => { _syncSliderLabels(); });
+  });
 
   // ── Wire brush buttons ────────────────────────────────────
   document.addEventListener('click', e => {
@@ -182,14 +258,45 @@
     btn.classList.add('active');
   });
 
+  // ── Ambient light slider ─────────────────────────────────
+  const ambientSlider = $('bv2-ambient-slider');
+  const ambientVal = $('bv2-ambient-val');
+  if (ambientSlider) {
+    ambientSlider.addEventListener('input', () => {
+      if (ambientVal) ambientVal.textContent = parseFloat(ambientSlider.value).toFixed(2);
+      if (S.view && S.view.location) {
+        S.view.location.ambient_light = parseFloat(ambientSlider.value);
+        S.view.render();
+      }
+    });
+    ambientSlider.addEventListener('change', async () => {
+      if (!S.currentLocId) return;
+      const val = parseFloat(ambientSlider.value);
+      try {
+        await S.api.updateLoc(S.currentLocId, { ambient_light: val });
+      } catch (e) {
+        console.error('bv2 ambient update', e);
+      }
+    });
+  }
+
   // ── Refresh list when location loads ──────────────────────
   const origLoadLocation = S.loadLocation;
   S.loadLocation = async function (locId) {
     await origLoadLocation.call(this, locId);
     renderLightList();
+    try {
+      const loc = await S.api.getLoc(locId);
+      if (ambientSlider && loc.ambient_light != null) {
+        ambientSlider.value = loc.ambient_light;
+        if (ambientVal) ambientVal.textContent = parseFloat(loc.ambient_light).toFixed(2);
+      }
+    } catch (e) {
+      // ignore
+    }
   };
 
   // Expose
-  S.openLightModal = openLightModal;
+  S.openLightModal = openLightPanel;
   S.renderLightList = renderLightList;
 })();

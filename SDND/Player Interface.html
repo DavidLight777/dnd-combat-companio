@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Combat Companion — Player</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-base:#09080a; --bg-surface:#111010; --bg-surface-2:#181614; --bg-surface-3:#201d1a;
+  --bg-input:#1c1917;
+  --border:rgba(220,175,90,0.09); --border-active:rgba(220,175,90,0.28);
+  --text-primary:#e0d3bc; --text-muted:#857668; --text-faint:#453e35;
+  --accent:#b8821e; --accent-hover:#cfa040; --accent-glow:rgba(184,130,30,0.2);
+  --accent-red:#ae3c3c; --accent-green:#3d8f52; --accent-blue:#4a7fc0; --accent-purple:#8a4abf; --accent-orange:#d97a2c;
+  --hp-high:#3d8f52; --hp-mid:#b08a20; --hp-low:#ae3c3c;
+  --mana:#5a8cd8; --xp:#9a7ed8;
+  --r-sm:5px; --r-md:9px; --r-lg:14px; --r-xl:20px;
+  --t-fast:110ms ease; --t-norm:220ms ease;
+  --font-d:'Cinzel',serif; --font-b:'Inter',sans-serif;
+  --topbar-h:54px; --tabbar-h:60px;
+  --sidebar-w:268px; --rail-w:0px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font-b);background:var(--bg-base);color:var(--text-primary);height:100vh;overflow:hidden;display:flex;flex-direction:column;font-size:14px;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(184,130,30,0.22);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(184,130,30,0.5)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;font-family:var(--font-b);font-size:0.78rem;font-weight:500;border:1px solid transparent;border-radius:var(--r-md);cursor:pointer;padding:6px 12px;transition:all var(--t-fast);white-space:nowrap;letter-spacing:0.01em}
+.btn-primary{background:var(--accent);color:#0a0806;border-color:var(--accent);font-weight:600}
+.btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn-ghost{background:transparent;color:var(--text-muted);border-color:var(--border)}
+.btn-ghost:hover{color:var(--text-primary);border-color:var(--border-active);background:var(--bg-surface-2)}
+.btn-secondary{background:var(--bg-surface-3);color:var(--text-primary);border-color:var(--border)}
+.btn-secondary:hover{border-color:var(--border-active)}
+.btn-danger{background:var(--accent-red);color:#fff;border-color:var(--accent-red)}
+.btn-sm{padding:5px 10px;font-size:0.74rem}
+.btn-xs{padding:3px 8px;font-size:0.68rem}
+.btn-icon{background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px 6px;border-radius:var(--r-sm);transition:all var(--t-fast)}
+.btn-icon:hover{color:var(--text-primary);background:var(--bg-surface-2)}
+
+/* Inputs */
+input[type=text],input[type=number],input[type=search],input:not([type]),textarea,select{
+  font-family:var(--font-b);font-size:0.8rem;background:var(--bg-input);color:var(--text-primary);
+  border:1px solid rgba(120,100,60,0.22);border-radius:var(--r-sm);padding:6px 9px;outline:none;transition:all var(--t-fast);
+}
+input:focus,select:focus,textarea:focus{border-color:rgba(184,130,30,0.55);box-shadow:0 0 0 2px var(--accent-glow)}
+input::placeholder,textarea::placeholder{color:var(--text-faint)}
+select option{background:var(--bg-surface-2);color:var(--text-primary)}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent)}
+
+.hidden{display:none!important}
+.text-muted{color:var(--text-muted)}
+
+/* ═══ TOP BAR ═══════════════════════════════════════════ */
+.topbar{
+  height:var(--topbar-h);display:flex;align-items:center;gap:14px;
+  padding:0 18px;background:var(--bg-surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:100;
+}
+.tb-brand{display:flex;align-items:center;gap:11px;flex-shrink:0}
+.brand-badge{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--accent) 0%,#7a5010 100%);
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  box-shadow:0 3px 10px rgba(184,130,30,0.25);
+}
+.tb-ident{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+.tb-name{font-family:var(--font-d);font-weight:700;font-size:0.92rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.tb-sub{font-size:0.62rem;color:var(--text-muted);letter-spacing:0.06em}
+.tb-spacer{flex:1}
+
+.tb-chip{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
+  border-radius:999px;background:var(--bg-surface-2);border:1px solid var(--border);
+  font-size:0.72rem;color:var(--text-muted);white-space:nowrap;transition:all var(--t-fast);cursor:default;
+}
+.tb-chip strong{color:var(--text-primary);font-weight:600;font-variant-numeric:tabular-nums}
+.tb-chip.accent{color:var(--accent);border-color:rgba(184,130,30,0.2)}
+.tb-chip.accent strong{color:var(--accent-hover)}
+.tb-chip.clickable{cursor:pointer}
+.tb-chip.clickable:hover{border-color:var(--border-active);background:var(--bg-surface-3)}
+
+.status-dot{width:7px;height:7px;border-radius:50%}
+.status-dot.connected{background:var(--accent-green);box-shadow:0 0 5px var(--accent-green)}
+
+/* ═══ MAIN LAYOUT ═══════════════════════════════════════ */
+.layout{flex:1;display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:0;overflow:hidden}
+
+/* ═══ CHARACTER SIDEBAR ═════════════════════════════════ */
+.char-sidebar{background:var(--bg-surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:14px 14px 18px}
+.hero-card{
+  position:relative;padding:16px 12px 14px;border-radius:var(--r-lg);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(184,130,30,0.2) 0%, rgba(184,130,30,0) 55%),
+    linear-gradient(180deg, var(--bg-surface-2), var(--bg-surface));
+  border:1px solid var(--border);text-align:center;overflow:hidden;
+}
+.hero-card::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,transparent 0%,transparent 60%,rgba(0,0,0,0.3) 100%);
+}
+.cs-avatar{
+  width:88px;height:88px;margin:0 auto 10px;border-radius:50%;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,220,150,0.3), rgba(184,130,30,0.1) 60%),
+    linear-gradient(135deg,var(--accent) 0%,var(--bg-surface-3) 100%);
+  border:2px solid rgba(184,130,30,0.4);
+  display:flex;align-items:center;justify-content:center;font-family:var(--font-d);font-size:2.1rem;font-weight:700;color:#1a1309;
+  box-shadow:0 4px 14px rgba(0,0,0,0.4), inset 0 -4px 10px rgba(0,0,0,0.25);position:relative;z-index:1;
+}
+.cs-name{font-family:var(--font-d);font-size:1rem;font-weight:700;color:var(--text-primary);letter-spacing:0.04em;position:relative;z-index:1}
+.cs-rc{font-size:0.7rem;color:var(--accent);margin-top:2px;letter-spacing:0.05em;position:relative;z-index:1}
+.cs-bio{font-size:0.64rem;color:var(--text-muted);margin-top:3px;position:relative;z-index:1}
+
+/* Vital Bars */
+.vital-stack{display:flex;flex-direction:column;gap:9px}
+.vital{padding:0;border-radius:var(--r-md)}
+.v-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.v-lbl{font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:4px}
+.v-val{font-size:0.78rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.v-bar{height:8px;background:var(--bg-surface-3);border-radius:4px;overflow:hidden;position:relative;border:1px solid var(--border)}
+.v-fill{height:100%;border-radius:4px;transition:width 0.4s ease, background 0.3s ease;position:relative}
+.v-fill.hp{background:linear-gradient(90deg,var(--hp-high),#4dbe68)}
+.v-fill.mana{background:linear-gradient(90deg,#4a73c4,#6ea0e8)}
+.v-fill.xp{background:linear-gradient(90deg,#7a60c8,#b49aeb)}
+.v-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,0.18) 0%,transparent 50%);border-radius:4px}
+.kd-tag{font-size:0.6rem;color:var(--text-muted);text-align:right;margin-top:2px;font-variant-numeric:tabular-nums}
+.kd-tag strong{color:var(--accent)}
+
+/* Level-up CTA */
+#btn-level-up{
+  display:none;width:100%;margin-top:8px;padding:8px;
+  background:linear-gradient(135deg,#a78bfa 0%,var(--accent) 100%);
+  color:#0a0806;font-weight:700;letter-spacing:0.06em;font-size:0.78rem;
+  border:none;border-radius:var(--r-md);cursor:pointer;
+  animation:lvlPulse 1.6s ease-in-out infinite;
+}
+@keyframes lvlPulse{0%,100%{box-shadow:0 0 0 0 rgba(167,139,250,0.55);transform:scale(1)}50%{box-shadow:0 0 0 8px rgba(167,139,250,0);transform:scale(1.02)}}
+
+/* Currency — unified coin icons */
+.cs-currency{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:9px 10px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md)}
+.cs-curr-row{display:flex;align-items:center;gap:6px;font-size:0.76rem;font-variant-numeric:tabular-nums}
+.coin{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;font-size:8px;font-weight:800;font-family:var(--font-d);line-height:1;flex-shrink:0;border:1px solid rgba(0,0,0,0.4);box-shadow:inset 0 -1px 1px rgba(0,0,0,0.35),inset 0 1px 1px rgba(255,255,255,0.35),0 0 4px currentColor}
+.coin-plat{background:radial-gradient(circle at 35% 30%,#f5f7ff,#a8b3d4 65%,#6b78a3);color:#3a3f55}
+.coin-gold{background:radial-gradient(circle at 35% 30%,#ffe898,#e8b53b 60%,#a07515);color:#5a3d05}
+.coin-silv{background:radial-gradient(circle at 35% 30%,#f0f0f0,#bcbcbc 60%,#7d7d7d);color:#3a3a3a}
+.coin-brz{background:radial-gradient(circle at 35% 30%,#e3a07a,#b06b30 60%,#6e3f15);color:#3a1f08}
+.coin-lg{width:18px;height:18px;font-size:10px}
+
+/* Section card */
+.section-card{background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 11px}
+.sec-lbl{font-size:0.6rem;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:5px}
+
+/* Stats grid */
+.stats-mini{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.sm-cell{background:var(--bg-surface-3);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 4px;text-align:center}
+.sm-key{font-size:0.54rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;display:block}
+.sm-val{font-size:0.95rem;font-weight:700;font-family:var(--font-d);display:block;margin-top:2px;line-height:1;color:var(--text-primary)}
+
+/* Roll form */
+.roll-form{display:flex;flex-direction:column;gap:5px}
+.roll-form select{width:100%;font-size:0.74rem;padding:5px 8px}
+.roll-dice{display:flex;gap:4px;align-items:center;font-size:0.7rem;color:var(--text-muted)}
+.roll-dice input{width:42px;font-size:0.72rem;text-align:center;padding:4px 5px}
+.roll-dice select{flex:1;font-size:0.72rem;padding:4px 6px}
+.adv-toggle{display:flex;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden}
+.adv-toggle button{flex:1;padding:5px 6px;font-size:0.66rem;font-weight:600;border:none;background:transparent;color:var(--text-muted);cursor:pointer;transition:all var(--t-fast);font-family:var(--font-b)}
+.adv-toggle button:hover{background:var(--bg-surface-3)}
+.adv-toggle button.active[data-mode=normal]{background:var(--bg-surface-3);color:var(--text-primary)}
+.adv-toggle button.active[data-mode=advantage]{background:rgba(61,143,82,0.22);color:#5ec87a}
+.adv-toggle button.active[data-mode=disadvantage]{background:rgba(174,60,60,0.22);color:#e07070}
+
+/* ═══ CENTER (Battle Field) ═════════════════════════════ */
+.center-col{display:flex;flex-direction:column;overflow:hidden;padding:14px;gap:10px;min-height:0}
+
+.hud-strip{display:none}
+.hud-tile{
+  flex:1;padding:9px 13px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);
+  display:flex;align-items:center;gap:10px;transition:all var(--t-fast);
+}
+.hud-tile .h-icon{width:30px;height:30px;border-radius:7px;background:var(--bg-surface-3);display:flex;align-items:center;justify-content:center;font-size:0.9rem;flex-shrink:0}
+.hud-tile .h-ic-red{background:rgba(174,60,60,0.18);color:#e07070}
+.hud-tile .h-ic-blue{background:rgba(74,127,192,0.18);color:#6ea4e8}
+.hud-tile .h-ic-orange{background:rgba(217,122,44,0.18);color:#ef9a5a}
+.hud-tile .h-ic-purple{background:rgba(138,74,191,0.18);color:#c07aff}
+.h-body{flex:1;min-width:0}
+.h-lbl{font-size:0.56rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-weight:600}
+.h-val{font-family:var(--font-d);font-weight:700;font-size:0.95rem;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+
+/* Status badges */
+.status-strip{display:none}
+.status-pill{
+  display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;
+  font-size:0.68rem;font-weight:600;background:var(--bg-surface-2);border:1px solid var(--border);color:var(--text-primary);
+}
+.status-pill.buff{border-color:rgba(61,143,82,0.3);color:#5ec87a;background:rgba(61,143,82,0.08)}
+.status-pill.debuff{border-color:rgba(174,60,60,0.3);color:#e07070;background:rgba(174,60,60,0.08)}
+
+/* Battle Panel */
+.battle-panel{
+  flex:1;min-height:0;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.bp-head{
+  padding:11px 14px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+.bp-head h2{font-family:var(--font-d);font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;flex:1;font-weight:600}
+.bp-canvas-wrap{flex:1;min-height:0;position:relative;background:#0a0908;overflow:hidden}
+#player-grid-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.82rem;pointer-events:none;text-align:center;padding:18px}
+
+/* Map painted mock (visual only for demo) */
+.mock-map{position:absolute;inset:0;background:
+  repeating-linear-gradient(0deg, rgba(184,130,30,0.05) 0 1px, transparent 1px 48px),
+  repeating-linear-gradient(90deg, rgba(184,130,30,0.05) 0 1px, transparent 1px 48px),
+  radial-gradient(ellipse at 35% 45%, rgba(60,40,20,0.7) 0 20%, transparent 45%),
+  radial-gradient(ellipse at 70% 60%, rgba(60,40,20,0.5) 0 15%, transparent 40%),
+  linear-gradient(135deg,#1a1510 0%,#0f0d0a 100%);
+}
+.mock-token{position:absolute;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:2px solid rgba(255,255,255,0.25);box-shadow:0 3px 8px rgba(0,0,0,0.5)}
+.mt-player{background:radial-gradient(circle at 30% 30%, #6ea4e8, #3f6fa8)}
+.mt-ally{background:radial-gradient(circle at 30% 30%, #5ec87a, #3d8f52)}
+.mt-enemy{background:radial-gradient(circle at 30% 30%, #e07070, #ae3c3c)}
+.mt-boss{background:radial-gradient(circle at 30% 30%, #e0c060, #a0700f);border:3px solid var(--accent)}
+.mock-token.selected{box-shadow:0 0 0 3px var(--accent),0 3px 12px rgba(184,130,30,0.5)}
+
+/* ═══ RIGHT RAIL (hidden — replaced by floating action dock) ══ */
+.right-rail{display:none}
+
+/* ═══ FLOATING ACTION DOCK ═════════════════════════════════ */
+.action-dock{
+  position:fixed;left:50%;bottom:calc(var(--tabbar-h) + 18px);transform:translateX(-50%);
+  display:flex;gap:14px;z-index:600;align-items:center;padding:10px 16px;
+  background:rgba(17,16,16,0.85);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--border-active);border-radius:999px;
+  box-shadow:0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(184,130,30,0.06) inset;
+}
+.dock-orb{
+  position:relative;width:56px;height:56px;border-radius:50%;
+  background:radial-gradient(circle at 30% 25%, rgba(255,220,150,0.15), rgba(20,18,15,0.95) 70%);
+  border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;cursor:pointer;color:var(--text-primary);
+  transition:all var(--t-fast);
+}
+.dock-orb:hover{transform:translateY(-3px);border-color:var(--border-active);box-shadow:0 8px 22px rgba(0,0,0,0.5)}
+.dock-orb.active{border-color:var(--accent);background:radial-gradient(circle at 30% 25%, rgba(255,220,150,0.25), rgba(50,35,15,0.95) 70%);box-shadow:0 0 0 3px var(--accent-glow), 0 8px 22px rgba(0,0,0,0.5)}
+.dock-orb.attack{color:#ff8a8a}
+.dock-orb.support{color:#7ddc94}
+.dock-orb.effects{color:#7eb8f5}
+.dock-orb.info{color:#e8b85a}
+.dock-orb .orb-badge{
+  position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;border-radius:9px;padding:0 5px;
+  background:var(--accent);color:#0a0806;font-size:0.62rem;font-weight:700;
+  display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-surface);
+}
+.dock-orb .orb-badge.alert{background:var(--accent-orange);animation:orbPulse 1.4s ease-in-out infinite}
+@keyframes orbPulse{0%,100%{box-shadow:0 0 0 0 rgba(217,122,44,0.6)}50%{box-shadow:0 0 0 6px rgba(217,122,44,0)}}
+.dock-target{
+  display:flex;align-items:center;gap:8px;padding:6px 12px 6px 8px;background:var(--bg-surface-2);
+  border:1px solid rgba(184,130,30,0.3);border-radius:999px;font-size:0.74rem;
+}
+.dock-target .dt-icon{width:24px;height:24px;border-radius:50%;background:rgba(174,60,60,0.22);display:flex;align-items:center;justify-content:center;font-size:0.78rem}
+.dock-target .dt-name{font-weight:600;color:var(--text-primary);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dock-target .dt-clear{margin-left:4px;color:var(--text-muted);background:none;border:none;cursor:pointer;font-size:0.85rem;padding:2px}
+.dock-target .dt-clear:hover{color:var(--text-primary)}
+
+/* Floating popup above dock */
+.dock-popup{
+  position:fixed;bottom:calc(var(--tabbar-h) + 96px);left:50%;transform:translateX(-50%) translateY(8px);
+  width:min(420px, calc(100vw - 28px));max-height:55vh;
+  background:rgba(20,18,16,0.96);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--border-active);border-radius:var(--r-lg);
+  box-shadow:0 20px 60px rgba(0,0,0,0.7);
+  display:none;flex-direction:column;overflow:hidden;z-index:599;
+  opacity:0;transition:opacity var(--t-norm), transform var(--t-norm);
+}
+.dock-popup.open{display:flex;opacity:1;transform:translateX(-50%) translateY(0)}
+.dp-tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--border);background:var(--bg-surface-2)}
+.dp-tab{
+  flex:1;padding:9px 10px;background:none;border:none;color:var(--text-muted);
+  font-family:var(--font-b);font-size:0.7rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;
+  cursor:pointer;border-bottom:2px solid transparent;transition:all var(--t-fast);
+}
+.dp-tab:hover{color:var(--text-primary)}
+.dp-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.dp-body{flex:1;overflow-y:auto;padding:12px}
+.dp-pane{display:none}
+.dp-pane.active{display:block}
+.dp-section-title{font-family:var(--font-d);font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin:4px 2px 8px;font-weight:600}
+.dp-section-title:not(:first-child){margin-top:14px}
+
+.list-row{
+  display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--bg-surface-2);
+  border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:5px;cursor:pointer;
+  transition:all var(--t-fast);
+}
+.list-row:hover{border-color:var(--border-active);transform:translateX(2px)}
+.list-row .lr-ico{width:34px;height:34px;border-radius:8px;background:var(--bg-surface-3);display:flex;align-items:center;justify-content:center;font-size:1.05rem;flex-shrink:0}
+.list-row.atk .lr-ico{background:rgba(174,60,60,0.18);color:#ff8a8a}
+.list-row.heal .lr-ico{background:rgba(61,143,82,0.18);color:#7ddc94}
+.list-row.magic .lr-ico{background:rgba(74,127,192,0.18);color:#7eb8f5}
+.list-row.item .lr-ico{background:rgba(184,130,30,0.18);color:var(--accent-hover)}
+.list-row .lr-body{flex:1;min-width:0}
+.list-row .lr-name{font-weight:600;font-size:0.82rem;color:var(--text-primary);display:flex;align-items:center;gap:6px}
+.list-row .lr-meta{font-size:0.66rem;color:var(--text-muted);margin-top:2px}
+.list-row .lr-cost{font-size:0.66rem;color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0;text-align:right}
+.list-row .lr-cd{color:var(--accent-orange)}
+.list-row.disabled{opacity:0.45;pointer-events:none}
+.list-row.qty-1::after{content:'×3';position:absolute}
+
+/* Backdrop click area */
+.dock-backdrop{position:fixed;inset:0;z-index:598;background:transparent;display:none}
+.dock-backdrop.open{display:block}
+
+.target-card{
+  padding:10px 12px;border-radius:var(--r-md);
+  background:linear-gradient(135deg,rgba(184,130,30,0.08),var(--bg-surface-2));
+  border:1px solid rgba(184,130,30,0.35);display:flex;align-items:center;gap:9px;
+}
+.target-card .tgt-icon{width:28px;height:28px;border-radius:50%;background:rgba(174,60,60,0.25);display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0}
+.target-card .tgt-info{flex:1;min-width:0}
+.target-card .tgt-lbl{font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-weight:600}
+.target-card .tgt-name{font-weight:600;font-size:0.85rem;color:var(--text-primary)}
+
+/* Panel */
+.panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.panel-hd{padding:9px 13px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.panel-hd h2{font-family:var(--font-d);font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;flex:1;font-weight:600;color:var(--text-primary)}
+.panel-bd{padding:11px}
+
+/* Action grid */
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.action-btn{
+  display:flex;flex-direction:column;align-items:center;gap:4px;padding:11px 6px;
+  background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  cursor:pointer;transition:all var(--t-fast);color:var(--text-primary);font-family:var(--font-b);
+}
+.action-btn:hover{border-color:var(--border-active);background:var(--bg-surface-3);transform:translateY(-1px)}
+.action-btn .ab-icon{font-size:1.15rem;line-height:1}
+.action-btn .ab-lbl{font-size:0.7rem;font-weight:600;letter-spacing:0.02em}
+.action-btn.primary{background:linear-gradient(135deg,rgba(174,60,60,0.25),var(--bg-surface-2));border-color:rgba(174,60,60,0.4)}
+.action-btn.primary:hover{border-color:#e07070;background:linear-gradient(135deg,rgba(174,60,60,0.4),var(--bg-surface-2))}
+.action-btn.magic{background:linear-gradient(135deg,rgba(74,127,192,0.2),var(--bg-surface-2));border-color:rgba(74,127,192,0.35)}
+.action-btn.heal{background:linear-gradient(135deg,rgba(61,143,82,0.2),var(--bg-surface-2));border-color:rgba(61,143,82,0.35)}
+
+/* Bonus / penalty rows */
+.mod-row{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:4px;font-size:0.76rem}
+.mod-row.buff{border-left:3px solid var(--accent-green)}
+.mod-row.debuff{border-left:3px solid var(--accent-red)}
+.mod-row .mod-ico{width:22px;height:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.9rem}
+.mod-row .mod-body{flex:1;min-width:0}
+.mod-row .mod-name{font-weight:600;font-size:0.75rem}
+.mod-row .mod-dur{font-size:0.62rem;color:var(--text-muted);margin-top:1px}
+
+/* Reactions — highlight border pulse */
+#reactions-panel{border-color:rgba(217,122,44,0.45);background:linear-gradient(135deg,rgba(217,122,44,0.06),var(--bg-surface))}
+#reactions-panel .panel-hd{background:rgba(217,122,44,0.1)}
+#reactions-panel h2{color:var(--accent-orange)}
+
+/* Announcement */
+.announcement{padding:9px 11px;background:var(--bg-surface-2);border-left:3px solid var(--accent);border-radius:var(--r-sm);margin-bottom:5px;font-size:0.78rem;line-height:1.5}
+.announcement .ann-meta{font-size:0.62rem;color:var(--text-muted);margin-top:4px}
+
+/* Details summary */
+details summary{
+  cursor:pointer;padding:9px 12px;background:var(--bg-surface-2);border:1px solid var(--border);
+  border-radius:var(--r-md);font-size:0.76rem;font-weight:600;color:var(--text-muted);list-style:none;
+  display:flex;align-items:center;gap:7px;transition:border-color var(--t-fast);
+}
+details summary:hover{border-color:var(--border-active);color:var(--text-primary)}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:'▸';transition:transform var(--t-fast);font-size:0.8rem}
+details[open] summary::before{transform:rotate(90deg)}
+details[open] summary{border-radius:var(--r-md) var(--r-md) 0 0;border-bottom:none}
+details .details-body{padding:10px;background:var(--bg-surface);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r-md) var(--r-md)}
+
+/* Quests */
+.quest-row{padding:9px 11px;background:var(--bg-surface-2);border:1px solid var(--border);border-left:3px solid var(--accent-blue);border-radius:var(--r-sm);margin-bottom:5px;font-size:0.76rem}
+.quest-title{font-weight:600;margin-bottom:2px}
+.quest-desc{color:var(--text-muted);font-size:0.68rem;line-height:1.45}
+
+/* ═══ OTHER TABS ═══════════════════════════════════════ */
+.tab-pane{display:none;flex:1;overflow-y:auto;padding:18px}
+.tab-pane.active{display:block}
+.tab-pane .page-title{font-family:var(--font-d);font-size:0.82rem;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px;color:var(--text-primary);display:flex;align-items:center;gap:10px}
+
+/* Hide default layout on non-main tabs */
+.layout.non-main{grid-template-columns:1fr}
+.layout.non-main > .char-sidebar,
+.layout.non-main > .center-col{display:none}
+.action-dock.hidden,.dock-popup.hidden,.dock-backdrop.hidden{display:none!important}
+.layout.non-main > .tab-pane.active{display:flex;flex-direction:column}
+
+/* Inventory */
+.inv-tabs{display:flex;gap:6px;margin-bottom:12px}
+.inv-tab{flex:0 0 auto;padding:7px 14px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text-muted);font-size:0.78rem;font-weight:600;cursor:pointer;transition:all var(--t-fast);display:flex;align-items:center;gap:6px}
+.inv-tab:hover{color:var(--text-primary);border-color:var(--border-active)}
+.inv-tab.active{background:var(--accent);color:#0a0806;border-color:var(--accent)}
+.inv-tab .count{display:inline-block;min-width:18px;padding:0 5px;font-size:0.68rem;background:rgba(0,0,0,0.22);border-radius:10px;font-weight:700}
+
+.inv-filters{display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap}
+.inv-filter{padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:999px;color:var(--text-muted);font-size:0.7rem;font-weight:500;cursor:pointer;transition:all var(--t-fast)}
+.inv-filter:hover{color:var(--text-primary);border-color:var(--border-active)}
+.inv-filter.active{background:var(--accent);color:#0a0806;border-color:var(--accent)}
+
+.inv-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.slot-meter{padding:4px 11px;border-radius:999px;background:var(--bg-surface-2);border:1px solid var(--border);color:var(--text-muted);font-size:0.72rem;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:5px}
+.slot-meter strong{color:var(--text-primary);font-weight:600}
+
+.equip-panel{margin-bottom:14px;padding:14px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-lg)}
+.equip-h{font-family:var(--font-d);font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-bottom:10px}
+.equip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:7px}
+.equip-slot{
+  padding:9px 7px;background:var(--bg-surface-2);border:1px dashed var(--border);border-radius:var(--r-md);
+  min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  cursor:pointer;transition:all var(--t-fast);
+}
+.equip-slot:hover{border-color:var(--border-active);background:var(--bg-surface-3)}
+.equip-slot.filled{border-style:solid;border-color:var(--accent);background:rgba(184,130,30,0.08)}
+.es-icon{font-size:1.3rem;opacity:0.6}
+.equip-slot.filled .es-icon{opacity:1}
+.es-lbl{font-size:0.58rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em}
+.es-name{font-size:0.7rem;font-weight:600;color:var(--text-primary);line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.inv-card{
+  position:relative;padding:11px;background:var(--bg-surface);border:1px solid var(--border);
+  border-radius:var(--r-md);cursor:pointer;transition:all var(--t-fast);overflow:hidden;
+}
+.inv-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--rarity-common,#888)}
+.inv-card.rarity-uncommon::before{background:#3d8f52}
+.inv-card.rarity-rare::before{background:#4a7fc0}
+.inv-card.rarity-epic::before{background:#8a4abf}
+.inv-card.rarity-legendary::before{background:var(--accent)}
+.inv-card:hover{border-color:var(--border-active);transform:translateY(-1px)}
+.inv-card.equipped{border-color:var(--accent-green);box-shadow:0 0 0 1px rgba(61,143,82,0.3)}
+.inv-card .inv-head{display:flex;gap:7px;align-items:center;margin-bottom:5px}
+.inv-card .inv-icon{font-size:1.2rem;flex-shrink:0}
+.inv-card .inv-name{font-weight:600;font-size:0.8rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inv-card .inv-meta{font-size:0.66rem;color:var(--text-muted);display:flex;gap:8px;flex-wrap:wrap}
+.inv-card .inv-qty{position:absolute;top:7px;right:9px;font-size:0.65rem;color:var(--text-muted);background:var(--bg-surface-3);padding:1px 6px;border-radius:10px;font-variant-numeric:tabular-nums}
+.inv-card .equip-badge{position:absolute;top:7px;left:9px;font-size:0.58rem;background:var(--accent-green);color:#fff;padding:1px 6px;border-radius:3px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
+.inv-card .inv-bonuses{font-size:0.65rem;color:#5ec87a;margin-top:3px}
+.inv-card .inv-weapon-stats{font-size:0.65rem;color:var(--accent);margin-top:2px}
+
+/* Abilities */
+.ab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.ab-card{
+  padding:12px;background:var(--bg-surface);border:1px solid var(--border);
+  border-radius:var(--r-md);cursor:pointer;transition:all var(--t-fast);
+}
+.ab-card:hover{border-color:var(--border-active);transform:translateY(-1px)}
+.ab-card .ab-h{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.ab-card .ab-ico{width:30px;height:30px;border-radius:7px;background:var(--bg-surface-3);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.ab-card.magic .ab-ico{background:rgba(74,127,192,0.2);color:#6ea4e8}
+.ab-card.melee .ab-ico{background:rgba(174,60,60,0.2);color:#e07070}
+.ab-card.heal  .ab-ico{background:rgba(61,143,82,0.2);color:#5ec87a}
+.ab-card .ab-name{font-weight:600;font-size:0.85rem}
+.ab-card .ab-tag{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-top:1px}
+.ab-card .ab-desc{font-size:0.72rem;color:var(--text-muted);line-height:1.5;margin-top:6px}
+.ab-card .ab-foot{display:flex;gap:10px;margin-top:8px;font-size:0.68rem}
+.ab-cost{color:#6ea4e8}
+.ab-cd{color:var(--accent-orange)}
+.ab-uses{color:#5ec87a}
+
+/* Professions */
+.prof-grid{display:flex;flex-direction:column;gap:11px}
+.prof-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);padding:13px}
+.prof-card .prof-head{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.prof-card .prof-name{font-family:var(--font-d);font-size:0.95rem;font-weight:700;flex:1}
+.prof-lvl{font-size:0.68rem;font-weight:700;color:var(--accent);padding:2px 10px;border:1px solid var(--accent);border-radius:999px;letter-spacing:0.04em}
+.prof-card .prof-desc{font-size:0.76rem;color:var(--text-muted);line-height:1.45;margin:4px 0}
+.prof-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.chip{display:inline-block;padding:2px 8px;font-size:0.66rem;background:var(--bg-surface-3);border:1px solid var(--border);border-radius:999px;color:var(--text-muted)}
+.chip.accent{color:var(--accent);border-color:rgba(184,130,30,0.25)}
+
+/* Journal */
+.journal-list{display:flex;flex-direction:column;gap:7px}
+.journal-entry{padding:10px 12px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);cursor:pointer;transition:border-color var(--t-fast)}
+.journal-entry:hover{border-color:var(--border-active)}
+.journal-entry .je-title{font-weight:600;font-size:0.82rem;display:flex;align-items:center;gap:8px}
+.journal-entry .je-type{font-size:0.58rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);padding:1px 7px;background:rgba(184,130,30,0.1);border-radius:3px;font-weight:700}
+.journal-entry .je-excerpt{font-size:0.7rem;color:var(--text-muted);line-height:1.5;margin-top:5px}
+.journal-entry .je-date{font-size:0.6rem;color:var(--text-faint);margin-top:4px}
+
+/* Activity log */
+.log-tabs{display:flex;gap:6px;margin-bottom:12px}
+.log-tab-btn.active{background:var(--accent);color:#0a0806;border-color:var(--accent)}
+.calc-log{max-height:500px;overflow-y:auto;padding:10px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);font-size:0.78rem;line-height:1.6}
+.log-entry{padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:9px;align-items:baseline}
+.log-time{color:var(--text-faint);font-size:0.65rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.log-tag{font-weight:600;font-size:0.7rem;padding:1px 6px;border-radius:3px;letter-spacing:0.04em;text-transform:uppercase;white-space:nowrap}
+.log-tag.atk{background:rgba(174,60,60,0.15);color:#e07070}
+.log-tag.heal{background:rgba(61,143,82,0.15);color:#5ec87a}
+.log-tag.roll{background:rgba(184,130,30,0.15);color:var(--accent)}
+.log-tag.move{background:rgba(74,127,192,0.15);color:#6ea4e8}
+.log-detail{color:var(--text-muted);flex:1}
+
+/* ═══ BOTTOM TAB BAR ════════════════════════════════════ */
+.tabbar{
+  height:var(--tabbar-h);display:flex;background:var(--bg-surface);border-top:1px solid var(--border);
+  flex-shrink:0;position:relative;
+}
+.tabbar::before{
+  content:'';position:absolute;top:0;height:2px;left:0;width:calc(100% / 6);
+  background:var(--accent);transition:left var(--t-norm);border-radius:0 0 2px 2px;
+}
+.tabbar[data-active="0"]::before{left:calc(0 * (100%/6))}
+.tabbar[data-active="1"]::before{left:calc(1 * (100%/6))}
+.tabbar[data-active="2"]::before{left:calc(2 * (100%/6))}
+.tabbar[data-active="3"]::before{left:calc(3 * (100%/6))}
+.tabbar[data-active="4"]::before{left:calc(4 * (100%/6))}
+.tabbar[data-active="5"]::before{left:calc(5 * (100%/6))}
+
+.tab-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  border:none;background:none;color:var(--text-muted);cursor:pointer;font-family:var(--font-b);
+  font-size:0.98rem;transition:color var(--t-fast);padding:0;
+}
+.tab-btn span{font-size:0.62rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase}
+.tab-btn.active{color:var(--accent)}
+.tab-btn:hover{color:var(--text-primary)}
+.tab-btn.active:hover{color:var(--accent-hover)}
+
+/* ═══ TWEAKS ════════════════════════════════════════════ */
+#tweaks-panel{display:none;position:fixed;bottom:74px;left:50%;transform:translateX(-50%);background:var(--bg-surface-2);border:1px solid var(--border-active);border-radius:var(--r-xl);padding:12px 20px;z-index:9999;gap:20px;align-items:center;box-shadow:0 10px 40px rgba(0,0,0,0.6);font-size:0.74rem;white-space:nowrap}
+#tweaks-panel label{display:flex;align-items:center;gap:7px;color:var(--text-muted);cursor:pointer}
+.toggle-switch{position:relative;display:inline-block;width:30px;height:17px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-switch .slider{position:absolute;cursor:pointer;inset:0;background:var(--bg-surface-3);border-radius:17px;transition:all var(--t-fast);border:1px solid var(--border)}
+.toggle-switch .slider::before{content:'';position:absolute;width:11px;height:11px;left:2px;bottom:2px;background:var(--text-muted);border-radius:50%;transition:all var(--t-fast)}
+.toggle-switch input:checked + .slider{background:var(--accent);border-color:var(--accent)}
+.toggle-switch input:checked + .slider::before{transform:translateX(13px);background:#fff}
+
+/* GM Timer Banner */
+#gm-timer-banner{padding:12px;text-align:center;background:linear-gradient(135deg,rgba(217,122,44,0.18),var(--bg-surface));border:1px solid var(--accent-orange);border-radius:var(--r-md);flex-shrink:0}
+#gm-timer-banner .gt-lbl{font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px}
+#gm-timer-display{font-family:var(--font-d);font-size:2rem;font-weight:700;color:var(--accent-orange);font-variant-numeric:tabular-nums}
+
+/* Map modal */
+#map-modal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);flex-direction:column}
+#map-modal .mm-head{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg-surface);border-bottom:1px solid var(--border)}
+#map-modal .mm-title{font-family:var(--font-d);font-size:0.9rem;letter-spacing:0.06em;flex:1}
+
+/* Mobile */
+@media (max-width:980px){
+  .layout{grid-template-columns:1fr}
+  .char-sidebar{display:none}
+  .layout:not(.non-main) .center-col{padding:12px}
+  .action-dock{gap:8px;padding:8px 10px}
+  .dock-orb{width:50px;height:50px;font-size:1.3rem}
+  .dock-target{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="tb-brand">
+    <div class="brand-badge">⚔</div>
+    <div class="tb-ident">
+      <span class="tb-name" id="char-name">Thorin Ironshard</span>
+      <span class="tb-sub">Warrior · Dwarf · Lv 5</span>
+    </div>
+  </div>
+  <div class="tb-spacer"></div>
+  <div class="tb-chip">
+    <span class="status-dot connected" id="ws-dot"></span>
+    <span id="ws-label">Connected</span>
+  </div>
+  <div class="tb-chip accent clickable" id="player-currency" title="Click to transfer"><span class="coin coin-gold" style="margin-right:2px">G</span><strong>247</strong></div>
+  <div class="tb-chip" id="player-timer-area">⏱ <strong id="player-timer-display">0:42:18</strong></div>
+  <div class="tb-chip">Session <strong id="session-code">X7FK</strong></div>
+  <button class="btn btn-ghost btn-sm" id="btn-open-map">🗺 Map</button>
+  <span id="char-rc-badges" style="display:none"></span>
+</div>
+
+<!-- MAP MODAL -->
+<div id="map-modal">
+  <div class="mm-head">
+    <span class="mm-title">🗺 Map</span>
+    <button class="btn btn-ghost btn-sm" id="btn-close-map">✕ Close</button>
+  </div>
+  <div style="flex:1;position:relative;overflow:hidden"><canvas id="player-map-canvas" style="display:block;width:100%;height:100%"></canvas></div>
+</div>
+
+<div class="tab-content-area" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+
+<!-- ═══ MAIN TAB ═══════════════════════════════════════════ -->
+<div class="player-tab active" id="tab-main" style="display:flex;flex:1;min-height:0">
+<div class="layout" id="main-layout">
+
+<!-- CHARACTER SIDEBAR -->
+<aside class="char-sidebar" id="char-sidebar">
+
+  <div class="hero-card">
+    <div class="cs-avatar" id="cs-avatar"><span id="cs-avatar-initial">T</span></div>
+    <div class="cs-name" id="cs-name">Thorin Ironshard</div>
+    <div class="cs-rc" id="cs-rc">Warrior · Dwarf</div>
+    <div class="cs-bio" id="cs-bio">Male · 142 years</div>
+  </div>
+
+  <!-- Vital Stack -->
+  <div class="vital-stack">
+    <div id="cs-hp-block" class="vital">
+      <div class="v-head">
+        <span class="v-lbl">❤ Hit Points</span>
+        <span class="v-val" id="cs-hp-value">42 / 50</span>
+      </div>
+      <div class="v-bar"><div class="v-fill hp" id="cs-hp-fill" style="width:84%"></div></div>
+      <div class="kd-tag">KD <strong id="cs-kd">16</strong></div>
+    </div>
+    <div id="cs-mana-block" class="vital">
+      <div class="v-head"><span class="v-lbl">🔮 Mana</span><span class="v-val" id="cs-mana-value">8 / 12</span></div>
+      <div class="v-bar"><div class="v-fill mana" id="cs-mana-fill" style="width:66%"></div></div>
+    </div>
+    <div id="cs-xp-block" class="vital">
+      <div class="v-head"><span class="v-lbl">⭐ Experience</span><span class="v-val" id="cs-xp-value">2,430 / 3,000</span></div>
+      <div class="v-bar"><div class="v-fill xp" id="cs-xp-fill" style="width:81%"></div></div>
+      <button id="btn-level-up">⬆ LEVEL UP!</button>
+    </div>
+  </div>
+
+  <!-- Currency -->
+  <div class="cs-currency" id="cs-currency">
+    <span class="cs-curr-row" id="cs-curr-plat"><span class="coin coin-plat">P</span><span id="cs-curr-plat-val">2</span> Plat</span>
+    <span class="cs-curr-row"><span class="coin coin-gold">G</span><span id="cs-curr-gold">24</span> Gold</span>
+    <span class="cs-curr-row"><span class="coin coin-silv">S</span><span id="cs-curr-silver">18</span> Silv</span>
+    <span class="cs-curr-row"><span class="coin coin-brz">B</span><span id="cs-curr-bronze">45</span> Brz</span>
+  </div>
+
+  <!-- Characteristics -->
+  <div class="section-card" id="cs-stats">
+    <div class="sec-lbl">📊 Characteristics</div>
+    <div class="stats-mini" id="cs-stats-grid">
+      <div class="sm-cell"><span class="sm-key">STR</span><span class="sm-val">16</span></div>
+      <div class="sm-cell"><span class="sm-key">DEX</span><span class="sm-val">10</span></div>
+      <div class="sm-cell"><span class="sm-key">CON</span><span class="sm-val">14</span></div>
+      <div class="sm-cell"><span class="sm-key">INT</span><span class="sm-val">8</span></div>
+      <div class="sm-cell"><span class="sm-key">WIS</span><span class="sm-val">11</span></div>
+      <div class="sm-cell"><span class="sm-key">CHA</span><span class="sm-val">7</span></div>
+    </div>
+  </div>
+
+  <!-- Characteristic Roll -->
+  <div class="section-card cs-char-roll">
+    <div class="sec-lbl">🎲 Characteristic Roll</div>
+    <div class="roll-form">
+      <select id="cs-roll-stat">
+        <option value="strength">Strength</option><option value="dexterity">Dexterity</option>
+        <option value="constitution">Constitution</option><option value="intelligence">Intelligence</option>
+        <option value="wisdom">Wisdom</option><option value="charisma">Charisma</option>
+      </select>
+      <select id="cs-roll-type">
+        <option value="ability_check">Ability Check</option>
+        <option value="saving_throw">Saving Throw</option>
+        <option value="skill_check">Skill Check</option>
+      </select>
+      <div class="roll-dice">
+        <input type="number" id="cs-roll-dice-count" value="1" min="1" max="10">
+        <span>d</span>
+        <select id="cs-roll-dice-type">
+          <option value="4">4</option><option value="6">6</option><option value="8">8</option>
+          <option value="10">10</option><option value="12">12</option>
+          <option value="20" selected>20</option><option value="100">100</option>
+        </select>
+      </div>
+      <div class="adv-toggle" id="cs-roll-adv">
+        <button data-mode="normal" class="active">Normal</button>
+        <button data-mode="advantage">ADV</button>
+        <button data-mode="disadvantage">DIS</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-cs-roll">🎲 Roll Dice</button>
+      <div id="cs-roll-result" style="font-size:0.7rem;min-height:14px"></div>
+    </div>
+  </div>
+
+</aside>
+
+<!-- CENTER -->
+<div class="center-col">
+
+  <div id="gm-timer-banner" style="display:none">
+    <div class="gt-lbl">⏱ GM Timer</div>
+    <div id="gm-timer-display">01:30</div>
+  </div>
+
+  <div id="combat-banner" style="display:none"></div>
+
+  <!-- Hidden legacy -->
+  <div class="hp-card" id="hp-card" style="display:none">
+    <div class="hp-big" id="hp-display">42 / 50</div>
+    <div class="hp-label">Hit Points · KD: <span id="kd-display">16</span></div>
+    <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:84%;background:var(--hp-high)"></div></div>
+  </div>
+
+  <!-- Status (kept above map, compact) -->
+  <div id="player-status-badges" class="status-strip" style="display:none">
+    <span class="status-pill buff">🛡 Shielded · 2t</span>
+    <span class="status-pill buff">⚡ Haste · 1t</span>
+    <span class="status-pill debuff">🩸 Bleed · 3t</span>
+  </div>
+
+  <!-- Battle Panel -->
+  <section class="panel battle-panel" id="player-grid-panel">
+    <div class="bp-head">
+      <h2>🗺 Battle Field</h2>
+      <span id="player-grid-status" style="font-size:0.68rem;color:var(--text-muted)">24 × 18 · Grid ON</span>
+      <button class="btn btn-ghost btn-xs" id="btn-player-portrait" title="Upload token portrait">🖼</button>
+      <button class="btn btn-ghost btn-xs" id="btn-grid-fit" title="Fit to view">⛶</button>
+      <button class="btn btn-ghost btn-xs" id="btn-grid-expand" title="Expand/collapse">⇕</button>
+    </div>
+    <div class="bp-canvas-wrap">
+      <div id="player-grid-wrap" style="position:absolute;inset:0">
+        <canvas id="player-grid-canvas" style="display:block;width:100%;height:100%"></canvas>
+        <div class="mock-map"></div>
+        <div class="mock-token mt-player selected" style="left:35%;top:55%">🪖</div>
+        <div class="mock-token mt-ally" style="left:42%;top:68%">⚕</div>
+        <div class="mock-token mt-ally" style="left:28%;top:65%">🧙</div>
+        <div class="mock-token mt-enemy" style="left:62%;top:40%">👹</div>
+        <div class="mock-token mt-enemy" style="left:70%;top:50%">👹</div>
+        <div class="mock-token mt-boss" style="left:75%;top:30%">🐉</div>
+        <div id="player-grid-empty" style="display:none">Waiting for the GM to set up the battlefield…</div>
+      </div>
+    </div>
+  </section>
+
+  <div style="display:none" aria-hidden="true">
+    <div id="table-view-teammates"></div>
+    <div id="table-view-npcs"></div>
+    <div id="table-view-grid"></div>
+  </div>
+
+</div>
+
+<!-- RIGHT RAIL (hidden — content moved to floating dock; kept so legacy JS can write to existing IDs) -->
+<aside class="right-rail" id="right-sidebar" style="display:none">
+
+  <div class="target-card" id="selected-target-info">
+    <div class="tgt-icon">🎯</div>
+    <div class="tgt-info">
+      <div class="tgt-lbl">Current Target</div>
+      <div class="tgt-name" id="selected-target-name">Grax the Maimed</div>
+    </div>
+    <button class="btn-icon" id="btn-clear-target">✕</button>
+  </div>
+
+  <section class="panel">
+    <div class="panel-hd"><h2>⚡ Actions</h2></div>
+    <div class="panel-bd" id="action-menu-body">
+      <div class="action-grid">
+        <button class="action-btn primary"><span class="ab-icon">⚔</span><span class="ab-lbl">Attack</span></button>
+        <button class="action-btn magic"><span class="ab-icon">✨</span><span class="ab-lbl">Cast Spell</span></button>
+        <button class="action-btn heal"><span class="ab-icon">💚</span><span class="ab-lbl">Heal</span></button>
+        <button class="action-btn"><span class="ab-icon">🎒</span><span class="ab-lbl">Use Item</span></button>
+        <button class="action-btn"><span class="ab-icon">🛡</span><span class="ab-lbl">Defend</span></button>
+        <button class="action-btn"><span class="ab-icon">🏃</span><span class="ab-lbl">Move</span></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="reactions-panel" class="panel">
+    <div class="panel-hd">
+      <h2>⚡ Reactions</h2>
+      <button class="btn-icon" id="reactions-toggle">▼</button>
+    </div>
+    <div class="panel-bd" id="reactions-content">
+      <div id="reactions-list" style="display:flex;flex-direction:column;gap:5px">
+        <div class="mod-row buff">
+          <div class="mod-ico">🛡</div>
+          <div class="mod-body"><div class="mod-name">Parry</div><div class="mod-dur">1× per round · Available</div></div>
+          <button class="btn btn-ghost btn-xs">Use</button>
+        </div>
+      </div>
+      <div style="margin-top:6px;font-size:0.65rem;color:var(--text-muted);font-style:italic">Reactions reset each round</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-hd"><h2>✅ Active Bonuses</h2></div>
+    <div class="panel-bd" id="active-bonuses-list">
+      <div class="mod-row buff">
+        <div class="mod-ico">🛡</div>
+        <div class="mod-body"><div class="mod-name">Shield of Faith</div><div class="mod-dur">+2 AC · 2 turns</div></div>
+      </div>
+      <div class="mod-row buff">
+        <div class="mod-ico">⚡</div>
+        <div class="mod-body"><div class="mod-name">Haste</div><div class="mod-dur">+10 speed · 1 turn</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-hd"><h2>❌ Active Penalties</h2></div>
+    <div class="panel-bd" id="active-penalties-list">
+      <div class="mod-row debuff">
+        <div class="mod-ico">🩸</div>
+        <div class="mod-body"><div class="mod-name">Bleeding</div><div class="mod-dur">−2 HP / turn · 3 turns</div></div>
+      </div>
+    </div>
+  </section>
+
+  <details class="legacy-panels">
+    <summary>⚙ Advanced / manual roll tools</summary>
+    <div class="details-body" style="display:flex;flex-direction:column;gap:8px">
+      <section class="panel">
+        <div class="panel-hd"><h2>🎲 Free Roll</h2></div>
+        <div class="panel-bd">
+          <div id="free-roll-widget-host"></div>
+          <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-top:6px">
+            <input type="checkbox" id="free-roll-private"> Private roll
+          </label>
+        </div>
+      </section>
+      <div class="stats-grid" id="stats-grid"></div>
+      <div style="padding:9px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-md)">
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:0.72rem">
+          <span>🎲</span>
+          <select id="player-roll-stat" style="font-size:0.72rem;width:100px">
+            <option value="strength">Strength</option><option value="dexterity">Dexterity</option>
+            <option value="constitution">Constitution</option><option value="intelligence">Intelligence</option>
+            <option value="wisdom">Wisdom</option><option value="charisma">Charisma</option>
+          </select>
+          <select id="player-roll-type" style="font-size:0.72rem;width:105px">
+            <option value="ability_check">Ability</option>
+            <option value="saving_throw">Save</option>
+            <option value="skill_check">Skill</option>
+          </select>
+          <div class="adv-toggle" id="char-roll-adv-toggle" style="flex:1">
+            <button data-mode="normal" class="active">Norm</button>
+            <button data-mode="advantage">ADV</button>
+            <button data-mode="disadvantage">DIS</button>
+          </div>
+          <button class="btn btn-secondary btn-xs" id="btn-player-roll">🎲 Roll</button>
+        </div>
+        <div id="player-roll-result" style="width:100%;font-size:0.75rem;margin-top:5px"></div>
+      </div>
+      <section class="panel"><div class="panel-hd"><h2>⚔ Attack Roll</h2></div><div class="panel-bd" id="attack-body"></div></section>
+      <section class="panel"><div class="panel-hd"><h2>🛡 Incoming Damage</h2></div><div class="panel-bd" id="defense-body"></div></section>
+      <section class="panel"><div class="panel-hd"><h2>💚 HP Recovery</h2></div><div class="panel-bd" id="heal-body"></div></section>
+      <section class="panel"><div class="panel-hd"><h2>⏱ Turn Counter</h2></div><div class="panel-bd" id="turns-body"></div></section>
+      <section class="panel"><div class="panel-hd"><h2>✨ Effects</h2></div><div class="panel-bd" id="effects-body"></div></section>
+    </div>
+  </details>
+
+  <details>
+    <summary>📜 Quests</summary>
+    <div class="details-body">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="btn btn-xs btn-primary player-quest-tab active" data-pqtab="active">Active</button>
+        <button class="btn btn-xs btn-ghost player-quest-tab" data-pqtab="completed">Completed</button>
+      </div>
+      <div id="player-quests-active">
+        <div class="quest-row">
+          <div class="quest-title">The Stolen Relic</div>
+          <div class="quest-desc">Recover the Amulet of Kethran from the bandit lair north of Ashford.</div>
+        </div>
+        <div class="quest-row">
+          <div class="quest-title">Wolves of Mireholm</div>
+          <div class="quest-desc">Investigate livestock disappearances near the village.</div>
+        </div>
+      </div>
+      <div id="player-quests-completed" style="display:none"></div>
+    </div>
+  </details>
+
+  <section class="panel">
+    <div class="panel-hd"><h2>📢 Announcements</h2></div>
+    <div class="panel-bd" id="player-announcements">
+      <div class="announcement">
+        Grax has been defeated. Loot is available in the dungeon chamber.
+        <div class="ann-meta">0:41:20</div>
+      </div>
+      <div class="announcement">
+        Session continues Friday 7pm. No phones at the table, please.
+        <div class="ann-meta">Session start</div>
+      </div>
+    </div>
+  </section>
+
+  <div id="enemy-calc-body" style="display:none"></div>
+
+</aside>
+
+<!-- ═══ FLOATING ACTION DOCK ═══ -->
+<div class="dock-backdrop" id="dock-backdrop"></div>
+
+<div class="dock-popup" id="dock-popup">
+  <div class="dp-tabs">
+    <button class="dp-tab active" data-pane="dp-attack">⚔ Combat</button>
+    <button class="dp-tab" data-pane="dp-support">💚 Support</button>
+    <button class="dp-tab" data-pane="dp-effects">✨ Effects</button>
+    <button class="dp-tab" data-pane="dp-info">📜 Info</button>
+  </div>
+  <div class="dp-body">
+
+    <!-- COMBAT: attack, abilities, spells -->
+    <div class="dp-pane active" id="dp-attack">
+      <div class="dp-section-title">Basic Actions</div>
+      <div class="list-row atk">
+        <div class="lr-ico">⚔</div>
+        <div class="lr-body"><div class="lr-name">Attack</div><div class="lr-meta">Ironshard · 1d8+3 slash</div></div>
+        <div class="lr-cost">Action</div>
+      </div>
+      <div class="list-row atk">
+        <div class="lr-ico">🏹</div>
+        <div class="lr-body"><div class="lr-name">Ranged Attack</div><div class="lr-meta">Throwing Axe · 1d6+2</div></div>
+        <div class="lr-cost">Action</div>
+      </div>
+      <div class="dp-section-title">Abilities</div>
+      <div class="list-row atk">
+        <div class="lr-ico">🔥</div>
+        <div class="lr-body"><div class="lr-name">Berserker Rage</div><div class="lr-meta">+4 STR · 1 min</div></div>
+        <div class="lr-cost">2/3 uses</div>
+      </div>
+      <div class="list-row magic">
+        <div class="lr-ico">⚡</div>
+        <div class="lr-body"><div class="lr-name">Thundering Strike</div><div class="lr-meta">+2d8 lightning · stun</div></div>
+        <div class="lr-cost">3 Mana<div class="lr-cd">CD 4</div></div>
+      </div>
+      <div class="dp-section-title">Spells</div>
+      <div class="list-row magic">
+        <div class="lr-ico">✨</div>
+        <div class="lr-body"><div class="lr-name">Fire Bolt</div><div class="lr-meta">1d10 fire · 60 ft</div></div>
+        <div class="lr-cost">1 Mana</div>
+      </div>
+      <div class="list-row magic disabled">
+        <div class="lr-ico">💥</div>
+        <div class="lr-body"><div class="lr-name">Fireball</div><div class="lr-meta">8d6 · 20 ft radius</div></div>
+        <div class="lr-cost">5 Mana<div class="lr-cd">Need lv 5</div></div>
+      </div>
+    </div>
+
+    <!-- SUPPORT: heals, buff potions, restoration abilities -->
+    <div class="dp-pane" id="dp-support">
+      <div class="dp-section-title">Healing</div>
+      <div class="list-row heal">
+        <div class="lr-ico">💚</div>
+        <div class="lr-body"><div class="lr-name">Second Wind</div><div class="lr-meta">Recover 1d10+5 HP</div></div>
+        <div class="lr-cost">1/1 use</div>
+      </div>
+      <div class="list-row heal">
+        <div class="lr-ico">🧪</div>
+        <div class="lr-body"><div class="lr-name">Potion of Healing</div><div class="lr-meta">2d8+4 HP · Bonus action</div></div>
+        <div class="lr-cost">×3</div>
+      </div>
+      <div class="dp-section-title">Buff Potions</div>
+      <div class="list-row item">
+        <div class="lr-ico">🍷</div>
+        <div class="lr-body"><div class="lr-name">Elixir of Strength</div><div class="lr-meta">+2 STR · 10 min</div></div>
+        <div class="lr-cost">×1</div>
+      </div>
+      <div class="list-row item">
+        <div class="lr-ico">🌿</div>
+        <div class="lr-body"><div class="lr-name">Antidote</div><div class="lr-meta">Cure poison &amp; bleed</div></div>
+        <div class="lr-cost">×2</div>
+      </div>
+      <div class="dp-section-title">Restoration</div>
+      <div class="list-row heal">
+        <div class="lr-ico">🛡</div>
+        <div class="lr-body"><div class="lr-name">Shield Wall</div><div class="lr-meta">+2 AC adjacent allies</div></div>
+        <div class="lr-cost">2 Mana<div class="lr-cd">CD 2</div></div>
+      </div>
+    </div>
+
+    <!-- EFFECTS: bonuses + penalties + reactions -->
+    <div class="dp-pane" id="dp-effects">
+      <div class="dp-section-title">Reactions <span style="color:var(--accent-orange);font-style:italic;font-weight:400;text-transform:none;letter-spacing:0">— 1 available</span></div>
+      <div id="reactions-list-mirror">
+        <div class="list-row" style="border-color:rgba(217,122,44,0.4)">
+          <div class="lr-ico" style="background:rgba(217,122,44,0.18);color:var(--accent-orange)">🛡</div>
+          <div class="lr-body"><div class="lr-name">Parry</div><div class="lr-meta">Available · 1× per round</div></div>
+          <button class="btn btn-secondary btn-xs">Use</button>
+        </div>
+      </div>
+      <div class="dp-section-title">Active Bonuses</div>
+      <div id="active-bonuses-mirror">
+        <div class="list-row" style="border-left:3px solid var(--accent-green)">
+          <div class="lr-ico" style="background:rgba(61,143,82,0.18);color:#7ddc94">🛡</div>
+          <div class="lr-body"><div class="lr-name">Shield of Faith</div><div class="lr-meta">+2 AC · 2 turns left</div></div>
+        </div>
+        <div class="list-row" style="border-left:3px solid var(--accent-green)">
+          <div class="lr-ico" style="background:rgba(61,143,82,0.18);color:#7ddc94">⚡</div>
+          <div class="lr-body"><div class="lr-name">Haste</div><div class="lr-meta">+10 speed · 1 turn left</div></div>
+        </div>
+      </div>
+      <div class="dp-section-title">Active Penalties</div>
+      <div id="active-penalties-mirror">
+        <div class="list-row" style="border-left:3px solid var(--accent-red)">
+          <div class="lr-ico" style="background:rgba(174,60,60,0.18);color:#ff8a8a">🩸</div>
+          <div class="lr-body"><div class="lr-name">Bleeding</div><div class="lr-meta">−2 HP / turn · 3 turns left</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INFO: quests + announcements -->
+    <div class="dp-pane" id="dp-info">
+      <div class="dp-section-title">📜 Active Quests</div>
+      <div class="list-row" style="border-left:3px solid var(--accent-blue)">
+        <div class="lr-ico" style="background:rgba(74,127,192,0.18);color:#7eb8f5">⚔</div>
+        <div class="lr-body"><div class="lr-name">The Stolen Relic</div><div class="lr-meta">Recover the Amulet of Kethran from the bandit lair.</div></div>
+      </div>
+      <div class="list-row" style="border-left:3px solid var(--accent-blue)">
+        <div class="lr-ico" style="background:rgba(74,127,192,0.18);color:#7eb8f5">🐺</div>
+        <div class="lr-body"><div class="lr-name">Wolves of Mireholm</div><div class="lr-meta">Investigate livestock disappearances.</div></div>
+      </div>
+      <div class="dp-section-title">📢 Announcements</div>
+      <div class="list-row" style="border-left:3px solid var(--accent)">
+        <div class="lr-ico" style="background:rgba(184,130,30,0.15);color:var(--accent)">📢</div>
+        <div class="lr-body"><div class="lr-name">Grax has been defeated</div><div class="lr-meta">Loot in dungeon chamber · 0:41:20</div></div>
+      </div>
+      <div class="list-row" style="border-left:3px solid var(--accent)">
+        <div class="lr-ico" style="background:rgba(184,130,30,0.15);color:var(--accent)">🗓</div>
+        <div class="lr-body"><div class="lr-name">Next session</div><div class="lr-meta">Friday 7pm · No phones at the table</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="action-dock" id="action-dock">
+  <div class="dock-target" id="dock-target">
+    <div class="dt-icon">🎯</div>
+    <div><div style="font-size:0.56rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-weight:600">Target</div><div class="dt-name">Grax the Maimed</div></div>
+    <button class="dt-clear" title="Clear">✕</button>
+  </div>
+  <button class="dock-orb attack" data-pane="dp-attack" title="Combat — attack, abilities, spells">⚔</button>
+  <button class="dock-orb support" data-pane="dp-support" title="Support — healing, buffs, items">💚</button>
+  <button class="dock-orb effects" data-pane="dp-effects" title="Effects — bonuses, penalties, reactions">
+    ✨
+    <span class="orb-badge alert">!</span>
+  </button>
+  <button class="dock-orb info" data-pane="dp-info" title="Info — quests, announcements">📜<span class="orb-badge">2</span></button>
+</div>
+
+</div><!-- /layout -->
+</div><!-- /tab-main -->
+
+<!-- INVENTORY TAB -->
+<div class="player-tab" id="tab-inventory" style="display:none">
+  <div class="layout non-main">
+    <div class="tab-pane active">
+      <div class="page-title">🎒 Inventory</div>
+
+      <div class="inv-toolbar">
+        <span class="currency-display" id="inv-currency-display" style="display:flex;gap:10px;align-items:center;font-size:0.8rem">
+          <span class="inv-curr-plat" style="display:none;align-items:center;gap:5px"><span class="coin coin-plat coin-lg">P</span><strong>0</strong></span>
+          <span class="inv-curr-gold" style="display:inline-flex;align-items:center;gap:5px"><span class="coin coin-gold coin-lg">G</span><strong>24</strong></span>
+          <span class="inv-curr-silver" style="display:inline-flex;align-items:center;gap:5px"><span class="coin coin-silv coin-lg">S</span><strong>18</strong></span>
+          <span class="inv-curr-copper" style="display:inline-flex;align-items:center;gap:5px"><span class="coin coin-brz coin-lg">B</span><strong>45</strong></span>
+        </span>
+        <span class="slot-meter" id="slot-meter">🎒 <strong id="slot-meter-val">7 / 12</strong></span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" id="btn-open-shop">🛒 Visit Shop</button>
+      </div>
+
+      <div class="inv-tabs" id="inv-tab-bar">
+        <button class="inv-tab active" data-inv-tab="bag">🎒 Bag <span class="count" id="tab-count-bag">7</span></button>
+        <button class="inv-tab" data-inv-tab="equipped">⚔ Equipped <span class="count" id="tab-count-equipped">4</span></button>
+      </div>
+
+      <div class="equip-panel" id="equipment-panel" style="display:none">
+        <div class="equip-h">Equipment Slots</div>
+        <div class="equip-grid" id="equip-slots-grid">
+          <div class="equip-slot filled"><span class="es-icon">🗡</span><span class="es-lbl">Main Hand</span><span class="es-name">Ironshard</span></div>
+          <div class="equip-slot filled"><span class="es-icon">🛡</span><span class="es-lbl">Off Hand</span><span class="es-name">Iron Shield</span></div>
+          <div class="equip-slot filled"><span class="es-icon">⛑</span><span class="es-lbl">Head</span><span class="es-name">Steel Helm</span></div>
+          <div class="equip-slot filled"><span class="es-icon">🎽</span><span class="es-lbl">Chest</span><span class="es-name">Plate Mail</span></div>
+          <div class="equip-slot"><span class="es-icon">👢</span><span class="es-lbl">Feet</span></div>
+          <div class="equip-slot"><span class="es-icon">💍</span><span class="es-lbl">Ring</span></div>
+          <div class="equip-slot"><span class="es-icon">📿</span><span class="es-lbl">Neck</span></div>
+        </div>
+      </div>
+
+      <div class="inv-filters" id="inv-filter-tabs">
+        <button class="inv-filter active" data-inv-filter="all">All</button>
+        <button class="inv-filter" data-inv-filter="weapon">Weapons</button>
+        <button class="inv-filter" data-inv-filter="armor">Armor</button>
+        <button class="inv-filter" data-inv-filter="potion">Potions</button>
+        <button class="inv-filter" data-inv-filter="misc">Misc</button>
+      </div>
+
+      <div id="inventory-grid" class="inv-grid">
+        <div class="inv-card equipped rarity-rare">
+          <span class="equip-badge">Equipped</span>
+          <div class="inv-head"><span class="inv-icon">🗡</span><span class="inv-name">Ironshard</span></div>
+          <div class="inv-meta"><span>Weapon</span><span>1d8+3</span></div>
+          <div class="inv-weapon-stats">Slash · +3 STR</div>
+        </div>
+        <div class="inv-card equipped">
+          <span class="equip-badge">Equipped</span>
+          <div class="inv-head"><span class="inv-icon">🛡</span><span class="inv-name">Iron Shield</span></div>
+          <div class="inv-meta"><span>Armor</span></div>
+          <div class="inv-bonuses">+2 AC</div>
+        </div>
+        <div class="inv-card rarity-uncommon">
+          <span class="inv-qty">×3</span>
+          <div class="inv-head"><span class="inv-icon">🧪</span><span class="inv-name">Potion of Healing</span></div>
+          <div class="inv-meta"><span>Potion</span><span>2d8+4 HP</span></div>
+        </div>
+        <div class="inv-card rarity-epic">
+          <div class="inv-head"><span class="inv-icon">⚡</span><span class="inv-name">Stormcaller Staff</span></div>
+          <div class="inv-meta"><span>Weapon</span><span>2d10 lightning</span></div>
+          <div class="inv-weapon-stats">5 charges / day</div>
+        </div>
+        <div class="inv-card rarity-legendary">
+          <div class="inv-head"><span class="inv-icon">💍</span><span class="inv-name">Dragon's Breath Ring</span></div>
+          <div class="inv-meta"><span>Ring</span></div>
+          <div class="inv-bonuses">4d6 fire cone · 3/rest</div>
+        </div>
+        <div class="inv-card">
+          <span class="inv-qty">×12</span>
+          <div class="inv-head"><span class="inv-icon">🍖</span><span class="inv-name">Travel Rations</span></div>
+          <div class="inv-meta"><span>Misc</span></div>
+        </div>
+        <div class="inv-card">
+          <span class="inv-qty">×1</span>
+          <div class="inv-head"><span class="inv-icon">📜</span><span class="inv-name">Ancient Map</span></div>
+          <div class="inv-meta"><span>Quest Item</span></div>
+        </div>
+      </div>
+
+      <div id="slot-selector-modal" class="modal-overlay" style="display:none">
+        <div class="modal-panel" style="max-width:340px">
+          <div class="modal-header"><h3>Select Equipment Slot</h3><button class="btn-icon" id="slot-modal-close">✕</button></div>
+          <div class="modal-body"><div class="slot-selector-grid" id="slot-selector-grid"></div></div>
+        </div>
+      </div>
+
+      <div style="margin-top:22px"></div>
+      <div class="page-title" style="font-size:0.72rem">📝 My Notes</div>
+      <div id="player-notes-list"></div>
+      <button class="btn btn-primary btn-sm" id="btn-player-add-note" style="margin-top:8px">+ New Note</button>
+    </div>
+  </div>
+</div>
+
+<!-- ABILITIES / SKILLS TAB -->
+<div class="player-tab" id="tab-abilities" style="display:none">
+  <div class="layout non-main">
+    <div class="tab-pane active">
+      <div class="page-title">✨ Abilities &amp; Skills</div>
+      <div id="abilities-grid" class="ab-grid">
+        <div class="ab-card melee">
+          <div class="ab-h">
+            <div class="ab-ico">🔥</div>
+            <div><div class="ab-name">Berserker Rage</div><div class="ab-tag">Warrior · Rare</div></div>
+          </div>
+          <div class="ab-desc">Fly into a rage. +4 STR, +2 AC, immune to fear. Lasts 1 minute.</div>
+          <div class="ab-foot"><span class="ab-cd">CD: 3 rounds</span><span class="ab-uses">2 / 3 uses</span></div>
+        </div>
+        <div class="ab-card heal">
+          <div class="ab-h">
+            <div class="ab-ico">💚</div>
+            <div><div class="ab-name">Second Wind</div><div class="ab-tag">Warrior · Common</div></div>
+          </div>
+          <div class="ab-desc">Recover 1d10+5 HP as a bonus action. Can be used once per short rest.</div>
+          <div class="ab-foot"><span class="ab-uses">1 / 1 use</span></div>
+        </div>
+        <div class="ab-card melee">
+          <div class="ab-h">
+            <div class="ab-ico">🛡</div>
+            <div><div class="ab-name">Shield Wall</div><div class="ab-tag">Warrior · Uncommon</div></div>
+          </div>
+          <div class="ab-desc">Grant +2 AC to all adjacent allies until start of next turn.</div>
+          <div class="ab-foot"><span class="ab-cost">2 Mana</span><span class="ab-cd">CD: 2 rounds</span></div>
+        </div>
+        <div class="ab-card magic">
+          <div class="ab-h">
+            <div class="ab-ico">⚡</div>
+            <div><div class="ab-name">Thundering Strike</div><div class="ab-tag">Warrior · Rare</div></div>
+          </div>
+          <div class="ab-desc">Next melee attack deals +2d8 lightning damage and stuns on hit.</div>
+          <div class="ab-foot"><span class="ab-cost">3 Mana</span><span class="ab-cd">CD: 4 rounds</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROFESSIONS TAB -->
+<div class="player-tab" id="tab-professions" style="display:none">
+  <div class="layout non-main">
+    <div class="tab-pane active">
+      <div class="page-title">🛡 Professions</div>
+      <div id="professions-list" class="prof-grid">
+        <div class="prof-card">
+          <div class="prof-head">
+            <div class="ab-ico" style="width:34px;height:34px;border-radius:8px;background:rgba(174,60,60,0.18);display:flex;align-items:center;justify-content:center;font-size:1.1rem">⚔</div>
+            <div class="prof-name">Warrior</div>
+            <div class="prof-lvl">LV 5</div>
+          </div>
+          <div class="prof-desc">Master of melee combat and heavy armor. Gains bonus HP and defensive maneuvers as level increases.</div>
+          <div class="prof-chips">
+            <span class="chip accent">+2 STR/lvl</span>
+            <span class="chip accent">+8 HP/lvl</span>
+            <span class="chip">Heavy Armor</span>
+            <span class="chip">Shield Proficiency</span>
+          </div>
+        </div>
+        <div class="prof-card">
+          <div class="prof-head">
+            <div class="ab-ico" style="width:34px;height:34px;border-radius:8px;background:rgba(184,130,30,0.18);display:flex;align-items:center;justify-content:center;font-size:1.1rem">⚒</div>
+            <div class="prof-name">Blacksmith</div>
+            <div class="prof-lvl">LV 2</div>
+          </div>
+          <div class="prof-desc">Craft weapons and repair armor at forges. Higher level unlocks rare recipes.</div>
+          <div class="prof-chips">
+            <span class="chip">Basic Repair</span>
+            <span class="chip">Iron Weapons</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JOURNAL / MEMORY TAB -->
+<div class="player-tab" id="tab-memory" style="display:none">
+  <div class="layout non-main">
+    <div class="tab-pane active">
+      <div class="page-title" style="gap:10px">
+        📖 Journal
+        <span style="flex:1"></span>
+        <input type="text" id="memory-search" placeholder="Search journal…" style="width:180px;font-weight:400;letter-spacing:normal;font-family:var(--font-b);text-transform:none;font-size:0.8rem">
+        <button class="btn btn-primary btn-sm" id="btn-add-memory">+ Add Note</button>
+      </div>
+      <div id="memory-list" class="journal-list">
+        <div class="journal-entry">
+          <div class="je-title">The Ambush at Ashford Bridge <span class="je-type">Event</span></div>
+          <div class="je-excerpt">Bandits struck just past midnight. Lyra's fireball turned the tide — but Kaelith nearly fell to a poisoned blade.</div>
+          <div class="je-date">Session 4 · Day 12</div>
+        </div>
+        <div class="journal-entry">
+          <div class="je-title">Meeting Ser Aldric <span class="je-type">NPC</span></div>
+          <div class="je-excerpt">The old knight offered us shelter and a warning: "The Amulet is not what it seems."</div>
+          <div class="je-date">Session 3 · Day 9</div>
+        </div>
+        <div class="journal-entry">
+          <div class="je-title">My Clan's Lost Hammer <span class="je-type">Lore</span></div>
+          <div class="je-excerpt">Grandfather's war hammer was taken when our hold fell. I mean to find it, no matter the cost.</div>
+          <div class="je-date">Personal</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MORE / ACTIVITY LOG TAB -->
+<div class="player-tab" id="tab-more" style="display:none">
+  <div class="layout non-main">
+    <div class="tab-pane active">
+      <div class="page-title" style="gap:10px">
+        📜 Activity Log
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
+        <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
+      </div>
+      <div id="calc-log" class="calc-log">
+        <div class="log-entry"><span class="log-time">0:42:01</span><span class="log-tag atk">Attack</span><span class="log-detail">Ironshard vs Grax → Hit! 1d8+3 = <strong style="color:var(--text-primary)">9</strong> slash damage</span></div>
+        <div class="log-entry"><span class="log-time">0:41:55</span><span class="log-tag roll">Roll</span><span class="log-detail">Attack roll: 1d20+5 → 17 vs KD 14 ✓</span></div>
+        <div class="log-entry"><span class="log-time">0:41:12</span><span class="log-tag heal">Heal</span><span class="log-detail">Cure Wounds from Seraphina → +12 HP (30 → 42)</span></div>
+        <div class="log-entry"><span class="log-time">0:40:45</span><span class="log-tag move">Move</span><span class="log-detail">Moved from (3, 7) to (5, 8) — 10 ft remaining</span></div>
+        <div class="log-entry"><span class="log-time">0:40:12</span><span class="log-tag roll">Roll</span><span class="log-detail">Strength save: 1d20+3 → 14 vs DC 13 ✓</span></div>
+      </div>
+      <div id="roll-history-log" class="calc-log" style="display:none">
+        <div class="log-entry"><span class="log-time">0:42:01</span><span class="log-tag roll">1d8+3</span><span class="log-detail">= 9 (6 + 3)</span></div>
+        <div class="log-entry"><span class="log-time">0:41:55</span><span class="log-tag roll">1d20+5</span><span class="log-detail">= 17 (12 + 5)</span></div>
+        <div class="log-entry"><span class="log-time">0:40:12</span><span class="log-tag roll">1d20+3</span><span class="log-detail">= 14 (11 + 3)</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /tab-content-area -->
+
+<!-- ═══ BOTTOM TAB BAR ═══ -->
+<nav class="tabbar" data-active="0">
+  <button class="tab-btn active" data-tab="tab-main" data-idx="0">⚔<span>Main</span></button>
+  <button class="tab-btn" data-tab="tab-inventory" data-idx="1">🎒<span>Inventory</span></button>
+  <button class="tab-btn" data-tab="tab-abilities" data-idx="2">✨<span>Skills</span></button>
+  <button class="tab-btn" data-tab="tab-professions" data-idx="3">🛡<span>Prof.</span></button>
+  <button class="tab-btn" data-tab="tab-memory" data-idx="4">📖<span>Journal</span></button>
+  <button class="tab-btn" data-tab="tab-more" data-idx="5">⚙<span>More</span></button>
+</nav>
+
+<script>
+// TAB SWITCHING
+const tabBtns = document.querySelectorAll('.tab-btn[data-tab]');
+const tabs = document.querySelectorAll('.player-tab');
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    const idx = btn.dataset.idx;
+    tabBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelector('.tabbar').dataset.active = idx;
+    tabs.forEach(t => {
+      t.classList.toggle('active', t.id === target);
+      t.style.display = t.id === target ? (t.id === 'tab-main' ? 'flex' : 'block') : 'none';
+    });
+  });
+});
+
+// Inventory sub-tabs
+document.querySelectorAll('.inv-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.inv-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const mode = t.dataset.invTab;
+    document.getElementById('equipment-panel').style.display = mode === 'equipped' ? '' : 'none';
+  });
+});
+
+// Inv filters
+document.querySelectorAll('.inv-filter').forEach(f => {
+  f.addEventListener('click', () => {
+    document.querySelectorAll('.inv-filter').forEach(x => x.classList.remove('active'));
+    f.classList.add('active');
+  });
+});
+
+// Log tabs
+document.querySelectorAll('.log-tab-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.log-tab-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const mode = b.dataset.logTab;
+    document.getElementById('calc-log').style.display = mode === 'calc' ? '' : 'none';
+    document.getElementById('roll-history-log').style.display = mode === 'rolls' ? '' : 'none';
+  });
+});
+
+// Quest tabs
+document.querySelectorAll('.player-quest-tab').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.player-quest-tab').forEach(x => { x.classList.remove('active','btn-primary'); x.classList.add('btn-ghost'); });
+    b.classList.add('active','btn-primary');
+    b.classList.remove('btn-ghost');
+    const mode = b.dataset.pqtab;
+    document.getElementById('player-quests-active').style.display = mode === 'active' ? '' : 'none';
+    document.getElementById('player-quests-completed').style.display = mode === 'completed' ? '' : 'none';
+  });
+});
+
+// Adv toggles
+document.querySelectorAll('.adv-toggle').forEach(grp => {
+  grp.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      grp.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+});
+
+// Reactions toggle
+document.getElementById('reactions-toggle')?.addEventListener('click', () => {
+  const c = document.getElementById('reactions-content');
+  c.style.display = c.style.display === 'none' ? '' : 'none';
+});
+
+// Map modal
+document.getElementById('btn-open-map')?.addEventListener('click', () => document.getElementById('map-modal').style.display = 'flex');
+document.getElementById('btn-close-map')?.addEventListener('click', () => document.getElementById('map-modal').style.display = 'none');
+
+// FLOATING ACTION DOCK
+const dockOrbs = document.querySelectorAll('.dock-orb');
+const dockPopup = document.getElementById('dock-popup');
+const dockBackdrop = document.getElementById('dock-backdrop');
+const dpPanes = document.querySelectorAll('.dp-pane');
+const dpTabs = document.querySelectorAll('.dp-tab');
+let activePane = null;
+
+function openPane(name){
+  dpPanes.forEach(p => p.classList.toggle('active', p.id === name));
+  dpTabs.forEach(t => t.classList.toggle('active', t.dataset.pane === name));
+  dockOrbs.forEach(o => o.classList.toggle('active', o.dataset.pane === name));
+  dockPopup.classList.add('open');
+  dockBackdrop.classList.add('open');
+  activePane = name;
+}
+function closePane(){
+  dockPopup.classList.remove('open');
+  dockBackdrop.classList.remove('open');
+  dockOrbs.forEach(o => o.classList.remove('active'));
+  activePane = null;
+}
+dockOrbs.forEach(orb => {
+  orb.addEventListener('click', () => {
+    const target = orb.dataset.pane;
+    if (activePane === target) closePane(); else openPane(target);
+  });
+});
+dpTabs.forEach(tab => {
+  tab.addEventListener('click', () => openPane(tab.dataset.pane));
+});
+dockBackdrop.addEventListener('click', closePane);
+document.querySelector('.dt-clear')?.addEventListener('click', e => {
+  e.stopPropagation();
+  document.getElementById('dock-target').style.display = 'none';
+});
+
+// Tweaks panel removed per request
+</script>
+</body>
+</html>

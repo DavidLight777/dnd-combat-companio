@@ -9,7 +9,21 @@
       targetY: y,
       startTime: performance.now(),
     });
-  }
+    this._startTokenAnimLoop();
+  };
+
+  MapCanvas.prototype._startTokenAnimLoop = function() {
+    if (this._tokenAnimRafId) return;
+    const tick = () => {
+      this.render();
+      if (this._tokenAnims.size > 0) {
+        this._tokenAnimRafId = requestAnimationFrame(tick);
+      } else {
+        this._tokenAnimRafId = null;
+      }
+    };
+    this._tokenAnimRafId = requestAnimationFrame(tick);
+  };
 
   // Convenience: find the token for a character_id and play FX there.
 
@@ -37,6 +51,25 @@
     setTimeout(() => host.classList.remove(cls),
                intensity === 'hard' ? 520 : 320);
   }
+
+  // Phase 17 Round 4: toast when player tries to drag beyond movement budget.
+  MapCanvas.prototype._showMovementError = function(msg) {
+    const el = document.createElement('div');
+    el.className = 'map-movement-error';
+    el.textContent = msg;
+    Object.assign(el.style, {
+      position: 'absolute', bottom: '60px', left: '50%',
+      transform: 'translateX(-50%)', background: 'rgba(200,50,50,0.9)',
+      color: '#fff', padding: '6px 14px', borderRadius: '6px',
+      pointerEvents: 'none', zIndex: '999', fontSize: '0.85rem',
+    });
+    const parent = this.canvas.parentElement;
+    if (parent) {
+      parent.style.position = 'relative';
+      parent.appendChild(el);
+      setTimeout(() => el.remove(), 2000);
+    }
+  };
 
 
 })();

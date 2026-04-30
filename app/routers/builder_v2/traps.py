@@ -1,15 +1,22 @@
 """Trap entity CRUD — typed detail table, no JSON."""
 
+import json
+import random
 import re
 
 from fastapi import Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.game_mechanics import roll_dice
 from app.models import (
     BV2Entity,
     BV2Location,
     BV2Trap,
+    Character,
+    CharacterStatusEffect,
+    Session,
 )
 from app.routers.builder_v2.common import (
     broadcast,
@@ -17,6 +24,7 @@ from app.routers.builder_v2.common import (
     ser_entity,
     session_code_for_location,
 )
+from app.websocket_manager import manager
 
 _DICE_RE = re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
 
@@ -73,6 +81,12 @@ async def _trap_detail(entity_id: int, db: AsyncSession) -> dict:
         "is_disarmed": t.is_disarmed,
         "trigger_mode": t.trigger_mode,
         "reset_on_trigger": t.reset_on_trigger,
+        "undodgeable": t.undodgeable,
+        "attack_bonus": t.attack_bonus,
+        "charges": t.charges,
+        "charges_used": t.charges_used,
+        "is_armed": t.is_armed,
+        "dot_effect_json": t.dot_effect_json,
     })
     return base
 
@@ -112,6 +126,12 @@ async def create_trap(location_id: int, body: dict, db: AsyncSession = Depends(g
         is_disarmed=bool(body.get("is_disarmed", False)),
         trigger_mode=str(body.get("trigger_mode", "on_enter"))[:20],
         reset_on_trigger=bool(body.get("reset_on_trigger", False)),
+        undodgeable=bool(body.get("undodgeable", False)),
+        attack_bonus=int(body.get("attack_bonus", 0)),
+        charges=int(body.get("charges", 1)),
+        charges_used=0,
+        is_armed=bool(body.get("is_armed", True)),
+        dot_effect_json=body.get("dot_effect_json") if body.get("dot_effect_json") else None,
     )
     db.add(t)
     await db.commit()
@@ -145,12 +165,17 @@ async def update_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
     for k in ("trap_type", "damage_dice", "damage_type", "save_ability", "trigger_mode"):
         if k in body:
             setattr(t, k, str(body[k]))
-    for k in ("dc_detect", "dc_disarm", "dc_save"):
+    for k in ("dc_detect", "dc_disarm", "dc_save", "attack_bonus", "charges"):
         if k in body:
             setattr(t, k, int(body[k]))
-    for k in ("is_triggered", "is_disarmed", "reset_on_trigger"):
+    for k in ("is_triggered", "is_disarmed", "reset_on_trigger", "undodgeable", "is_armed"):
         if k in body:
             setattr(t, k, bool(body[k]))
+    if "charges_used" in body:
+        t.charges_used = int(body["charges_used"])
+    if "dot_effect_json" in body:
+        val = body["dot_effect_json"]
+        t.dot_effect_json = json.dumps(val) if isinstance(val, dict) else (str(val) if val else None)
 
     await db.commit()
     await db.refresh(e)
@@ -179,3 +204,96 @@ async def delete_trap(entity_id: int, db: AsyncSession = Depends(get_session)):
             "entity_id": entity_id,
         })
     return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════
+# Phase 17 Round 5: auto-trigger on token move
+# ══════════════════════════════════════════════════════════════
+
+async def check_trap_trigger(
+    db: AsyncSession,
+    location_id: int,
+    character: Character,
+    session_code: str,
+):
+    """Fire trap if character stepped on its cell."""
+    result = await db.execute(
+        select(BV2Entity).where(
+            BV2Entity.location_id == location_id,
+            BV2Entity.entity_type == "trap",
+            BV2Entity.col == character.col,
+            BV2Entity.row == character.row,
+        )
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        return
+
+    trap = await db.get(BV2Trap, entity.id)
+    if not trap:
+        return
+
+    if not trap.is_armed or trap.is_disarmed:
+        return
+
+    if trap.charges != -1 and trap.charges_used >= trap.charges:
+        return
+
+    missed = False
+    if not trap.undodgeable:
+        hit_roll = random.randint(1, 20) + (trap.attack_bonus or 0)
+        if hit_roll < (character.armor_class or 0):
+            missed = True
+
+    damage = 0
+    dot_applied = False
+    dot_name = None
+    dot_turns = None
+
+    if not missed:
+        if trap.damage_dice:
+            _, damage = roll_dice(trap.damage_dice)
+            character.current_hp = max(0, (character.current_hp or 0) - damage)
+
+        if trap.dot_effect_json:
+            try:
+                dot_data = json.loads(trap.dot_effect_json)
+            except Exception:
+                dot_data = None
+            if dot_data and isinstance(dot_data, dict):
+                dot_name = dot_data.get("type", "Poison")
+                dot_turns = dot_data.get("turns", 3)
+                dot_dice = dot_data.get("dice", "1d4")
+                cse = CharacterStatusEffect(
+                    character_id=character.id,
+                    template_id=None,
+                    name=dot_name,
+                    icon="☠",
+                    color="#8a4abf",
+                    effects=json.dumps([{"type": "dot", "dice": dot_dice}]),
+                    remaining_turns=dot_turns,
+                )
+                db.add(cse)
+                dot_applied = True
+
+    trap.charges_used = (trap.charges_used or 0) + 1
+    if trap.charges != -1 and trap.charges_used >= trap.charges:
+        trap.is_armed = False
+
+    await db.commit()
+    await db.refresh(character)
+
+    await manager.broadcast_to_session(session_code, "trap.triggered", {
+        "character_id": character.id,
+        "character_name": character.name,
+        "trap_id": trap.entity_id,
+        "trap_name": entity.name or "Trap",
+        "damage": damage,
+        "damage_type": trap.damage_type or "piercing",
+        "missed": missed,
+        "new_hp": character.current_hp,
+        "max_hp": character.max_hp,
+        "dot_applied": dot_applied,
+        "dot_name": dot_name,
+        "dot_turns": dot_turns,
+    })

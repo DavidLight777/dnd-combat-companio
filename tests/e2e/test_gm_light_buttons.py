@@ -49,6 +49,6 @@ def test_torch_button_opens_modal(gm_page):
     }""")
     gm_page.wait_for_timeout(1200)
 
-    # Light modal must appear
-    modal = gm_page.locator("#bv2-light-modal")
-    assert modal.is_visible(), "Light modal did not open after clicking with torch brush"
+    # Light panel must appear
+    panel = gm_page.locator("#bv2-light-panel")
+    assert panel.is_visible(), "Light panel did not open after clicking with torch brush"

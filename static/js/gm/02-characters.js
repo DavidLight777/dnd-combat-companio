@@ -164,7 +164,11 @@ async function renderCharDetail() {
         <span style="font-size:0.6rem;color:#60a5fa">MP/T</span>
         <input type="number" value="${c.mana_regen_per_turn}" data-gm-stat="mana_regen_per_turn" style="width:48px;font-size:0.78rem;padding:3px">
       </div>
-    </div>`;
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:0.6rem;color:var(--text-muted)">Vision</span>
+        <input type="number" id="gm-char-vision-radius" value="${c.sight_range_cells || 8}" min="0" max="30" style="width:48px;font-size:0.78rem;padding:3px">
+      </div>
+     </div>`;
 
   const effectsSection = `
     <h3 style="font-size:0.82rem;margin-bottom:6px">Effects</h3>
@@ -562,6 +566,17 @@ async function renderCharDetail() {
       addLog('gm.stat', `${c.name}: ${f}=${v}`);
     });
   });
+
+  // Vision radius edit
+  const visionInp = $('#gm-char-vision-radius');
+  if (visionInp) {
+    visionInp.addEventListener('change', async () => {
+      const v = parseInt(visionInp.value) || 8;
+      await api.patch(`/api/characters/${c.id}`, { sight_range_cells: v });
+      await refreshChars();
+      addLog('gm.vision', `${c.name}: vision=${v}`);
+    });
+  }
 
   // Attribute point [+1] buttons (Fix 1)
   area.querySelectorAll('.gm-stat-plus').forEach(btn => {

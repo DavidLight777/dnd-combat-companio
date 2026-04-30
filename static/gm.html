@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
   <link rel="stylesheet" href="/static/css/base.css?v=5c9db4df">
-  <link rel="stylesheet" href="/static/css/gm.css?v=11d6d857">
+  <link rel="stylesheet" href="/static/css/gm.css?v=ab5ac895">
   <style>
     @keyframes pulse-border {
       0%   { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
@@ -349,6 +349,8 @@
             <div class="sep"></div>
             <button class="btn btn-ghost btn-xs" id="btn-place-chest">📦 Chest</button>
             <button class="btn btn-ghost btn-xs" id="btn-list-chests">📦 List</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-map-lock">🗺 Map: ON</button>
           </div>
           <div class="map-toolbar" id="map-draw-toolbar">
             <button class="btn btn-ghost btn-xs map-mode-btn active" data-mode="">🖱</button>
@@ -466,6 +468,11 @@
               <!-- Lights -->
               <div style="padding:10px;border-bottom:1px solid var(--border)">
                 <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Lights</div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">
+                  Ambient: <span id="bv2-ambient-val">0.40</span>
+                </label>
+                <input type="range" id="bv2-ambient-slider" min="0" max="1" step="0.05"
+                       value="0.4" style="width:100%;margin-bottom:6px">
                 <div class="builder-tool-grid">
                   <button class="bv2-light-brush" data-preset="torch" title="Torch">🔥<span>Torch</span></button>
                   <button class="bv2-light-brush" data-preset="lamp"  title="Lamp">💡<span>Lamp</span></button>
@@ -827,61 +834,87 @@
 
 <!-- ── BV2 ENTITY MODAL ─────────────────────────────────────── -->
 <div id="bv2-entity-modal" class="modal-overlay hidden">
-  <div class="modal-content" style="max-width:420px">
+  <div class="modal-content" style="max-width:560px">
     <div class="modal-header">
       <h2 id="bv2-entity-modal-title">Entity</h2>
       <button class="btn-icon" id="bv2-entity-modal-close">✕</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" id="bv2-entity-modal-body">
       <input type="hidden" id="bv2-ent-id">
       <input type="hidden" id="bv2-ent-type">
-      <div class="form-grid">
+      <div class="form-section">
+        <div class="form-section-title">📍 Base</div>
         <div class="form-group"><label>Name</label><input type="text" id="bv2-ent-name" placeholder="Name"></div>
         <div class="form-group"><label>Type</label><input type="text" id="bv2-ent-type-display" readonly style="background:var(--bg-surface-2)"></div>
         <div style="display:flex;gap:8px">
-          <div style="flex:1"><label>Col</label><input type="number" id="bv2-ent-col" min="0" style="width:100%"></div>
-          <div style="flex:1"><label>Row</label><input type="number" id="bv2-ent-row" min="0" style="width:100%"></div>
+          <div class="form-group" style="flex:1"><label>Col</label><input type="number" id="bv2-ent-col" min="0"></div>
+          <div class="form-group" style="flex:1"><label>Row</label><input type="number" id="bv2-ent-row" min="0"></div>
         </div>
-        <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:8px">
-          <label style="flex-direction:row;gap:4px"><input type="checkbox" id="bv2-ent-visible"> Visible to players</label>
+        <div class="form-group" style="margin-top:8px">
+          <label class="toggle-switch" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="bv2-ent-visible">
+            <span class="slider"></span>
+            <span style="font-size:0.75rem;color:var(--text-muted)">Visible to players</span>
+          </label>
         </div>
-        <!-- Typed entity fields injected here by 50-entities.js -->
       </div>
+      <!-- Typed entity fields injected here by 50-entities.js -->
     </div>
     <div class="modal-footer">
-      <button class="btn btn-danger" id="bv2-ent-delete" style="margin-right:auto">Delete</button>
-      <button class="btn btn-ghost" id="bv2-ent-cancel">Cancel</button>
-      <button class="btn btn-primary" id="bv2-ent-save">Save</button>
+      <button class="btn btn-danger btn-sm" id="bv2-ent-delete" style="margin-right:auto">Delete</button>
+      <button class="btn btn-ghost btn-sm" id="bv2-ent-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="bv2-ent-save">Save</button>
     </div>
   </div>
 </div>
 
-<!-- ── BV2 LIGHT MODAL ─────────────────────────────────────── -->
-<div id="bv2-light-modal" class="modal-overlay hidden">
-  <div class="modal-content" style="max-width:360px">
-    <div class="modal-header">
-      <h2 id="bv2-light-modal-title">Light</h2>
-      <button class="btn-icon" id="bv2-light-modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="bv2-light-id">
-      <div class="form-grid">
-        <div class="form-group" style="display:flex;gap:8px">
-          <div style="flex:1"><label>Col</label><input type="number" id="bv2-light-col" min="0" style="width:100%"></div>
-          <div style="flex:1"><label>Row</label><input type="number" id="bv2-light-row" min="0" style="width:100%"></div>
-        </div>
-        <div class="form-group"><label>Radius (cells)</label><input type="number" id="bv2-light-radius" min="0.5" step="0.5" style="width:100%"></div>
-        <div class="form-group"><label>Bright radius (cells) <small>0 = auto</small></label><input type="number" id="bv2-light-bright" min="0" step="0.5" style="width:100%"></div>
-        <div class="form-group"><label>Color</label><input type="color" id="bv2-light-color" style="width:100%;height:32px"></div>
-        <div class="form-group"><label>Intensity</label><input type="number" id="bv2-light-intensity" min="0" step="0.1" style="width:100%"></div>
-        <div class="form-group"><label>Kind</label><input type="text" id="bv2-light-kind" style="width:100%"></div>
+<!-- ── BV2 LIGHT FLOATING PANEL ──────────────────────────── -->
+<div id="bv2-light-panel" class="floating-panel hidden" style="top:80px;right:20px">
+  <div class="floating-panel-header" id="bv2-light-panel-header">
+    <span id="bv2-light-panel-title">New Light</span>
+    <button class="btn-icon" id="bv2-light-panel-close">✕</button>
+  </div>
+  <div class="floating-panel-body" id="bv2-light-panel-body">
+    <input type="hidden" id="bv2-light-id">
+    <div class="form-section">
+      <div class="form-section-title">📍 Position</div>
+      <div style="display:flex;gap:8px">
+        <div class="form-group" style="flex:1"><label>Col</label><input type="number" id="bv2-light-col" min="0"></div>
+        <div class="form-group" style="flex:1"><label>Row</label><input type="number" id="bv2-light-row" min="0"></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" id="bv2-light-delete" style="margin-right:auto">Delete</button>
-      <button class="btn btn-ghost" id="bv2-light-cancel">Cancel</button>
-      <button class="btn btn-primary" id="bv2-light-save">Save</button>
+    <div class="form-section">
+      <div class="form-section-title">💡 Light Settings</div>
+      <div class="form-group"><label>Radius (cells)</label>
+        <div class="slider-group">
+          <input type="range" id="bv2-light-radius" min="0" max="20" step="0.5" value="4"
+                 oninput="this.nextElementSibling.textContent=this.value">
+          <span class="slider-value">4</span>
+        </div>
+      </div>
+      <div class="form-group"><label>Bright radius (cells) <small style="color:var(--text-muted)">0 = auto</small></label>
+        <div class="slider-group">
+          <input type="range" id="bv2-light-bright" min="0" max="20" step="0.5" value="0"
+                 oninput="this.nextElementSibling.textContent=this.value">
+          <span class="slider-value">0</span>
+        </div>
+      </div>
+      <div class="form-group"><label>Intensity</label>
+        <div class="slider-group">
+          <input type="range" id="bv2-light-intensity" min="0" max="2" step="0.05" value="1"
+                 oninput="this.nextElementSibling.textContent=this.value">
+          <span class="slider-value">1</span>
+        </div>
+      </div>
+      <div class="form-group"><label>Color</label><input type="color" id="bv2-light-color" style="width:100%;height:32px"></div>
+      <div class="form-group"><label>Kind</label><input type="text" id="bv2-light-kind"></div>
     </div>
+  </div>
+  <div class="floating-panel-footer">
+    <button class="btn btn-danger btn-sm" id="bv2-light-delete" style="margin-right:auto">Delete</button>
+    <button class="btn btn-ghost btn-sm" id="bv2-light-preview">👁 Preview</button>
+    <button class="btn btn-ghost btn-sm" id="bv2-light-cancel">Cancel</button>
+    <button class="btn btn-primary btn-sm" id="bv2-light-save">Save</button>
   </div>
 </div>
 
@@ -973,13 +1006,13 @@
   <script src="/static/js/websocket-client.js?v=fa4e4b73"></script>
   <script src="/static/js/character-sheet-core.js?v=79250ea3"></script>
   <script src="/static/js/sprite-loader.js?v=c49054d2"></script>
-  <script src="/static/js/map-canvas/index.js?v=aef477da"></script>
+  <script src="/static/js/map-canvas/index.js?v=11474c6a"></script>
   <script src="/static/js/map-canvas/state.js?v=1e92a56c"></script>
-  <script src="/static/js/map-canvas/render.js?v=4f5de36d"></script>
-  <script src="/static/js/map-canvas/events.js?v=d32f8a31"></script>
-  <script src="/static/js/map-canvas/lighting.js?v=db298f9c"></script>
+  <script src="/static/js/map-canvas/render.js?v=2fe70cca"></script>
+  <script src="/static/js/map-canvas/events.js?v=eaa957b4"></script>
+  <script src="/static/js/map-canvas/lighting.js?v=9103f18b"></script>
   <script src="/static/js/map-canvas/hex-math.js?v=e7f00c5a"></script>
-  <script src="/static/js/map-canvas/token-anim.js?v=99deb281"></script>
+  <script src="/static/js/map-canvas/token-anim.js?v=710c8860"></script>
   <script src="/static/js/map-canvas/fog.js?v=85919ea5"></script>
   <script>
     if (window.USE_PIXI) {
@@ -990,13 +1023,13 @@
     }
   </script>  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
   <script src="/static/js/gm/01-core.js?v=93197955"></script>
-  <script src="/static/js/gm/02-characters.js?v=77050435"></script>
+  <script src="/static/js/gm/02-characters.js?v=945df34f"></script>
   <script src="/static/js/gm/03-level-up.js?v=c7001bc4"></script>
   <script src="/static/js/gm/04-status-effects.js?v=990f9e4d"></script>
   <script src="/static/js/gm/05-npc-sidebar.js?v=124a08ba"></script>
-  <script src="/static/js/gm/06-map-main.js?v=64252abd"></script>
+  <script src="/static/js/gm/06-map-main.js?v=0c583f7f"></script>
   <script src="/static/js/gm/07-session-ops.js?v=458b41e4"></script>
-  <script src="/static/js/gm/08-websocket.js?v=06e99d87"></script>
+  <script src="/static/js/gm/08-websocket.js?v=d936a328"></script>
   <script src="/static/js/gm/09-items.js?v=d916d660"></script>
   <script src="/static/js/gm/10-ai-chat.js?v=3a6ce006"></script>
   <script src="/static/js/gm/11-combat.js?v=e42458ed"></script>
@@ -1010,18 +1043,19 @@
   <script src="/static/js/gm/20-init.js?v=df88a1f4"></script>
   <script src="/static/js/builder_v2/00-state.js?v=66efba55"></script>
   <script src="/static/js/builder_v2/10-api.js?v=3c76e9e0"></script>
-  <script src="/static/js/builder_v2/20-mapview.js?v=03dafd0f"></script>
+  <script src="/static/js/builder_v2/20-mapview.js?v=988fcc08"></script>
   <script src="/static/js/builder_v2/30-editor.js?v=991bda66"></script>
   <script src="/static/js/builder_v2/40-websocket.js?v=0831c400"></script>
-  <script src="/static/js/builder_v2/50-entities.js?v=5a87cc81"></script>
+  <script src="/static/js/builder_v2/50-entities.js?v=3f0fde39"></script>
   <script src="/static/js/builder_v2/60-fov.js?v=8d02af1e"></script>
-  <script src="/static/js/builder_v2/70-lights.js?v=a359d82b"></script>
+  <script src="/static/js/builder_v2/70-lights.js?v=b9a8dc77"></script>
   <script src="/static/js/builder_v2/80-edges.js?v=b574baa0"></script>
   <script src="/static/js/builder_v2/90-library.js?v=eee7c1f5"></script>
   <script src="/static/js/builder_v2/95-interiors.js?v=6e72efbb"></script>
   <script src="/static/js/builder_v2/96-building.js?v=1653fc40"></script>
 </body>
 </html>
+
 
 
 

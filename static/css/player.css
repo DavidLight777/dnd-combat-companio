@@ -700,3 +700,22 @@
 }
 
 /* Combat FX shake keyframes live in base.css so GM + player share them. */
+
+/* Phase 17 Round 3: Map locked overlay */
+.map-locked {
+  position: relative;
+}
+.map-locked::after {
+  content: "🗺 MAP LOCKED BY GM";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  z-index: 100;
+  pointer-events: none;
+}
