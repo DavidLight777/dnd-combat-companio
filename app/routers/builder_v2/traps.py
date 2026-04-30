@@ -252,6 +252,10 @@ async def check_trap_trigger(
 
     # Dodge check — offer dodge roll if not undodgeable
     if not trap.undodgeable:
+        if trap.is_triggered and not trap.reset_on_trigger:
+            return
+        trap.is_triggered = True
+        await db.commit()  # Persist is_triggered so re-entry is blocked
         await manager.broadcast_to_session(session_code, "trap.dodge_offer", {
             "character_id": character.id,
             "character_name": character.name,
@@ -339,7 +343,11 @@ async def dodge_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get_
         t.charges_used = (t.charges_used or 0) + 1
         if t.charges != -1 and t.charges_used >= t.charges:
             t.is_armed = False
-        await db.commit()
+    # Reset trigger flag so the trap can fire again (unless one-shot)
+    if t.reset_on_trigger:
+        t.is_triggered = False
+    await db.commit()
+    if not missed:
         await db.refresh(char)
     sess_code = await session_code_for_location(e.location_id, db)
     if sess_code:

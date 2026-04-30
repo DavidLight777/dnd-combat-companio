@@ -392,7 +392,12 @@
       for (const ent of this.entities) {
         // FOV filter: skip entities outside visibleSet unless permanently visible
         if (this.visibleSet && !this.visibleSet.has(`${ent.col},${ent.row}`)) {
-          const permanent = ent.props && ent.props.is_opened === true;
+          let permanent = false;
+          if (ent.entity_type === 'chest') {
+            permanent = ent.is_locked === false;
+          } else if (ent.props && ent.props.is_opened === true) {
+            permanent = true;
+          }
           if (!permanent) continue;
         }
         const visual = ENTITY_VISUAL[ent.entity_type] || { icon: '?', color: '#fff' };
