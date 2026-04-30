@@ -220,7 +220,10 @@
         _field('Size (cells)', _inp('bv2-trap-size', data.size_cells ?? 1, 'number'))
       ),
       _section('🗡️ Damage',
-        _field('Damage dice', _inp('bv2-trap-dice', data.damage_dice)) +
+        _row(
+          _field('Count', _inp('bv2-trap-dice-count', data.damage_dice_count ?? 1, 'number')),
+          _field('Dice', _sel('bv2-trap-dice-type', [4,6,8,10,12,20].map(t => ({value:t,label:'d'+t})), data.damage_dice_type ?? 6))
+        ) +
         _field('Damage type', _sel('bv2-trap-dmg-type', dmgTypes.map(t => ({value:t,label:t})), data.damage_type)) +
         _row(
           _field('Undodgeable', _toggle('bv2-trap-undodgeable', data.undodgeable, 'Skip AC check')),
@@ -247,7 +250,6 @@
 
     return { getPayload: () => ({
       trap_type: $('bv2-trap-type').value,
-      damage_dice: $('bv2-trap-dice').value || '1d6',
       damage_type: $('bv2-trap-dmg-type').value,
       dc_disarm: parseInt($('bv2-trap-dc-disarm').value, 10) || 12,
       dc_save: parseInt($('bv2-trap-dc-save').value, 10) || 12,
@@ -262,6 +264,8 @@
       is_armed: true,
       dot_template_id: $('bv2-trap-dot-tpl').value ? parseInt($('bv2-trap-dot-tpl').value, 10) : null,
       size_cells: Math.max(1, parseInt($('bv2-trap-size').value, 10) || 1),
+      damage_dice_count: parseInt($('bv2-trap-dice-count').value, 10) || 1,
+      damage_dice_type: parseInt($('bv2-trap-dice-type').value, 10) || 6,
     })};
   }
 

@@ -28,6 +28,20 @@ from app.websocket_manager import manager
 
 _DICE_RE = re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
 
+
+def _parse_damage_dice(body: dict) -> tuple[int, int]:
+    """Extract count and type from damage_dice string or new fields."""
+    # Prefer new structured fields
+    if "damage_dice_count" in body and "damage_dice_type" in body:
+        return max(1, int(body["damage_dice_count"])), int(body["damage_dice_type"])
+    # Fallback: parse legacy string like "2d6" or "2d6+3"
+    dice = body.get("damage_dice", "")
+    if dice:
+        m = _DICE_RE.match(str(dice))
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return 1, 6
+
 _VALID_TRAP_TYPES = {"spike", "dart", "pit", "fire", "poison", "magic", "custom"}
 _VALID_DAMAGE_TYPES = {
     "piercing", "slashing", "bludgeoning", "fire", "cold",
@@ -71,7 +85,7 @@ async def _trap_detail(entity_id: int, db: AsyncSession) -> dict:
     base = ser_entity(e)
     base.update({
         "trap_type": t.trap_type,
-        "damage_dice": t.damage_dice,
+        "damage_dice": t.damage_dice or f"{t.damage_dice_count}d{t.damage_dice_type}",
         "damage_type": t.damage_type,
         "dc_detect": t.dc_detect,
         "dc_disarm": t.dc_disarm,
@@ -89,6 +103,8 @@ async def _trap_detail(entity_id: int, db: AsyncSession) -> dict:
         "dot_effect_json": t.dot_effect_json,
         "size_cells": t.size_cells,
         "dot_template_id": t.dot_template_id,
+        "damage_dice_count": t.damage_dice_count,
+        "damage_dice_type": t.damage_dice_type,
     })
     return base
 
@@ -115,10 +131,11 @@ async def create_trap(location_id: int, body: dict, db: AsyncSession = Depends(g
     await db.commit()
     await db.refresh(e)
 
+    dice_count, dice_type = _parse_damage_dice(body)
     t = BV2Trap(
         entity_id=e.id,
         trap_type=str(body.get("trap_type", "spike"))[:20],
-        damage_dice=str(body.get("damage_dice", "1d6"))[:20],
+        damage_dice=str(body.get("damage_dice", f"{dice_count}d{dice_type}"))[:20],
         damage_type=str(body.get("damage_type", "piercing"))[:20],
         dc_detect=int(body.get("dc_detect", 12)),
         dc_disarm=int(body.get("dc_disarm", 12)),
@@ -136,6 +153,8 @@ async def create_trap(location_id: int, body: dict, db: AsyncSession = Depends(g
         dot_effect_json=body.get("dot_effect_json") if body.get("dot_effect_json") else None,
         size_cells=max(1, int(body.get("size_cells", 1))),
         dot_template_id=body.get("dot_template_id") if body.get("dot_template_id") else None,
+        damage_dice_count=dice_count,
+        damage_dice_type=dice_type,
     )
     db.add(t)
     await db.commit()
@@ -183,6 +202,11 @@ async def update_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
     if "dot_template_id" in body:
         val = body["dot_template_id"]
         t.dot_template_id = int(val) if val is not None else None
+    if "damage_dice" in body or "damage_dice_count" in body or "damage_dice_type" in body:
+        dice_count, dice_type = _parse_damage_dice(body)
+        t.damage_dice_count = dice_count
+        t.damage_dice_type = dice_type
+        t.damage_dice = str(body.get("damage_dice", f"{dice_count}d{dice_type}"))[:20]
 
     await db.commit()
     await db.refresh(e)
@@ -224,6 +248,8 @@ async def check_trap_trigger(
     session_code: str,
 ):
     """Fire trap if character stepped inside its zone."""
+    # Phase 17 R5: refresh character after it may have been committed in caller
+    await db.refresh(character)
     from sqlalchemy import and_
     result = await db.execute(
         select(BV2Entity, BV2Trap)
@@ -273,9 +299,11 @@ async def check_trap_trigger(
     dot_turns = None
 
     if not missed:
+        dice_str = f"{trap.damage_dice_count}d{trap.damage_dice_type}"
         if trap.damage_dice:
-            _, damage = roll_dice(trap.damage_dice)
-            character.current_hp = max(0, (character.current_hp or 0) - damage)
+            dice_str = trap.damage_dice
+        _, damage = roll_dice(dice_str)
+        character.current_hp = max(0, (character.current_hp or 0) - damage)
 
         if trap.dot_effect_json:
             try:

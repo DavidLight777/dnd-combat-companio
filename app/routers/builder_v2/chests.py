@@ -11,6 +11,7 @@ from app.models import (
     BV2Entity,
     BV2Location,
     Character,
+    InventoryItem,
     Item,
 )
 import random
@@ -98,6 +99,20 @@ async def create_chest(location_id: int, body: dict, db: AsyncSession = Depends(
     db.add(chest)
     await db.commit()
 
+    # Phase 17 R5: create chest items if provided in body
+    items = body.get("items", [])
+    if items:
+        for it in items:
+            if not it.get("item_id"):
+                continue
+            ci = BV2ChestItem(
+                chest_entity_id=e.id,
+                item_id=int(it["item_id"]),
+                quantity=int(it.get("quantity", 1)),
+            )
+            db.add(ci)
+        await db.commit()
+
     sess_code = await session_code_for_location(location_id, db)
     if sess_code:
         await broadcast(sess_code, "bv2.entity_added", {
@@ -130,6 +145,31 @@ async def update_chest(entity_id: int, body: dict, db: AsyncSession = Depends(ge
     await db.commit()
     await db.refresh(e)
     await db.refresh(chest)
+
+    # Phase 17 R5: replace chest items if provided
+    if "items" in body:
+        # Delete existing items
+        await db.execute(
+            select(BV2ChestItem)
+            .where(BV2ChestItem.chest_entity_id == entity_id)
+        )
+        old_items = await db.execute(
+            select(BV2ChestItem).where(BV2ChestItem.chest_entity_id == entity_id)
+        )
+        for ci in old_items.scalars().all():
+            await db.delete(ci)
+        await db.commit()
+        # Create new items
+        for it in body["items"]:
+            if not it.get("item_id"):
+                continue
+            ci = BV2ChestItem(
+                chest_entity_id=entity_id,
+                item_id=int(it["item_id"]),
+                quantity=int(it.get("quantity", 1)),
+            )
+            db.add(ci)
+        await db.commit()
 
     sess_code = await session_code_for_location(e.location_id, db)
     if sess_code:
@@ -230,3 +270,55 @@ async def remove_chest_item(entity_id: int, item_row_id: int, db: AsyncSession =
     await db.delete(ci)
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/chests/{entity_id}/take")
+async def take_chest_items(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    """Player takes items from chest into their inventory."""
+    e = await _get_chest_entity(entity_id, db)
+    chest = await db.get(BV2Chest, entity_id)
+    if not chest:
+        raise HTTPException(404, "Chest detail missing")
+    if chest.is_locked:
+        raise HTTPException(400, "Chest is locked")
+
+    char_id = int(body.get("character_id", 0))
+    char = await db.get(Character, char_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+
+    item_indices = body.get("item_indices")  # null = take all
+    chest_items_r = await db.execute(
+        select(BV2ChestItem, Item)
+        .join(Item, BV2ChestItem.item_id == Item.id)
+        .where(BV2ChestItem.chest_entity_id == entity_id)
+    )
+    chest_items = chest_items_r.all()
+
+    taken = []
+    indices_to_take = set(item_indices) if item_indices is not None else set(range(len(chest_items)))
+
+    for idx, (ci, it) in enumerate(chest_items):
+        if idx not in indices_to_take:
+            continue
+        # Add to character inventory
+        inv_item = InventoryItem(
+            character_id=char_id,
+            item_id=it.id,
+            quantity=ci.quantity,
+        )
+        db.add(inv_item)
+        taken.append({"name": it.name, "quantity": ci.quantity})
+        # Remove from chest
+        await db.delete(ci)
+
+    await db.commit()
+
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.entity_updated", {
+            "location_id": e.location_id,
+            "entity": await _chest_detail(entity_id, db),
+        })
+
+    return {"ok": True, "taken": taken}
