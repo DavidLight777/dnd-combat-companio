@@ -36,6 +36,7 @@ async def _spawn_detail(entity_id: int, db: AsyncSession) -> dict:
         "spawn_count": s.spawn_count,
         "has_spawned": s.has_spawned,
         "is_hostile": s.is_hostile,
+        "trigger_zone_size": s.trigger_zone_size,
     })
     return base
 
@@ -68,6 +69,7 @@ async def create_npc_spawn(location_id: int, body: dict, db: AsyncSession = Depe
         spawn_count=int(body.get("spawn_count", 1)),
         has_spawned=bool(body.get("has_spawned", False)),
         is_hostile=bool(body.get("is_hostile", True)),
+        trigger_zone_size=max(1, int(body.get("trigger_zone_size", 1))),
     )
     db.add(s)
     await db.commit()
@@ -107,6 +109,8 @@ async def update_npc_spawn(entity_id: int, body: dict, db: AsyncSession = Depend
         s.has_spawned = bool(body["has_spawned"])
     if "is_hostile" in body:
         s.is_hostile = bool(body["is_hostile"])
+    if "trigger_zone_size" in body:
+        s.trigger_zone_size = max(1, int(body["trigger_zone_size"]))
 
     await db.commit()
     await db.refresh(e)
