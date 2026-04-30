@@ -238,12 +238,7 @@
         _row(
           _field('Charges', _inp('bv2-trap-charges', data.charges, 'number')),
           _field('Charges used', _inp('bv2-trap-charges-used', data.charges_used, 'number'))
-        ) +
-        _row(
-          _field('Armed', _toggle('bv2-trap-armed', data.is_armed, 'Active')),
-          _field('Disarmed', _toggle('bv2-trap-disarmed', data.is_disarmed, 'Disabled'))
-        ) +
-        _field('Reset on trigger', _toggle('bv2-trap-reset', data.reset_on_trigger, 'Auto-reset'))
+        )
       ),
       _section('☠️ DoT Effect',
         _field('Status Effect', _sel('bv2-trap-dot-tpl', dotOptions, data.dot_template_id ?? ''))
@@ -258,14 +253,13 @@
       dc_save: parseInt($('bv2-trap-dc-save').value, 10) || 12,
       save_ability: $('bv2-trap-save-abil').value,
       trigger_mode: $('bv2-trap-trigger').value,
-      reset_on_trigger: $('bv2-trap-reset').checked,
       is_triggered: false,
-      is_disarmed: $('bv2-trap-disarmed').checked,
+      is_disarmed: false,
       undodgeable: $('bv2-trap-undodgeable').checked,
       attack_bonus: parseInt($('bv2-trap-atk').value, 10) || 0,
       charges: parseInt($('bv2-trap-charges').value, 10) ?? 1,
       charges_used: parseInt($('bv2-trap-charges-used').value, 10) || 0,
-      is_armed: $('bv2-trap-armed').checked,
+      is_armed: true,
       dot_template_id: $('bv2-trap-dot-tpl').value ? parseInt($('bv2-trap-dot-tpl').value, 10) : null,
       size_cells: Math.max(1, parseInt($('bv2-trap-size').value, 10) || 1),
     })};

@@ -150,6 +150,16 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
         c.movement_used_this_turn = (c.movement_used_this_turn or 0.0) + move_distance_cells
     await db.commit()
 
+    # Phase 17 R5: check trap trigger after token move
+    try:
+        from app.routers.builder_v2.traps import check_trap_trigger
+        if c.current_location_id and not edge_transitioned:
+            sess = await db.get(Session, c.session_id)
+            if sess:
+                await check_trap_trigger(db, c.current_location_id, c, sess.code)
+    except Exception:
+        pass
+
     # Resolve session code so we can broadcast. If this character has
     # somehow been orphaned (no session), we skip the broadcast rather
     # than 500 the move itself — the persisted position is what matters.

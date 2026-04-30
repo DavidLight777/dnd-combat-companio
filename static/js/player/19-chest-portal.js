@@ -23,7 +23,7 @@ async function openPlayerChestModal(chest) {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
   try {
-    const data = await api.get(`/api/map-builder/chests/${chest.id}/items`);
+    const data = await api.get(`/api/builder-v2/chests/${chest.id}`);
     const content = overlay.querySelector('#pc-chest-content');
     const items = data.items || [];
     

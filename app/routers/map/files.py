@@ -250,6 +250,7 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
             "items": items,
             "is_locked": chest.is_locked,
             "visible_to_players": e.visible_to_players,
+            "is_hidden": not e.visible_to_players and chest.is_locked,
         })
 
     # Traps

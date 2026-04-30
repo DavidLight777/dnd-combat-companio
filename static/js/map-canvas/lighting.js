@@ -197,15 +197,17 @@
     ctx.drawImage(this._lightLayer, 0, 0);
     ctx.restore();
 
-    // Phase 17 R5: draw light source icons on top of darkness
-    for (const light of this.lights) {
-      const cxWorld = (light.col + 0.5) * gs;
-      const cyWorld = (light.row + 0.5) * gs;
-      ctx.font = `${gs * 0.45}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = light.color_hex || '#ffd9a0';
-      ctx.fillText('💡', cxWorld, cyWorld);
+    // Phase 17 R5: draw light source icons (GM only)
+    if (this.role === 'gm') {
+      for (const light of this.lights) {
+        const cxWorld = (light.col + 0.5) * gs;
+        const cyWorld = (light.row + 0.5) * gs;
+        ctx.font = `${gs * 0.45}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = light.color_hex || '#ffd9a0';
+        ctx.fillText('💡', cxWorld, cyWorld);
+      }
     }
   }
 
