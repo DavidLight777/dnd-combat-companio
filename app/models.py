@@ -29,6 +29,9 @@ class Session(Base):
     # Rank/Level system: GM-configurable XP thresholds
     xp_threshold_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: {"type":"formula","base":100,"increment":100} or {"type":"table","thresholds":[...]}
 
+    # Phase 17 Round 3: GM can lock the map for players
+    map_locked_for_players: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+
     characters: Mapped[list["Character"]] = relationship(
         back_populates="session", cascade="all, delete-orphan",
         foreign_keys="Character.session_id", lazy="selectin"
@@ -1491,6 +1494,13 @@ class BV2Trap(Base):
     is_disarmed: Mapped[bool] = mapped_column(Boolean, default=False)
     trigger_mode: Mapped[str] = mapped_column(String(20), default="on_enter")
     reset_on_trigger: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase 17 Round 5: extended trap mechanics
+    undodgeable: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+    attack_bonus: Mapped[int] = mapped_column(Integer, default=0)
+    dot_effect_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    charges: Mapped[int] = mapped_column(Integer, default=1)
+    charges_used: Mapped[int] = mapped_column(Integer, default=0)
+    is_armed: Mapped[bool] = mapped_column(Boolean, default=True, server_default='1')
 
 
 class BV2Portal(Base):

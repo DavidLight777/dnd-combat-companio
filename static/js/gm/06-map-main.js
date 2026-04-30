@@ -11,6 +11,7 @@ let mapGridEnabled = true;
 let mapFogEnabled = false;
 let mapFogPaintActive = false;
 let gmBv2LocationId = null;
+let mapLockedForPlayers = false;
 
 async function initMapCanvas() {
   const canvasEl = $('#map-canvas');
@@ -150,6 +151,9 @@ async function loadMapState() {
     mapCanvas.setIndoor(state.bv2_is_indoor ?? false);
     mapCanvas.setLights(state.bv2_lights || []);
     mapCanvas.setEdges(state.bv2_edges || []);
+    // Phase 17: bv2 portals + traps
+    if (state._portals) mapCanvas.setPortals(state._portals);
+    if (state._traps) mapCanvas.setTraps(state._traps);
     // Phase 9: interior zones
     mapCanvas.setInteriors(state.bv2_interiors || []);
     // Phase 10: lighting HUD
@@ -301,6 +305,19 @@ $('#btn-fog-reset').addEventListener('click', async () => {
 // Center
 $('#btn-center-map').addEventListener('click', () => {
   if (mapCanvas) mapCanvas.centerView();
+});
+
+// Phase 17 Round 3: Map lock toggle
+$('#btn-map-lock')?.addEventListener('click', async () => {
+  mapLockedForPlayers = !mapLockedForPlayers;
+  const btn = $('#btn-map-lock');
+  btn.textContent = `🗺 Map: ${mapLockedForPlayers ? 'LOCKED 🔒' : 'ON'}`;
+  btn.classList.toggle('btn-danger', mapLockedForPlayers);
+  try {
+    await api.patch(`/api/sessions/${SESSION_CODE}/settings`, {
+      map_locked_for_players: mapLockedForPlayers,
+    });
+  } catch (e) { showToast('Failed to update map lock'); }
 });
 
 // ── Stage 9: Drawing Toolbar ──────────────────────────────────

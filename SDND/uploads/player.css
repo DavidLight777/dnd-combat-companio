@@ -1,0 +1,702 @@
+/* ══════════════════════════════════════════════════════════════
+   PLAYER INTERFACE — Layout & Components
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Top Bar ───────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: var(--bg-surface);
+  border-bottom: 1px solid var(--border); min-height: 44px;
+}
+.topbar .logo { font-family: var(--font-display); font-size: 1rem; color: var(--accent); }
+.topbar .spacer { flex: 1; }
+.topbar .session-badge {
+  font-size: 0.75rem; color: var(--text-muted);
+  background: var(--bg-surface-3); padding: 2px 8px;
+  border-radius: var(--r-sm);
+}
+
+/* ── Main Layout — Rework v3 Phase 7: 3-column grid ──────────
+   left = char sidebar (avatar, stats, roll)
+   center = battle field (stretches to fill)
+   right = actions + bonuses + penalties + advanced + quests + announcements
+   Each column scrolls independently so the map never disappears. */
+.main-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr 300px;
+  height: calc(100vh - 44px - 52px);
+  overflow: hidden;
+}
+.main-center {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  padding: 12px;
+  overflow: hidden;                 /* the battle panel eats the remainder */
+  gap: 8px;
+}
+.main-center > .battle-panel {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.right-sidebar {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0;
+}
+/* Legacy name kept in case any JS / tests still reference it. */
+.main-area { display: none; }
+.sidebar-right { display: none; }
+
+/* ── FIX 2: LEFT CHARACTER SIDEBAR (per diagram) ─────────── */
+.char-sidebar {
+  width: 240px; min-width: 240px; flex: 0 0 240px;
+  background: var(--bg-surface); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cs-avatar {
+  width: 96px; height: 96px; margin: 0 auto; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--bg-surface-3) 100%);
+  border: 3px solid var(--border-active);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.4rem; font-weight: 700; color: var(--text-primary);
+  box-shadow: 0 0 12px rgba(192,138,42,0.25);
+}
+.cs-identity { text-align: center; }
+.cs-name { font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+.cs-rc { font-size: 0.72rem; color: var(--text-muted); }
+.cs-bar-block { font-size: 0.72rem; }
+.cs-bar-head { display: flex; justify-content: space-between; margin-bottom: 2px; }
+.cs-bar-lbl { color: var(--text-muted); font-weight: 600; }
+.cs-bar-val { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+.cs-bar {
+  height: 8px; background: var(--bg-surface-3); border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.cs-bar-fill { height: 100%; border-radius: 4px; transition: width .35s ease, background .2s; width: 100%; }
+.cs-kd { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; text-align: right; }
+.cs-currency {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  font-size: 0.75rem; padding: 6px 8px;
+  background: var(--bg-surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.cs-curr-row { display: flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+.cs-curr-row .curr-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+  text-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+.cs-char-roll {
+  padding: 8px; background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); margin-top: 4px;
+}
+.cs-section-lbl { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Rework v3 Phase 7: stack the 3 columns vertically below ~980 px.
+   Lose the fixed viewport height so the whole layout scrolls naturally
+   on phones / tablets. The map keeps its 60vh fallback height. */
+@media (max-width: 980px) {
+  .main-layout {
+    display: flex; flex-direction: column;
+    height: auto; overflow: visible;
+  }
+  .char-sidebar,
+  .right-sidebar {
+    width: 100%; min-width: 0;
+    max-height: none;
+    border-right: none; border-left: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .char-sidebar { flex: 0 0 auto; }
+  .main-center { overflow: visible; min-height: 0; }
+  .main-center > .battle-panel { flex: 0 0 auto; height: 60vh; }
+  .cs-avatar { width: 72px; height: 72px; font-size: 1.8rem; }
+  /* Hide the expand-height button on small screens since the map
+     already takes a reasonable chunk — the toggle becomes confusing
+     when the layout no longer uses a locked viewport height. */
+  #btn-grid-expand { display: none; }
+}
+
+/* Desktop-only: the map canvas wrapper stretches to fill whatever
+   vertical space the center column offers. Override the inline
+   `height:420px` fallback from the markup. */
+@media (min-width: 981px) {
+  #player-grid-wrap { height: auto !important; }
+  /* The expand-height JS toggles inline height — disable it on
+     desktop since the map already fills the column. */
+  #btn-grid-expand { display: none; }
+}
+
+/* Panels nested inside the right-sidebar must shrink under the
+   global `min-width:300px` baseline — the column itself is 300 px
+   (minus padding), so we override both min-width and the base
+   flex-basis to let them collapse cleanly. */
+.right-sidebar .panel,
+.right-sidebar .panel.panel-full {
+  flex: 1 1 auto; min-width: 0; max-width: 100%;
+}
+.right-sidebar .panel-header h2 { font-size: 0.85rem; }
+.right-sidebar .panel-body { padding: 8px 10px; }
+
+/* ── Panels Grid ───────────────────────────────────────────── */
+.panels-row {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.panel {
+  flex: 1 1 320px; min-width: 300px; max-width: 100%;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+  animation: fadeSlideIn 0.25s ease-out;
+}
+.panel-full { flex: 1 1 100%; }
+.panel-header {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-2);
+}
+.panel-header h2 { font-size: 0.8rem; }
+.panel-body { padding: 12px 14px; }
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── HP Card ───────────────────────────────────────────────── */
+.hp-card {
+  text-align: center; padding: 16px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); margin-bottom: 12px;
+  transition: background 200ms ease;
+}
+.hp-card.flash-damage { animation: dmgFlash 200ms; }
+.hp-card.flash-heal { animation: healFlash 200ms; }
+@keyframes dmgFlash { 0%,100%{background:var(--bg-surface)} 50%{background:rgba(184,64,64,0.3)} }
+@keyframes healFlash { 0%,100%{background:var(--bg-surface)} 50%{background:rgba(74,156,93,0.3)} }
+
+.hp-big {
+  font-size: 2.4rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: color 300ms ease;
+}
+.hp-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+.hp-bar-lg { height: 10px; margin-top: 10px; border-radius: 5px; }
+.hp-bar-lg .hp-bar { border-radius: 5px; }
+
+/* ── Stats Grid ────────────────────────────────────────────── */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 6px; margin-bottom: 12px;
+}
+@media (max-width: 700px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+.stat-cell {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 8px 4px; text-align: center;
+}
+.stat-cell .stat-name {
+  font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.stat-cell .stat-val {
+  font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.stat-cell input[type="number"] {
+  width: 52px; text-align: center; font-size: 1rem; font-weight: 700;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 4px;
+}
+
+/* ── Field Groups ──────────────────────────────────────────── */
+.field-group {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 8px;
+}
+.field-group label { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.field-group .value { font-weight: 600; color: var(--accent); }
+
+/* ── Modifier Rows ─────────────────────────────────────────── */
+.mod-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.82rem; transition: opacity var(--t-normal);
+}
+.mod-row.inactive { opacity: 0.4; }
+.mod-row input[type="text"] { flex: 1; min-width: 60px; padding: 3px 6px; font-size: 0.8rem; }
+.mod-row input[type="number"] { width: 52px; padding: 3px 6px; font-size: 0.8rem; }
+.mod-row select { padding: 3px 6px; font-size: 0.8rem; }
+
+/* ── Toggle Switch ─────────────────────────────────────────── */
+.toggle-switch {
+  position: relative; display: inline-block; width: 32px; height: 18px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-switch .slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: var(--bg-surface-3); border-radius: 18px;
+  transition: background var(--t-fast);
+}
+.toggle-switch .slider::before {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  left: 2px; bottom: 2px; background: var(--text-muted);
+  border-radius: 50%; transition: transform var(--t-fast), background var(--t-fast);
+}
+.toggle-switch input:checked + .slider { background: var(--accent); }
+.toggle-switch input:checked + .slider::before {
+  transform: translateX(14px); background: #fff;
+}
+
+/* ── Result Box ────────────────────────────────────────────── */
+.result-box {
+  background: var(--bg-surface-3); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px 12px;
+  font-size: 0.82rem; line-height: 1.6;
+  margin-top: 8px;
+}
+.damage-num { color: var(--accent-red); font-size: 1.1rem; }
+.heal-num { color: var(--accent-green); font-size: 1.1rem; }
+.miss-text { color: var(--text-muted); font-size: 1.2rem; font-weight: 700; }
+.tier-text { color: var(--accent); font-weight: 600; }
+
+/* ── Section Divider ───────────────────────────────────────── */
+.section-divider {
+  border: none; border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+/* ── Buttons: small ────────────────────────────────────────── */
+.btn-xs { padding: 3px 8px; font-size: 0.72rem; }
+.btn-icon {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 0.9rem; padding: 2px;
+  transition: color var(--t-fast);
+}
+.btn-icon:hover { color: var(--text-primary); }
+.btn-icon.danger:hover { color: var(--accent-red); }
+.btn-accent { background: var(--accent); color: #0a0908; font-weight: 600; }
+.btn-accent:hover { background: var(--accent-hover); }
+
+/* ── Turn Counter ──────────────────────────────────────────── */
+.turn-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.turn-count-display {
+  font-size: 1.6rem; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.turn-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+.timer-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.timer-row.inactive { opacity: 0.4; }
+.timer-value { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 20px; text-align: center; }
+.timer-value.active { color: var(--accent-green); }
+.timer-value.expired { color: var(--accent-red); }
+.timer-initial { font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── Calc Log ──────────────────────────────────────────────── */
+.calc-log {
+  font-size: 0.78rem; line-height: 1.7;
+  max-height: 300px; overflow-y: auto;
+}
+.calc-log .log-entry { padding: 2px 0; border-bottom: 1px solid var(--border); }
+.calc-log .log-time { color: var(--text-faint); font-size: 0.7rem; }
+
+/* ── Log Tab Buttons ───────────────────────────────────────── */
+.log-tab-btn { font-size: 0.72rem; }
+.log-tab-btn.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+
+/* ── Dice shake animation ──────────────────────────────────── */
+@keyframes diceShake {
+  0%,100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+.dice-shake { animation: diceShake 0.2s ease-in-out; }
+
+/* ── Confirm overlay ───────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.confirm-box {
+  background: var(--bg-surface-2); border: 1px solid var(--border-active);
+  border-radius: var(--r-lg); padding: 24px; max-width: 360px; text-align: center;
+}
+.confirm-box p { margin-bottom: 16px; }
+.confirm-box .btns { display: flex; gap: 8px; justify-content: center; }
+
+/* ── Inventory Grid ──────────────────────────────────────────── */
+.inventory-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+.inv-card {
+  background: var(--bg-surface-3); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px; cursor: pointer;
+  transition: all var(--t-fast); position: relative;
+}
+.inv-card:hover { border-color: var(--border-active); }
+.inv-card.equipped { border-color: var(--accent-green); box-shadow: 0 0 0 1px var(--accent-green); }
+.inv-card .inv-icon { font-size: 1.3rem; margin-right: 6px; }
+.inv-card .inv-name { font-weight: 600; font-size: 0.82rem; }
+.inv-card .inv-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; }
+.inv-card .inv-qty { position: absolute; top: 6px; right: 8px; font-size: 0.7rem; color: var(--text-muted); }
+.inv-card .inv-actions { display: none; margin-top: 6px; gap: 4px; }
+.inv-card.expanded .inv-actions { display: flex; flex-wrap: wrap; }
+.inv-card .inv-desc { display: none; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.inv-card.expanded .inv-desc { display: block; }
+
+.rarity-common { color: #aaa; }
+.rarity-uncommon { color: #4ec04e; }
+.rarity-rare { color: #4a8fd4; }
+.rarity-epic { color: #a94ec0; }
+.rarity-legendary { color: #d4a44a; }
+
+/* ── Shop Modal ──────────────────────────────────────────────── */
+.shop-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+}
+.shop-panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); width: 90%; max-width: 700px; max-height: 80vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.shop-header {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border); background: var(--bg-surface-2);
+}
+.shop-header h2 { flex: 1; font-size: 1rem; }
+.shop-body { flex: 1; overflow-y: auto; padding: 12px; }
+.shop-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.shop-item .si-name { flex: 1; font-weight: 600; font-size: 0.85rem; }
+.shop-item .si-price { font-size: 0.82rem; color: var(--accent); font-weight: 700; }
+
+/* ══════════════════════════════════════════════════════════════
+   STAGE 2 — Equipment Panel & Enhanced Inventory
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Currency Display ─────────────────────────────────────────── */
+.currency-display {
+  display: flex; gap: 8px; font-size: 0.78rem; color: var(--text-muted);
+}
+.currency-display strong { color: var(--accent); }
+
+/* ── Equipment Slots Grid ─────────────────────────────────────── */
+.equipment-panel { margin-bottom: 8px; }
+.equip-slots-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+@media (max-width: 600px) { .equip-slots-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.equip-slot {
+  background: var(--bg-surface-3); border: 1px dashed var(--border);
+  border-radius: var(--r-md); padding: 8px 6px; text-align: center;
+  cursor: pointer; transition: all var(--t-fast); min-height: 60px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.equip-slot:hover { border-color: var(--border-active); background: var(--bg-surface-2); }
+.equip-slot.filled {
+  border-style: solid; border-color: var(--accent);
+  background: rgba(192,138,42,0.08);
+}
+.equip-slot .slot-label {
+  font-size: 0.6rem; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 2px;
+}
+.equip-slot .slot-item-name {
+  font-size: 0.72rem; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+}
+.equip-slot .slot-empty {
+  font-size: 1.1rem; color: var(--text-faint); opacity: 0.4;
+}
+
+/* ── Inventory Filter Tabs ────────────────────────────────────── */
+.inv-filter-tabs {
+  display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.inv-filter.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+
+/* Rework Phase 4: Profession cards */
+.profession-card {
+  background: var(--bg-surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px;
+}
+.profession-card .prof-head {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 4px;
+}
+.profession-card .prof-name {
+  font-weight: 700; font-size: 0.95rem;
+}
+.profession-card .prof-level {
+  font-size: 0.72rem; color: var(--accent); font-weight: 600;
+  padding: 1px 6px; border: 1px solid var(--accent); border-radius: 10px;
+}
+.profession-card .prof-desc {
+  font-size: 0.8rem; color: var(--text-muted); margin: 3px 0;
+}
+.profession-card .prof-bonuses {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;
+}
+.profession-card .prof-abilities {
+  margin: 6px 0 0; padding-left: 18px; font-size: 0.76rem; color: var(--text);
+}
+.chip-muted {
+  display: inline-block; padding: 1px 6px; font-size: 0.7rem;
+  background: var(--bg-surface-3); border-radius: 10px; color: var(--text-muted);
+}
+
+/* Rework Phase 3: Bag / Equipped top tabs */
+.inv-tab-bar .inv-tab {
+  flex: 1; padding: 6px 10px; font-size: 0.88rem; font-weight: 600;
+  border-bottom: 2px solid transparent;
+}
+.inv-tab-bar .inv-tab.active {
+  background: var(--accent); color: #0a0908; border-color: var(--accent);
+}
+.inv-tab .tab-count {
+  display: inline-block; min-width: 18px; padding: 0 5px;
+  margin-left: 4px; font-size: 0.72rem;
+  background: rgba(0,0,0,0.25); border-radius: 10px;
+}
+
+/* ── Equipped badge on inv-card ───────────────────────────────── */
+.inv-card .equip-badge {
+  position: absolute; top: 4px; left: 4px; font-size: 0.65rem;
+  background: var(--accent); color: #0a0908; padding: 1px 5px;
+  border-radius: var(--r-sm); font-weight: 600;
+}
+
+/* ── Bonuses summary on inv-card ──────────────────────────────── */
+.inv-card .inv-bonuses {
+  font-size: 0.68rem; color: var(--accent-green); margin-top: 3px;
+}
+.inv-card .inv-weapon-stats {
+  font-size: 0.68rem; color: var(--accent); margin-top: 2px;
+}
+
+/* ── Slot Selector Modal ──────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); width: 90%; max-width: 500px;
+  max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-2);
+}
+.modal-header h3 { font-size: 0.9rem; }
+.modal-body { padding: 16px; overflow-y: auto; }
+
+.slot-selector-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
+.slot-selector-btn {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 8px; background: var(--bg-surface-3);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  cursor: pointer; transition: all var(--t-fast);
+  font-size: 0.8rem;
+}
+.slot-selector-btn:hover { border-color: var(--accent); background: var(--bg-surface-2); }
+.slot-selector-btn.occupied { opacity: 0.5; }
+.slot-selector-btn .slot-icon { font-size: 1.4rem; margin-bottom: 4px; }
+
+/* ── Bottom Tab Bar (Phase 6) ─────────────────────────────── */
+.player-tab-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: flex; height: 52px; z-index: 500;
+  background: var(--bg-surface); border-top: 1px solid var(--border);
+}
+.player-tab-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; border: none; background: none;
+  color: var(--text-muted); font-size: 1.1rem; cursor: pointer;
+  transition: color var(--t-fast);
+}
+.player-tab-btn span { font-size: 0.65rem; font-weight: 600; }
+.player-tab-btn.active { color: var(--accent); }
+.player-tab-btn:hover { color: var(--accent); }
+
+.player-tab { display: none; }
+.player-tab.active { display: block; }
+
+/* Tab-specific: Inventory tab scrolls */
+#tab-inventory, #tab-abilities, #tab-memory {
+  max-height: calc(100vh - 44px - 52px); overflow-y: auto;
+}
+
+/* Table view participant cards (FIX 1: circle-style per diagram) */
+.table-card { font-size: 0.78rem; text-align: center; }
+.table-card:hover { transform: translateY(-2px); }
+.table-card.selected > div:first-child { box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow) !important; }
+.table-row { min-height: 36px; }
+
+/* Action card buttons */
+.action-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12px 16px; min-width: 110px; min-height: 70px;
+  background: var(--bg-surface); border: 2px solid var(--border);
+  border-radius: var(--r-lg); cursor: pointer;
+  transition: all var(--t-fast); font-size: 0.82rem; font-weight: 700;
+}
+.action-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.action-card .ac-icon { font-size: 1.6rem; margin-bottom: 4px; }
+.action-card .ac-sub { font-size: 0.68rem; font-weight: 400; color: var(--text-muted); }
+
+/* Ability card */
+.ability-card {
+  display: flex; flex-direction: column; padding: 10px 14px;
+  min-width: 140px; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  cursor: pointer; transition: all var(--t-fast);
+}
+.ability-card:hover { border-color: var(--accent); }
+.ability-card.on-cooldown { opacity: 0.5; pointer-events: none; }
+.ability-card.passive { opacity: 0.85; cursor: default; }
+.ability-card.passive:hover { border-color: var(--border); }
+.ability-card .ab-name { font-weight: 700; font-size: 0.85rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.ability-card .ab-cost { font-size: 0.7rem; color: #60a5fa; }
+.ability-card .ab-cd   { font-size: 0.7rem; color: var(--accent-orange); }
+.ability-card .ab-desc { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.ability-card .ab-uses { font-size: 0.7rem; color: var(--accent-green); font-weight: 600; }
+.ability-card .ab-uses.depleted { color: var(--accent-red); text-decoration: line-through; }
+.ability-card .ab-cond { font-size: 0.7rem; color: var(--accent); font-style: italic; cursor: help; }
+.ability-card .ab-locked-note { font-size: 0.66rem; color: var(--accent-red); margin-top: 4px; font-style: italic; }
+.ability-card.depleted { opacity: 0.55; cursor: default; border-style: dashed; }
+.ability-card.depleted:hover { border-color: var(--border); }
+
+/* Rework v2: rarity chips moved to base.css (shared by lobby / player / GM) */
+
+/* Rework v2: Level-up CTA pulse + modal */
+@keyframes levelUpPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192,138,42,0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 8px rgba(192,138,42,0); transform: scale(1.03); }
+}
+.lvlup-choice {
+  padding: 12px; border: 2px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg-surface-2); cursor: pointer; transition: all .15s;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.lvlup-choice:hover { border-color: var(--accent); }
+.lvlup-choice.selected { border-color: var(--accent); background: rgba(192,138,42,0.12); }
+.lvlup-choice .lc-title { font-weight: 700; font-size: 0.9rem; }
+.lvlup-choice .lc-sub   { font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; }
+.lvlup-stat-pill {
+  padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-surface); font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; user-select: none; transition: all .12s;
+}
+.lvlup-stat-pill:hover { border-color: var(--accent); }
+.lvlup-stat-pill.picked { background: var(--accent); color: #000; border-color: var(--accent); }
+.lvlup-stat-pill.disabled { opacity: 0.35; cursor: not-allowed; }
+.lvlup-feature-row {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg-surface); display: flex; align-items: center; gap: 8px;
+  cursor: pointer; transition: all .15s;
+}
+.lvlup-feature-row:hover { border-color: var(--accent); }
+.lvlup-feature-row.picked { border-color: var(--accent); background: rgba(192,138,42,0.12); }
+.lvlup-feature-row.legendary { opacity: 0.35; cursor: not-allowed; border-style: dashed; }
+
+/* Memory entry */
+.memory-entry {
+  padding: 8px 12px; margin-bottom: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); cursor: pointer;
+}
+.memory-entry:hover { border-color: var(--accent); }
+.memory-entry .me-title { font-weight: 700; font-size: 0.85rem; }
+.memory-entry .me-type { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; }
+.memory-entry .me-content { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; display: none; }
+.memory-entry.expanded .me-content { display: block; }
+
+/* ── FIX 1: Current-turn gold border on table card ───────── */
+.table-card.current-turn {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px var(--accent-glow);
+}
+
+/* ── FIX 2: Slide-in confirmation panel ──────────────────── */
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.action-confirm.slide-in { animation: slideInDown 0.2s ease-out; }
+.ip-item:hover, .ap-item:not(.disabled):hover {
+  background: var(--bg-surface-2) !important;
+  border-color: var(--accent) !important;
+}
+
+/* ── FIX 3: Universal Dice Roll Widget ───────────────────── */
+.dice-roll-widget {
+  display: flex; flex-direction: column; gap: 6px;
+  font-family: var(--font-body);
+}
+.dice-roll-widget .widget-label {
+  font-size: 0.72rem; color: var(--text-muted); font-weight: 600;
+}
+.dice-roll-widget .dice-selector {
+  display: flex; align-items: center; gap: 6px;
+}
+.dice-roll-widget .dice-count {
+  width: 54px !important; text-align: center;
+}
+.dice-roll-widget .dice-type {
+  min-width: 60px;
+}
+.dice-roll-widget .adv-toggle {
+  display: flex; gap: 0; border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--border); height: 26px;
+}
+.dice-roll-widget .adv-toggle .adv-btn {
+  border: none; background: var(--bg-surface-2); color: var(--text-muted);
+  padding: 0 10px; cursor: pointer; font-size: 0.7rem;
+  transition: all .15s ease; font-weight: 500;
+}
+.dice-roll-widget .adv-btn:hover { background: var(--bg-surface-3); }
+.dice-roll-widget .adv-btn.active { font-weight: 700; }
+.dice-roll-widget .adv-btn.active[data-mode="normal"] {
+  background: var(--bg-surface-3); color: var(--text-primary);
+}
+.dice-roll-widget .adv-btn.active[data-mode="advantage"] {
+  background: rgba(74,156,93,0.20); color: var(--accent-green);
+}
+.dice-roll-widget .adv-btn.active[data-mode="disadvantage"] {
+  background: rgba(184,64,64,0.20); color: var(--accent-red);
+}
+.dice-roll-widget .roll-btn { align-self: flex-start; margin-top: 2px; }
+.dice-roll-widget .roll-result {
+  background: var(--bg-surface-2); border-radius: var(--r-sm);
+  padding: 6px 10px; border-left: 3px solid var(--accent); margin-top: 4px;
+}
+.dice-roll-widget .roll-result.hidden { display: none; }
+.dice-roll-widget .result-total {
+  font-size: 1.1rem; font-weight: 700; color: var(--accent);
+}
+.dice-roll-widget .result-breakdown {
+  font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;
+}
+
+/* Combat FX shake keyframes live in base.css so GM + player share them. */

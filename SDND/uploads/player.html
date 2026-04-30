@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Combat Companion — Player</title>
+  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p18">
+  <link rel="stylesheet" href="/static/css/player.css?v=reworkv3p18">
+</head>
+<body>
+  <!-- ── TOP BAR ──────────────────────────────────────────── -->
+  <div class="topbar">
+    <span class="logo">⚔️ <span id="char-name">Player</span> <span id="char-rc-badges" style="font-size:0.65rem;font-weight:400;opacity:0.7"></span></span>
+    <span class="spacer"></span>
+    <div class="ws-status">
+      <span class="status-dot" id="ws-dot"></span>
+      <span id="ws-label">connecting...</span>
+    </div>
+    <span id="player-currency" class="session-badge" style="cursor:pointer;color:var(--accent)" title="Click to transfer">💰 —</span>
+    <span style="font-size:0.78rem;display:flex;align-items:center;gap:3px" id="player-timer-area">⏱ <span id="player-timer-display">0:00:00</span></span>
+    <span class="session-badge">Session: <strong id="session-code">—</strong></span>
+    <button class="btn btn-ghost btn-sm" id="btn-open-map">🗺️ Map</button>
+  </div>
+
+  <!-- Map Modal -->
+  <div id="map-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-surface);border-bottom:1px solid var(--border)">
+      <span style="font-weight:700;flex:1">🗺️ Map</span>
+      <button class="btn btn-ghost btn-sm" id="btn-close-map">✕ Close</button>
+    </div>
+    <div style="flex:1;position:relative;overflow:hidden">
+      <canvas id="player-map-canvas" style="display:block;width:100%;height:100%"></canvas>
+    </div>
+  </div>
+
+  <!-- ═══ TAB CONTENT AREA ═══ -->
+  <div class="tab-content-area" style="padding-bottom:56px">
+
+    <!-- ══ MAIN TAB ══════════════════════════════════════════ -->
+    <div class="player-tab active" id="tab-main">
+      <div class="main-layout">
+        <!-- FIX 2: LEFT CHARACTER SIDEBAR (per diagram) -->
+        <aside class="char-sidebar" id="char-sidebar">
+          <!-- Avatar -->
+          <div class="cs-avatar" id="cs-avatar" title="Character portrait">
+            <span id="cs-avatar-initial">?</span>
+          </div>
+          <!-- Identity -->
+          <div class="cs-identity">
+            <div class="cs-name" id="cs-name">Character</div>
+            <div class="cs-rc" id="cs-rc"></div>
+            <!-- Rework v2: age / gender cosmetic line -->
+            <div class="cs-bio" id="cs-bio" style="font-size:0.68rem;color:var(--text-muted);margin-top:2px"></div>
+          </div>
+          <!-- HP -->
+          <div class="cs-bar-block" id="cs-hp-block">
+            <div class="cs-bar-head"><span class="cs-bar-lbl">❤️ HP</span><span class="cs-bar-val" id="cs-hp-value">0 / 0</span></div>
+            <div class="cs-bar"><div class="cs-bar-fill" id="cs-hp-fill" style="background:var(--hp-high)"></div></div>
+            <div class="cs-kd">KD: <span id="cs-kd">10</span></div>
+          </div>
+          <!-- Mana -->
+          <div class="cs-bar-block" id="cs-mana-block" style="display:none">
+            <div class="cs-bar-head"><span class="cs-bar-lbl">🔮 Mana</span><span class="cs-bar-val" id="cs-mana-value">0 / 0</span></div>
+            <div class="cs-bar"><div class="cs-bar-fill" id="cs-mana-fill" style="background:#60a5fa"></div></div>
+          </div>
+          <!-- XP -->
+          <div class="cs-bar-block" id="cs-xp-block">
+            <div class="cs-bar-head"><span class="cs-bar-lbl">⭐ XP</span><span class="cs-bar-val" id="cs-xp-value">0</span></div>
+            <div class="cs-bar"><div class="cs-bar-fill" id="cs-xp-fill" style="background:#a78bfa"></div></div>
+            <!-- Rework v2: Level-up CTA, shown only when xp >= threshold -->
+            <button class="btn btn-primary btn-sm" id="btn-level-up"
+                    style="display:none;width:100%;margin-top:6px;background:linear-gradient(135deg,#a78bfa,#c08a2a);color:#000;font-weight:800;animation:levelUpPulse 1.6s ease-in-out infinite">
+              ⬆ LEVEL UP!
+            </button>
+          </div>
+          <!-- Currency (4-type: Platinum, Gold, Silver, Bronze) -->
+          <div class="cs-currency" id="cs-currency">
+            <span class="cs-curr-row" id="cs-curr-plat" title="Platinum">
+              <span class="curr-icon" style="color:#e0e0ff">◆</span>
+              <span id="cs-curr-plat-val">0</span>
+            </span>
+            <span class="cs-curr-row" title="Gold">
+              <span class="curr-icon" style="color:#ffd700">●</span>
+              <span id="cs-curr-gold">0</span>
+            </span>
+            <span class="cs-curr-row" title="Silver">
+              <span class="curr-icon" style="color:#c0c0c0">●</span>
+              <span id="cs-curr-silver">0</span>
+            </span>
+            <span class="cs-curr-row" title="Bronze">
+              <span class="curr-icon" style="color:#cd7f32">●</span>
+              <span id="cs-curr-bronze">0</span>
+            </span>
+          </div>
+
+          <!-- Characteristics (STR/DEX/CON/INT/WIS/CHA) — visible to player -->
+          <div class="cs-stats" id="cs-stats" style="margin-top:10px;padding:8px;background:var(--bg-surface-2);border-radius:var(--r-md);border:1px solid var(--border)">
+            <div class="cs-section-lbl" style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px">📊 Characteristics</div>
+            <div id="cs-stats-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center;font-size:0.78rem">
+              <!-- Injected by JS -->
+            </div>
+          </div>
+
+          <!-- Characteristic Roll (per diagram) -->
+          <div class="cs-char-roll">
+            <div class="cs-section-lbl">🎲 Characteristic Roll</div>
+            <select id="cs-roll-stat" style="font-size:0.78rem;width:100%;margin-bottom:4px">
+              <option value="strength">Strength</option>
+              <option value="dexterity">Dexterity</option>
+              <option value="constitution">Constitution</option>
+              <option value="intelligence">Intelligence</option>
+              <option value="wisdom">Wisdom</option>
+              <option value="charisma">Charisma</option>
+            </select>
+            <select id="cs-roll-type" style="font-size:0.78rem;width:100%;margin-bottom:4px">
+              <option value="ability_check">Ability Check</option>
+              <option value="saving_throw">Saving Throw</option>
+              <option value="skill_check">Skill Check</option>
+            </select>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;font-size:0.72rem">
+              <span style="color:var(--text-muted)">Dice:</span>
+              <input type="number" id="cs-roll-dice-count" value="1" min="1" max="10" style="width:40px;font-size:0.72rem">
+              <span style="color:var(--text-muted)">d</span>
+              <select id="cs-roll-dice-type" style="font-size:0.72rem;flex:1">
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12">12</option>
+                <option value="20" selected>20</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="adv-toggle" id="cs-roll-adv" style="width:100%;margin-bottom:4px">
+              <button data-mode="normal" class="active" style="flex:1">Normal</button>
+              <button data-mode="advantage" style="flex:1">ADV</button>
+              <button data-mode="disadvantage" style="flex:1">DIS</button>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-cs-roll" style="width:100%">🎲 Roll</button>
+            <div id="cs-roll-result" style="font-size:0.72rem;margin-top:4px;min-height:14px"></div>
+          </div>
+        </aside>
+
+        <!-- ══ CENTER — Battle Field stretches to fill ══════════════
+             Rework v3 Phase 7: the Main tab is now a 3-column grid
+             (char-sidebar | center | right-sidebar). The center owns
+             the tactical map exclusively so it can dominate screen
+             real-estate. Banners / status badges sit above it; every-
+             thing else moved to the right sidebar or to the More tab.
+        ══════════════════════════════════════════════════════════════ -->
+        <div class="main-center">
+          <!-- GM TIMER -->
+          <div id="gm-timer-banner" style="display:none;text-align:center;padding:12px;margin-bottom:8px;border-radius:var(--r-lg);background:var(--surface-2);border:2px solid var(--accent-orange)">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px">⏱ GM Timer</div>
+            <div id="gm-timer-display" style="font-size:2.2rem;font-weight:800;color:var(--accent-orange);font-variant-numeric:tabular-nums"></div>
+          </div>
+
+          <!-- COMBAT BANNER -->
+          <div id="combat-banner" style="display:none"></div>
+
+          <!-- Legacy HP/Mana cards — kept for JS compat, hidden visually -->
+          <div class="hp-card" id="hp-card" style="display:none">
+            <div class="hp-big" id="hp-display">20 / 20</div>
+            <div class="hp-label">Hit Points · KD: <span id="kd-display">10</span></div>
+            <div class="hp-bar-container hp-bar-lg"><div class="hp-bar" id="hp-bar" style="width:100%;background:var(--hp-high)"></div></div>
+          </div>
+
+          <!-- STATUS EFFECTS -->
+          <div id="player-status-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0"></div>
+
+          <!-- BATTLE FIELD — fills remaining vertical space on desktop. -->
+          <section class="panel panel-full battle-panel" id="player-grid-panel">
+            <div class="panel-header" style="display:flex;align-items:center;gap:6px">
+              <h2 style="flex:1;margin:0">🗺️ Battle Field</h2>
+              <span id="player-grid-status" style="font-size:0.72rem;color:var(--text-muted)"></span>
+              <!-- Phase 6: players upload their own token portrait. -->
+              <button class="btn btn-ghost btn-xs" id="btn-player-portrait" title="Upload your token portrait">🖼️</button>
+              <button class="btn btn-ghost btn-xs" id="btn-grid-fit" title="Fit map to view">⛶</button>
+              <button class="btn btn-ghost btn-xs" id="btn-grid-expand" title="Expand / collapse grid height">⇕</button>
+            </div>
+            <div class="panel-body" style="padding:0;display:flex;flex-direction:column;flex:1;min-height:0">
+              <div id="player-grid-wrap" style="position:relative;width:100%;height:420px;background:#1a1814;border-top:1px solid var(--border);overflow:hidden;flex:1;min-height:0">
+                <canvas id="player-grid-canvas" style="display:block;width:100%;height:100%"></canvas>
+                <div id="player-grid-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.82rem;pointer-events:none;text-align:center;padding:16px">
+                  Waiting for the GM to set up the battlefield…
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Legacy chip lists, hidden. renderTableView() still writes to
+               these nodes; removing the nodes would throw on every update. -->
+          <div style="display:none" aria-hidden="true">
+            <div id="table-view-teammates"></div>
+            <div id="table-view-npcs"></div>
+            <div id="table-view-grid"></div>
+          </div>
+        </div>
+
+        <!-- ══ RIGHT SIDEBAR — Actions + bonuses + advanced ══════════
+             Everything the player interacts with mid-battle sits here
+             so the map stays unobstructed. Scrolls independently.
+        ══════════════════════════════════════════════════════════════ -->
+        <aside class="right-sidebar" id="right-sidebar">
+          <!-- Selected target info moved to top of the action column.
+               Visible only when a token is selected on the battlefield. -->
+          <div id="selected-target-info" style="display:none;padding:6px 10px;border-radius:var(--r-md);background:var(--bg-surface-2);border:1px solid var(--accent);font-size:0.82rem">
+            🎯 Target: <strong id="selected-target-name">—</strong>
+            <button class="btn btn-ghost btn-xs" id="btn-clear-target" style="margin-left:8px">✕ Clear</button>
+          </div>
+
+          <!-- ACTION MENU -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>⚡ Actions</h2></div>
+            <div class="panel-body" id="action-menu-body" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          </section>
+
+          <!-- REACTIONS PANEL (combat-only, collapsible) -->
+          <section id="reactions-panel" class="panel panel-full" style="display:none;border-color:var(--accent-orange);border-width:2px">
+            <div class="panel-header" style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1)">
+              <h2 style="flex:1;color:var(--accent-orange);margin:0">⚡ Reactions</h2>
+              <button class="btn btn-ghost btn-xs" id="reactions-toggle" title="Collapse/Expand">▼</button>
+            </div>
+            <div class="panel-body" id="reactions-content">
+              <div id="reactions-list" style="display:flex;flex-direction:column;gap:6px"></div>
+              <div class="reactions-note" style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);font-style:italic">
+                Reactions can be used once per round
+              </div>
+            </div>
+          </section>
+
+          <!-- BONUSES -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>✅ Active Bonuses</h2></div>
+            <div class="panel-body" id="active-bonuses-list" style="font-size:0.8rem">
+              <span class="text-muted">No active bonuses</span>
+            </div>
+          </section>
+
+          <!-- PENALTIES -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>❌ Active Penalties</h2></div>
+            <div class="panel-body" id="active-penalties-list" style="font-size:0.8rem">
+              <span class="text-muted">No active penalties</span>
+            </div>
+          </section>
+
+          <!-- ADVANCED / MANUAL ROLL TOOLS -->
+          <details class="legacy-panels">
+            <summary style="cursor:pointer;font-size:0.78rem;color:var(--text-muted);padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+              ⚙️ Advanced / manual roll tools
+            </summary>
+            <div style="padding-top:8px;display:flex;flex-direction:column;gap:8px">
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>🎲 Free Roll</h2></div>
+                <div class="panel-body">
+                  <div id="free-roll-widget-host"></div>
+                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--text-muted);margin-top:6px">
+                    <input type="checkbox" id="free-roll-private"> Private roll (GM won't see)
+                  </label>
+                </div>
+              </section>
+
+              <div class="stats-grid" id="stats-grid"></div>
+
+              <div style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <span style="font-size:0.82rem;font-weight:700">🎲</span>
+                  <select id="player-roll-stat" style="font-size:0.78rem;width:105px">
+                    <option value="strength">Strength</option>
+                    <option value="dexterity">Dexterity</option>
+                    <option value="constitution">Constitution</option>
+                    <option value="intelligence">Intelligence</option>
+                    <option value="wisdom">Wisdom</option>
+                    <option value="charisma">Charisma</option>
+                  </select>
+                  <select id="player-roll-type" style="font-size:0.78rem;width:115px">
+                    <option value="ability_check">Ability Check</option>
+                    <option value="saving_throw">Saving Throw</option>
+                    <option value="skill_check">Skill Check</option>
+                  </select>
+                  <div class="adv-toggle" id="char-roll-adv-toggle">
+                    <button data-mode="normal" class="active">Normal</button>
+                    <button data-mode="advantage">ADV</button>
+                    <button data-mode="disadvantage">DISADV</button>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-player-roll">🎲 Roll</button>
+                </div>
+                <div id="player-roll-result" style="width:100%;font-size:0.82rem;margin-top:4px"></div>
+              </div>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>⚔️ Attack &amp; Damage Roll</h2></div>
+                <div class="panel-body" id="attack-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>🛡️ Incoming Damage</h2></div>
+                <div class="panel-body" id="defense-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>💚 HP Recovery</h2></div>
+                <div class="panel-body" id="heal-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>⏱️ Turn Counter</h2></div>
+                <div class="panel-body" id="turns-body"></div>
+              </section>
+
+              <section class="panel panel-full">
+                <div class="panel-header"><h2>✨ Effects &amp; Passive Bonuses</h2></div>
+                <div class="panel-body" id="effects-body"></div>
+              </section>
+            </div>
+          </details>
+
+          <!-- QUESTS -->
+          <details>
+            <summary style="cursor:pointer;font-weight:700;padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">📜 Quests</summary>
+            <div style="padding:8px">
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <button class="btn btn-ghost btn-xs player-quest-tab active" data-pqtab="active">Active</button>
+                <button class="btn btn-ghost btn-xs player-quest-tab" data-pqtab="completed">Completed</button>
+              </div>
+              <div id="player-quests-active"></div>
+              <div id="player-quests-completed" style="display:none"></div>
+            </div>
+          </details>
+
+          <!-- ANNOUNCEMENTS -->
+          <section class="panel panel-full">
+            <div class="panel-header"><h2>📢 Announcements</h2></div>
+            <div class="panel-body" id="player-announcements">
+              <p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>
+            </div>
+          </section>
+
+          <!-- Kept so legacy JS (#enemy-calc-body) can still write to it. -->
+          <div id="enemy-calc-body" style="display:none"></div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ══ MORE TAB — Activity log (Rework v3 Phase 7) ═══════════
+         Calc Log + Roll History used to sit at the bottom of the
+         Main tab, pushing the battlefield upward. They're quiet
+         reference material, so they moved here. Switching the
+         sub-tabs below preserves every prior writer (`calc-log`,
+         `roll-history-log` DOM ids remain unchanged).
+    ══════════════════════════════════════════════════════════════ -->
+    <div class="player-tab" id="tab-more" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+            <h2 style="flex:1">📜 Activity Log</h2>
+            <button class="btn btn-ghost btn-xs log-tab-btn active" data-log-tab="calc">Calc Log</button>
+            <button class="btn btn-ghost btn-xs log-tab-btn" data-log-tab="rolls">Roll History</button>
+          </div>
+          <div class="panel-body">
+            <div id="calc-log" class="calc-log"></div>
+            <div id="roll-history-log" class="calc-log" style="display:none"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ INVENTORY TAB ═════════════════════════════════════ -->
+    <div class="player-tab" id="tab-inventory" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:12px">
+            <h2 style="flex:1">🎒 Inventory</h2>
+            <span class="currency-display" id="inv-currency-display">
+              <span class="inv-curr-plat" style="display:none">💎 <strong>0</strong>P</span>
+              <span class="inv-curr-gold">🪙 <strong>0</strong>G</span>
+              <span class="inv-curr-silver">🥈 <strong>0</strong>S</span>
+              <span class="inv-curr-copper">🟤 <strong>0</strong>B</span>
+            </span>
+            <span class="slot-meter" id="slot-meter" title="Inventory slot usage" style="font-size:0.78rem;padding:2px 8px;border-radius:10px;background:var(--bg-surface-2);border:1px solid var(--border);color:var(--text-muted)">🎒 <strong id="slot-meter-val">0 / 12</strong></span>
+            <button class="btn btn-ghost btn-xs" id="btn-open-shop">🛒 Shop</button>
+          </div>
+          <div class="panel-body">
+            <!-- Rework Phase 3: Bag / Equipped top tabs -->
+            <div class="inv-tab-bar" id="inv-tab-bar" style="display:flex;gap:6px;margin-bottom:10px">
+              <button class="btn btn-ghost btn-sm inv-tab active" data-inv-tab="bag">🎒 Bag <span class="tab-count" id="tab-count-bag">0</span></button>
+              <button class="btn btn-ghost btn-sm inv-tab" data-inv-tab="equipped">⚔️ Equipped <span class="tab-count" id="tab-count-equipped">0</span></button>
+            </div>
+            <div class="equipment-panel" id="equipment-panel" style="display:none">
+              <h3 style="font-size:0.82rem;margin-bottom:8px">⚔️ Equipment Slots</h3>
+              <div class="equip-slots-grid" id="equip-slots-grid"></div>
+              <hr class="section-divider">
+            </div>
+            <div class="inv-filter-tabs" id="inv-filter-tabs">
+              <button class="btn btn-ghost btn-xs inv-filter active" data-inv-filter="all">All</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="weapon">Weapons</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="armor">Armor</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="potion">Potions</button>
+              <button class="btn btn-ghost btn-xs inv-filter" data-inv-filter="misc">Misc</button>
+            </div>
+            <div id="inventory-grid" class="inventory-grid"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Slot selector modal -->
+      <div id="slot-selector-modal" class="modal-overlay" style="display:none">
+        <div class="modal-panel" style="max-width:340px">
+          <div class="modal-header"><h3>Select Equipment Slot</h3><button class="btn-icon" id="slot-modal-close">✕</button></div>
+          <div class="modal-body">
+            <div class="slot-selector-grid" id="slot-selector-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Notes -->
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:8px">
+            <h2 style="flex:1">📝 My Notes</h2>
+            <button class="btn btn-primary btn-xs" id="btn-player-add-note">+ New Note</button>
+          </div>
+          <div class="panel-body" id="player-notes-list"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ ABILITIES TAB ═════════════════════════════════════ -->
+    <div class="player-tab" id="tab-abilities" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header"><h2>✨ Abilities</h2></div>
+          <div class="panel-body">
+            <div id="abilities-grid" style="display:flex;flex-wrap:wrap;gap:10px;min-height:40px">
+              <span class="text-muted" style="font-size:0.8rem">No abilities learned yet</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ PROFESSIONS TAB (Rework Phase 4) ══════════════════ -->
+    <div class="player-tab" id="tab-professions" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header"><h2>🛡️ Professions</h2></div>
+          <div class="panel-body">
+            <div id="professions-list" style="display:flex;flex-direction:column;gap:10px;min-height:40px">
+              <span class="text-muted" style="font-size:0.82rem">Loading…</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ MEMORY TAB ════════════════════════════════════════ -->
+    <div class="player-tab" id="tab-memory" style="display:none;padding:12px">
+      <div class="panels-row">
+        <section class="panel panel-full">
+          <div class="panel-header" style="display:flex;align-items:center;gap:8px">
+            <h2 style="flex:1">📖 Journal</h2>
+            <input type="text" id="memory-search" placeholder="Search..." style="font-size:0.78rem;width:140px">
+            <button class="btn btn-primary btn-xs" id="btn-add-memory">+ Add Note</button>
+          </div>
+          <div class="panel-body">
+            <div id="memory-list" style="min-height:40px">
+              <span class="text-muted" style="font-size:0.8rem">No journal entries yet</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ BOTTOM TAB BAR ═══ -->
+  <nav class="player-tab-bar">
+    <button class="player-tab-btn active" data-tab="tab-main">⚔️<span>Main</span></button>
+    <button class="player-tab-btn" data-tab="tab-inventory">🎒<span>Inventory</span></button>
+    <button class="player-tab-btn" data-tab="tab-abilities">✨<span>Skills</span></button>
+    <button class="player-tab-btn" data-tab="tab-professions">🛡️<span>Professions</span></button>
+    <button class="player-tab-btn" data-tab="tab-memory">📖<span>Memory</span></button>
+    <button class="player-tab-btn" data-tab="tab-more" title="More / Debug">⚙️<span>More</span></button>
+  </nav>
+
+  <script src="/static/js/websocket-client.js?v=reworkv3p18"></script>
+  <script src="/static/js/character-sheet-core.js?v=reworkv3p18"></script>
+  <script src="/static/js/map-canvas.js?v=reworkv3p18"></script>
+  <script src="/static/js/player-app.js?v=reworkv3p18"></script>
+</body>
+</html>

@@ -266,6 +266,21 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
             "name": e.name or "Trap",
         })
 
+    # Portals
+    portals = []
+    for e in entities:
+        if e.entity_type != "portal":
+            continue
+        portals.append({
+            "id": e.id,
+            "x": (e.col + 0.5) / cols,
+            "y": (e.row + 0.5) / rows,
+            "col": e.col,
+            "row": e.row,
+            "name": e.name or "Portal",
+            "visible_to_players": e.visible_to_players,
+        })
+
     # Lights
     lights_q = await db.execute(select(BV2Light).where(BV2Light.location_id == loc.id))
     lights = []
@@ -360,6 +375,7 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         "active_map_name": bv2_map.name,
         "_traps": traps,
         "_mapChests": chests,
+        "_portals": portals,
         "bv2_active_location_id": loc.id,
         "bv2_ambient_light": float(loc.ambient_light)
                              if loc.ambient_light is not None else 1.0,

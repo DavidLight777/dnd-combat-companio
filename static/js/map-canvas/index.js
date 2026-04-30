@@ -139,6 +139,7 @@ class MapCanvas {
     // Phase 12 R5: smooth token movement interpolation
     // charId -> {prevX, prevY, targetX, targetY, startTime}
     this._tokenAnims = new Map();
+    this._tokenAnimRafId = null;
 
     this._bindEvents();
     this._resize();
@@ -395,16 +396,13 @@ MapCanvas.prototype._makeBlocksAt = function() {
   };
 };
 
-MapCanvas.prototype._ensureLayer = function(kind, w, h) {
-  const layerProp = kind === 'dark' ? '_darkLayer' : '_lightLayer';
-  const ctxProp = kind === 'dark' ? '_darkLayerCtx' : '_lightLayerCtx';
-  if (!this[layerProp]) {
-    this[layerProp] = document.createElement('canvas');
-    this[ctxProp] = this[layerProp].getContext('2d');
-  }
-  if (this[layerProp].width !== w || this[layerProp].height !== h) {
-    this[layerProp].width = w;
-    this[layerProp].height = h;
+MapCanvas.prototype._ensureLayer = function(name, w, h) {
+  const key = '_' + name + 'Layer';
+  if (!this[key] || this[key].width !== w || this[key].height !== h) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    this[key] = c;
   }
 };
 

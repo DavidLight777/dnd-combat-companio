@@ -124,6 +124,11 @@
       this.render();
     }
 
+    setAmbient(val) {
+      if (this.location) this.location.ambient_light = val;
+      this.render();
+    }
+
     setPendingZone(cells) {
       this.pendingZoneCells = new Set((cells || []).map(c => `${c.col},${c.row}`));
       this.render();
@@ -338,10 +343,12 @@
       const gs = this._gridSize();
       const cols = this._cols();
       const rows = this._rows();
+      if (!cols || !rows) return;
       const isHex = this._isHex();
       const ambient = this.location?.ambient_light ?? 1.0;
 
       // Compute illumination per cell using FOVCalculator so walls block light.
+      if (!window.bv2 || !window.bv2.FOVCalculator) return;
       const illum = new Array(rows).fill(0).map(() => new Array(cols).fill(ambient));
       const fov = new bv2.FOVCalculator(this.location, this.tiles);
       for (const li of this.lights) {
@@ -349,6 +356,7 @@
         const lit = fov.compute(li.col, li.row, reach);
         for (const key of lit) {
           const [c, ro] = key.split(',').map(Number);
+          if (c < 0 || c >= cols || ro < 0 || ro >= rows) continue;
           const dx = c - li.col, dy = ro - li.row;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist > li.radius_cells) continue;

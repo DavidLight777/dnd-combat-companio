@@ -122,6 +122,14 @@ function _scheduleBv2MapRefresh() {
   'bv2.npc_spawn_added', 'bv2.npc_spawn_updated', 'bv2.npc_spawn_deleted',
 ].forEach(evt => ws.on(evt, _scheduleBv2MapRefresh));
 
+// Phase 17 Round 3: Map lock toggle
+ws.on('map.lock_changed', d => {
+  window.__lastMapLockState = !!d.locked;
+  const panel = document.getElementById('player-grid-panel');
+  if (panel) panel.classList.toggle('map-locked', !!d.locked);
+  if (d.locked) showToast('🗺 Map locked by GM');
+});
+
 // ══════════════════════════════════════════════════════════════
 // GENERIC ENTITY INVALIDATION — live refresh without page reload
 // ══════════════════════════════════════════════════════════════

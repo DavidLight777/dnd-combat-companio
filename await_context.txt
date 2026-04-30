@@ -1,0 +1,1250 @@
+=== static/js/builder_v2/70-lights.js line 64 ===
+61:       btn.addEventListener('click', async () => {
+62:         const id = parseInt(btn.dataset.delLight, 10);
+63:         if (!confirm('Delete this light?')) return;
+64:         try { await S.api.deleteLight(id); } catch (e) {
+65:           console.error('bv2 deleteLight', e);
+66:           showError('Failed to delete light');
+67:         }
+
+
+=== static/js/builder_v2/70-lights.js line 139 ===
+136:     };
+137:     try {
+138:       if (id) {
+139:         await S.api.updateLight(id, body);
+140:       } else {
+141:         if (!S.currentLocId) { showError('No location selected'); return; }
+142:         await S.api.createLight(S.currentLocId, body);
+
+
+=== static/js/builder_v2/70-lights.js line 142 ===
+139:         await S.api.updateLight(id, body);
+140:       } else {
+141:         if (!S.currentLocId) { showError('No location selected'); return; }
+142:         await S.api.createLight(S.currentLocId, body);
+143:       }
+144:       closeModal();
+145:     } catch (e) {
+
+
+=== static/js/builder_v2/70-lights.js line 196 ===
+193:       if (!S.currentLocId) return;
+194:       const val = parseFloat(ambientSlider.value);
+195:       try {
+196:         await S.api.updateLoc(S.currentLocId, { ambient_light: val });
+197:       } catch (e) {
+198:         console.error('bv2 ambient update', e);
+199:       }
+
+
+=== static/js/builder_v2/70-lights.js line 206 ===
+203:   // ── Refresh list when location loads ──────────────────────
+204:   const origLoadLocation = S.loadLocation;
+205:   S.loadLocation = async function (locId) {
+206:     await origLoadLocation.call(this, locId);
+207:     renderLightList();
+208:     // Sync ambient slider
+209:     try {
+
+
+=== static/js/builder_v2/70-lights.js line 210 ===
+207:     renderLightList();
+208:     // Sync ambient slider
+209:     try {
+210:       const loc = await S.api.getLoc(locId);
+211:       if (ambientSlider && loc.ambient_light != null) {
+212:         ambientSlider.value = loc.ambient_light;
+213:         if (ambientVal) ambientVal.textContent = parseFloat(loc.ambient_light).toFixed(2);
+
+
+=== static/js/gm/02-characters.js line 17 ===
+14:   }
+15: 
+16:   let c;
+17:   try { c = await api.get(`/api/characters/${selectedCharId}`); }
+18:   catch { area.innerHTML = '<p class="text-muted">Character not found.</p>'; return; }
+19: 
+20:   const pct = c.max_hp > 0 ? (c.current_hp / c.max_hp * 100) : 0;
+
+
+=== static/js/gm/02-characters.js line 511 ===
+508:   area.querySelectorAll('[data-hp-delta]').forEach(btn => {
+509:     btn.addEventListener('click', async () => {
+510:       const d = parseInt(btn.dataset.hpDelta);
+511:       if (d === 999) await api.patch(`/api/characters/${c.id}/hp`, { set: c.max_hp });
+512:       else await api.patch(`/api/characters/${c.id}/hp`, { delta: d });
+513:       await refreshChars();
+514:       addLog('gm.hp', `${c.name}: ${d===999?'Full Heal':d>0?'+'+d:d} HP`);
+
+
+=== static/js/gm/02-characters.js line 512 ===
+509:     btn.addEventListener('click', async () => {
+510:       const d = parseInt(btn.dataset.hpDelta);
+511:       if (d === 999) await api.patch(`/api/characters/${c.id}/hp`, { set: c.max_hp });
+512:       else await api.patch(`/api/characters/${c.id}/hp`, { delta: d });
+513:       await refreshChars();
+514:       addLog('gm.hp', `${c.name}: ${d===999?'Full Heal':d>0?'+'+d:d} HP`);
+515:     });
+
+
+=== static/js/gm/02-characters.js line 513 ===
+510:       const d = parseInt(btn.dataset.hpDelta);
+511:       if (d === 999) await api.patch(`/api/characters/${c.id}/hp`, { set: c.max_hp });
+512:       else await api.patch(`/api/characters/${c.id}/hp`, { delta: d });
+513:       await refreshChars();
+514:       addLog('gm.hp', `${c.name}: ${d===999?'Full Heal':d>0?'+'+d:d} HP`);
+515:     });
+516:   });
+
+
+=== static/js/gm/02-characters.js line 518 ===
+515:     });
+516:   });
+517:   // Custom HP
+518:   $('#gm-hp-add').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:v}); await refreshChars(); addLog('gm.hp',`${c.name}: +${v}`); });
+519:   $('#gm-hp-sub').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:-v}); await refreshChars(); addLog('gm.hp',`${c.name}: -${v}`); });
+520:   $('#gm-hp-set').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{set:v}); await refreshChars(); addLog('gm.hp',`${c.name}: set ${v}`); });
+521: 
+
+
+=== static/js/gm/02-characters.js line 519 ===
+516:   });
+517:   // Custom HP
+518:   $('#gm-hp-add').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:v}); await refreshChars(); addLog('gm.hp',`${c.name}: +${v}`); });
+519:   $('#gm-hp-sub').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:-v}); await refreshChars(); addLog('gm.hp',`${c.name}: -${v}`); });
+520:   $('#gm-hp-set').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{set:v}); await refreshChars(); addLog('gm.hp',`${c.name}: set ${v}`); });
+521: 
+522:   // Spiritual HP delta buttons
+
+
+=== static/js/gm/02-characters.js line 520 ===
+517:   // Custom HP
+518:   $('#gm-hp-add').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:v}); await refreshChars(); addLog('gm.hp',`${c.name}: +${v}`); });
+519:   $('#gm-hp-sub').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{delta:-v}); await refreshChars(); addLog('gm.hp',`${c.name}: -${v}`); });
+520:   $('#gm-hp-set').addEventListener('click', async () => { const v=parseInt($('#gm-hp-custom').value)||0; await api.patch(`/api/characters/${c.id}/hp`,{set:v}); await refreshChars(); addLog('gm.hp',`${c.name}: set ${v}`); });
+521: 
+522:   // Spiritual HP delta buttons
+523:   area.querySelectorAll('[data-spirit-delta]').forEach(btn => {
+
+
+=== static/js/gm/02-characters.js line 527 ===
+524:     btn.addEventListener('click', async () => {
+525:       const d = parseInt(btn.dataset.spiritDelta);
+526:       const newVal = Math.max(0, Math.min((c.spiritual_max_hp || 0), (c.spiritual_hp || 0) + d));
+527:       await api.patch(`/api/characters/${c.id}`, { spiritual_hp: newVal });
+528:       await refreshChars();
+529:       addLog('gm.spirit_hp', `${c.name}: ${d===999?'Full Spirit Heal':d>0?'+'+d:d} Spirit HP`);
+530:     });
+
+
+=== static/js/gm/02-characters.js line 528 ===
+525:       const d = parseInt(btn.dataset.spiritDelta);
+526:       const newVal = Math.max(0, Math.min((c.spiritual_max_hp || 0), (c.spiritual_hp || 0) + d));
+527:       await api.patch(`/api/characters/${c.id}`, { spiritual_hp: newVal });
+528:       await refreshChars();
+529:       addLog('gm.spirit_hp', `${c.name}: ${d===999?'Full Spirit Heal':d>0?'+'+d:d} Spirit HP`);
+530:     });
+531:   });
+
+
+=== static/js/gm/02-characters.js line 533 ===
+530:     });
+531:   });
+532:   // Custom Spiritual HP
+533:   $('#gm-spirit-add').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.min((c.spiritual_max_hp||0), (c.spiritual_hp||0)+v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: +${v} Spirit`); });
+534:   $('#gm-spirit-sub').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.max(0, (c.spiritual_hp||0)-v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: -${v} Spirit`); });
+535:   $('#gm-spirit-set').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; await api.patch(`/api/characters/${c.id}`, {spiritual_hp: v}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: set ${v} Spirit`); });
+536: 
+
+
+=== static/js/gm/02-characters.js line 534 ===
+531:   });
+532:   // Custom Spiritual HP
+533:   $('#gm-spirit-add').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.min((c.spiritual_max_hp||0), (c.spiritual_hp||0)+v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: +${v} Spirit`); });
+534:   $('#gm-spirit-sub').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.max(0, (c.spiritual_hp||0)-v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: -${v} Spirit`); });
+535:   $('#gm-spirit-set').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; await api.patch(`/api/characters/${c.id}`, {spiritual_hp: v}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: set ${v} Spirit`); });
+536: 
+537:   // Mana delta buttons
+
+
+=== static/js/gm/02-characters.js line 535 ===
+532:   // Custom Spiritual HP
+533:   $('#gm-spirit-add').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.min((c.spiritual_max_hp||0), (c.spiritual_hp||0)+v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: +${v} Spirit`); });
+534:   $('#gm-spirit-sub').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; const newVal = Math.max(0, (c.spiritual_hp||0)-v); await api.patch(`/api/characters/${c.id}`, {spiritual_hp: newVal}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: -${v} Spirit`); });
+535:   $('#gm-spirit-set').addEventListener('click', async () => { const v=parseInt($('#gm-spirit-custom').value)||0; await api.patch(`/api/characters/${c.id}`, {spiritual_hp: v}); await refreshChars(); addLog('gm.spirit_hp',`${c.name}: set ${v} Spirit`); });
+536: 
+537:   // Mana delta buttons
+538:   area.querySelectorAll('[data-mana-delta]').forEach(btn => {
+
+
+=== static/js/gm/02-characters.js line 541 ===
+538:   area.querySelectorAll('[data-mana-delta]').forEach(btn => {
+539:     btn.addEventListener('click', async () => {
+540:       const d = parseInt(btn.dataset.manaDelta);
+541:       if (d > 0) await api.post(`/api/characters/${c.id}/restore-mana`, { amount: d });
+542:       else await api.post(`/api/characters/${c.id}/spend-mana`, { cost: -d });
+543:       await refreshChars();
+544:       addLog('gm.mana', `${c.name}: ${d>0?'+'+d:d} Mana`);
+
+
+=== static/js/gm/02-characters.js line 542 ===
+539:     btn.addEventListener('click', async () => {
+540:       const d = parseInt(btn.dataset.manaDelta);
+541:       if (d > 0) await api.post(`/api/characters/${c.id}/restore-mana`, { amount: d });
+542:       else await api.post(`/api/characters/${c.id}/spend-mana`, { cost: -d });
+543:       await refreshChars();
+544:       addLog('gm.mana', `${c.name}: ${d>0?'+'+d:d} Mana`);
+545:       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+
+
+=== static/js/gm/02-characters.js line 543 ===
+540:       const d = parseInt(btn.dataset.manaDelta);
+541:       if (d > 0) await api.post(`/api/characters/${c.id}/restore-mana`, { amount: d });
+542:       else await api.post(`/api/characters/${c.id}/spend-mana`, { cost: -d });
+543:       await refreshChars();
+544:       addLog('gm.mana', `${c.name}: ${d>0?'+'+d:d} Mana`);
+545:       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+546:         ws.ws.send(JSON.stringify({ type: 'mana.updated', character_id: c.id, mana_current: null, mana_max: c.mana_max }));
+
+
+=== static/js/gm/02-characters.js line 551 ===
+548:   });
+549:   area.querySelectorAll('[data-mana-full]').forEach(btn => {
+550:     btn.addEventListener('click', async () => {
+551:       await api.post(`/api/characters/${c.id}/restore-mana`, { full: true });
+552:       await refreshChars();
+553:       addLog('gm.mana', `${c.name}: Full Mana`);
+554:       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+
+
+=== static/js/gm/02-characters.js line 552 ===
+549:   area.querySelectorAll('[data-mana-full]').forEach(btn => {
+550:     btn.addEventListener('click', async () => {
+551:       await api.post(`/api/characters/${c.id}/restore-mana`, { full: true });
+552:       await refreshChars();
+553:       addLog('gm.mana', `${c.name}: Full Mana`);
+554:       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN)
+555:         ws.ws.send(JSON.stringify({ type: 'mana.updated', character_id: c.id, mana_current: null, mana_max: c.mana_max }));
+
+
+=== static/js/gm/02-characters.js line 564 ===
+561:     inp.addEventListener('change', async () => {
+562:       const f = inp.dataset.gmStat;
+563:       const v = parseInt(inp.value) || 0;
+564:       await api.put(`/api/characters/${c.id}`, { [f]: v });
+565:       await refreshChars();
+566:       addLog('gm.stat', `${c.name}: ${f}=${v}`);
+567:     });
+
+
+=== static/js/gm/02-characters.js line 565 ===
+562:       const f = inp.dataset.gmStat;
+563:       const v = parseInt(inp.value) || 0;
+564:       await api.put(`/api/characters/${c.id}`, { [f]: v });
+565:       await refreshChars();
+566:       addLog('gm.stat', `${c.name}: ${f}=${v}`);
+567:     });
+568:   });
+
+
+=== static/js/gm/02-characters.js line 575 ===
+572:   if (visionInp) {
+573:     visionInp.addEventListener('change', async () => {
+574:       const v = parseInt(visionInp.value) || 8;
+575:       await api.patch(`/api/characters/${c.id}`, { sight_range_cells: v });
+576:       await refreshChars();
+577:       addLog('gm.vision', `${c.name}: vision=${v}`);
+578:     });
+
+
+=== static/js/gm/02-characters.js line 576 ===
+573:     visionInp.addEventListener('change', async () => {
+574:       const v = parseInt(visionInp.value) || 8;
+575:       await api.patch(`/api/characters/${c.id}`, { sight_range_cells: v });
+576:       await refreshChars();
+577:       addLog('gm.vision', `${c.name}: vision=${v}`);
+578:     });
+579:   }
+
+
+=== static/js/gm/02-characters.js line 586 ===
+583:     btn.addEventListener('click', async () => {
+584:       const stat = btn.dataset.stat;
+585:       try {
+586:         const res = await api.post(`/api/characters/${c.id}/spend-attribute-point`, { stat });
+587:         showToast(`${stat.slice(0,3).toUpperCase()} +1! Points left: ${res.attribute_points_available}`, 'accent');
+588:         addLog('gm.stat', `${c.name}: ${stat} +1 (point spent)`);
+589:         await refreshChars();
+
+
+=== static/js/gm/02-characters.js line 589 ===
+586:         const res = await api.post(`/api/characters/${c.id}/spend-attribute-point`, { stat });
+587:         showToast(`${stat.slice(0,3).toUpperCase()} +1! Points left: ${res.attribute_points_available}`, 'accent');
+588:         addLog('gm.stat', `${c.name}: ${stat} +1 (point spent)`);
+589:         await refreshChars();
+590:         renderCharDetail();
+591:       } catch (e) {
+592:         showToast('Failed to spend point', 'error');
+
+
+=== static/js/gm/02-characters.js line 600 ===
+597:   // Effect toggles
+598:   area.querySelectorAll('[data-eff-toggle]').forEach(cb => {
+599:     cb.addEventListener('change', async () => {
+600:       await api.put(`/api/effects/${cb.dataset.effToggle}`, { is_active: cb.checked });
+601:       await refreshChars();
+602:     });
+603:   });
+
+
+=== static/js/gm/02-characters.js line 601 ===
+598:   area.querySelectorAll('[data-eff-toggle]').forEach(cb => {
+599:     cb.addEventListener('change', async () => {
+600:       await api.put(`/api/effects/${cb.dataset.effToggle}`, { is_active: cb.checked });
+601:       await refreshChars();
+602:     });
+603:   });
+604: 
+
+
+=== static/js/gm/02-characters.js line 609 ===
+606:   if (c.is_npc && area.querySelector('#btn-delete-char')) {
+607:     area.querySelector('#btn-delete-char').addEventListener('click', async () => {
+608:       if (!confirm(`Delete NPC "${c.name}"?`)) return;
+609:       await api.del(`/api/characters/${c.id}`);
+610:       selectedCharId = null;
+611:       await refreshChars();
+612:       renderCharDetail();
+
+
+=== static/js/gm/02-characters.js line 611 ===
+608:       if (!confirm(`Delete NPC "${c.name}"?`)) return;
+609:       await api.del(`/api/characters/${c.id}`);
+610:       selectedCharId = null;
+611:       await refreshChars();
+612:       renderCharDetail();
+613:       addLog('gm.npc', `Deleted NPC: ${c.name}`);
+614:     });
+
+
+=== static/js/gm/02-characters.js line 635 ===
+632:     if (killBtn) {
+633:       killBtn.addEventListener('click', async () => {
+634:         if (!confirm(`Kill/KO ${c.name}?`)) return;
+635:         await api.patch(`/api/characters/${c.id}/hp`, { set: 0 });
+636:         await api.put(`/api/characters/${c.id}`, { is_alive: false });
+637:         try {
+638:           await api.post(`/api/characters/${c.id}/status-effects`, { name: 'Unconscious', icon: '💀', color: '#ef4444', effects: '[]', remaining_turns: -1 });
+
+
+=== static/js/gm/02-characters.js line 636 ===
+633:       killBtn.addEventListener('click', async () => {
+634:         if (!confirm(`Kill/KO ${c.name}?`)) return;
+635:         await api.patch(`/api/characters/${c.id}/hp`, { set: 0 });
+636:         await api.put(`/api/characters/${c.id}`, { is_alive: false });
+637:         try {
+638:           await api.post(`/api/characters/${c.id}/status-effects`, { name: 'Unconscious', icon: '💀', color: '#ef4444', effects: '[]', remaining_turns: -1 });
+639:         } catch {}
+
+
+=== static/js/gm/02-characters.js line 638 ===
+635:         await api.patch(`/api/characters/${c.id}/hp`, { set: 0 });
+636:         await api.put(`/api/characters/${c.id}`, { is_alive: false });
+637:         try {
+638:           await api.post(`/api/characters/${c.id}/status-effects`, { name: 'Unconscious', icon: '💀', color: '#ef4444', effects: '[]', remaining_turns: -1 });
+639:         } catch {}
+640:         addLog('gm.npc', `${c.name}: KILLED/KO`);
+641:         await refreshChars();
+
+
+=== static/js/gm/02-characters.js line 641 ===
+638:           await api.post(`/api/characters/${c.id}/status-effects`, { name: 'Unconscious', icon: '💀', color: '#ef4444', effects: '[]', remaining_turns: -1 });
+639:         } catch {}
+640:         addLog('gm.npc', `${c.name}: KILLED/KO`);
+641:         await refreshChars();
+642:         if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+643:           ws.ws.send(JSON.stringify({ type: 'combat.character_downed', character_id: c.id, character_name: c.name }));
+644:         }
+
+
+=== static/js/gm/02-characters.js line 652 ===
+649:     const colorPicker = area.querySelector('#npc-token-color');
+650:     if (colorPicker) {
+651:       colorPicker.addEventListener('change', async () => {
+652:         await api.put(`/api/characters/${c.id}`, { token_color: colorPicker.value });
+653:         addLog('gm.npc', `${c.name}: token color → ${colorPicker.value}`);
+654:         if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+655:           ws.ws.send(JSON.stringify({ type: 'npc.token_color_changed', character_id: c.id, color: colorPicker.value }));
+
+
+=== static/js/gm/02-characters.js line 665 ===
+662:     if (saveNotesBtn) {
+663:       saveNotesBtn.addEventListener('click', async () => {
+664:         const txt = area.querySelector('#npc-gm-notes').value;
+665:         await api.put(`/api/characters/${c.id}`, { gm_notes: txt });
+666:         showToast('Notes saved');
+667:       });
+668:     }
+
+
+=== static/js/gm/02-characters.js line 703 ===
+700: 
+701:       (async () => {
+702:         try {
+703:           const inv = await api.get(`/api/characters/${c.id}/inventory`);
+704:           const mainHand = (inv.items||[]).find(i => i.is_equipped && i.equipped_slot === 'main_hand');
+705:           const wInfo = area.querySelector('#npc-weapon-info');
+706:           if (mainHand && wInfo) {
+
+
+=== static/js/gm/02-characters.js line 793 ===
+790:           atkBtn.disabled = true;
+791:           resultDiv.innerHTML = '<span style="color:var(--text-muted)">Rolling d20...</span>';
+792:           try {
+793:             const res = await api.post('/api/combat/hit-roll', {
+794:               attacker_id: c.id, target_id: targetId,
+795:               advantage: hitAdvMode,
+796:             });
+
+
+=== static/js/gm/02-characters.js line 852 ===
+849:           const resultDiv = area.querySelector('#npc-atk-result');
+850:           dmgBtn.disabled = true;
+851:           try {
+852:             const res = await api.post('/api/combat/damage-roll', {
+853:               attacker_id: c.id, target_id: targetId,
+854:               critical: !!lastHitData.critical,
+855:               dice_count: dmgWidgetState.diceCount,
+
+
+=== static/js/gm/02-characters.js line 872 ===
+869:             resultDiv.innerHTML = html;
+870:             addLog('gm.combat', `${c.name} → ${res.target_name}: ${res.final_damage} dmg${res.target_downed ? ' (DOWN)' : ''}`);
+871: 
+872:             await refreshChars();
+873:             if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+874:               ws.ws.send(JSON.stringify({
+875:                 type: 'combat.attack_result',
+
+
+=== static/js/gm/02-characters.js line 905 ===
+902:       const abBtn = area.querySelector('#btn-npc-act-ability');
+903:       if (abBtn) abBtn.addEventListener('click', async () => {
+904:         try {
+905:           const abs = await api.get(`/api/characters/${c.id}/abilities`);
+906:           const active = (abs || []).filter(a => a.ability_type !== 'passive');
+907:           if (!active.length) { showActRes('No active abilities assigned.', 'var(--text-muted)'); return; }
+908:           openNpcPickerModal('✨ Use Ability', active.map(a => ({
+
+
+=== static/js/gm/02-characters.js line 914 ===
+911:             sub: (a.description || '') + (a.cooldown_remaining ? ` · ⏳ CD ${a.cooldown_remaining}` : ''),
+912:             onPick: async () => {
+913:               try {
+914:                 const res = await api.post(`/api/character-abilities/${a.character_ability_id}/use`, {});
+915:                 const msg = (res.results || []).join(' · ') || 'Ability used';
+916:                 showActRes(`✅ ${a.name}: ${msg}`, 'var(--accent-green)');
+917:                 addLog('gm.ability', `${c.name} used ${a.name}`);
+
+
+=== static/js/gm/02-characters.js line 932 ===
+929:       const potBtn = area.querySelector('#btn-npc-act-potion');
+930:       if (potBtn) potBtn.addEventListener('click', async () => {
+931:         try {
+932:           const inv = await api.get(`/api/characters/${c.id}/inventory`);
+933:           const potions = (inv.items||[]).filter(i => i.is_potion);
+934:           if (!potions.length) { showActRes('No potions in inventory.', 'var(--text-muted)'); return; }
+935:           openNpcPickerModal('🧪 Use Potion', potions.map(p => ({
+
+
+=== static/js/gm/02-characters.js line 941 ===
+938:             sub: `x${p.quantity} · ${p.description||''}`,
+939:             onPick: async () => {
+940:               try {
+941:                 const res = await api.post(`/api/inventory/${p.inventory_id}/use`, {});
+942:                 const msg = res.breakdown || 'used';
+943:                 showActRes(`✅ ${p.name}: ${msg}`, 'var(--accent-green)');
+944:                 addLog('gm.potion', `${c.name} used ${p.name}`);
+
+
+=== static/js/gm/02-characters.js line 959 ===
+956:       const itBtn = area.querySelector('#btn-npc-act-item');
+957:       if (itBtn) itBtn.addEventListener('click', async () => {
+958:         try {
+959:           const inv = await api.get(`/api/characters/${c.id}/inventory`);
+960:           const usable = (inv.items||[]).filter(i => i.consumable || i.is_potion);
+961:           if (!usable.length) { showActRes('No usable items in inventory.', 'var(--text-muted)'); return; }
+962:           openNpcPickerModal('🎒 Use Item', usable.map(it => ({
+
+
+=== static/js/gm/02-characters.js line 968 ===
+965:             sub: `x${it.quantity} · ${it.description||''}`,
+966:             onPick: async () => {
+967:               try {
+968:                 const res = await api.post(`/api/inventory/${it.inventory_id}/use`, {});
+969:                 const msg = res.breakdown || 'used';
+970:                 showActRes(`✅ ${it.name}: ${msg}`, 'var(--accent-green)');
+971:                 addLog('gm.item', `${c.name} used ${it.name}`);
+
+
+=== static/js/gm/02-characters.js line 986 ===
+983:       const healBtn = area.querySelector('#btn-npc-act-heal');
+984:       if (healBtn) healBtn.addEventListener('click', async () => {
+985:         try {
+986:           await api.put(`/api/characters/${c.id}`, { current_hp: c.max_hp, is_alive: true });
+987:           showActRes(`✅ ${c.name} fully healed (${c.max_hp} HP)`, 'var(--accent-green)');
+988:           addLog('gm.heal', `${c.name} fully healed by GM`);
+989:           // Broadcast HP change so player UIs update
+
+
+=== static/js/gm/02-characters.js line 1010 ===
+1007:     const turnReset = area.querySelector('#btn-npc-turn-reset');
+1008:     if (turnInc) {
+1009:       const updateTurn = async (val) => {
+1010:         await api.put(`/api/characters/${c.id}`, { turn_count: Math.max(0, val) });
+1011:         if (turnCountEl) turnCountEl.textContent = Math.max(0, val);
+1012:         c.turn_count = Math.max(0, val);
+1013:       };
+
+
+=== static/js/gm/02-characters.js line 1033 ===
+1030:   if (placeChk) {
+1031:     placeChk.addEventListener('change', async () => {
+1032:       try {
+1033:         await api.patch(`/api/characters/${c.id}/table-visibility`,
+1034:                         { is_at_table: placeChk.checked });
+1035:         addLog('gm.npc', `${c.name}: Place at Table = ${placeChk.checked}`);
+1036:       } catch (e) { showToast('Failed to update table visibility'); }
+
+
+=== static/js/gm/02-characters.js line 1043 ===
+1040: if (showHpChk) {
+1041:     showHpChk.addEventListener('change', async () => {
+1042:       try {
+1043:         await api.patch(`/api/characters/${c.id}/table-visibility`, { show_hp_to_players: showHpChk.checked });
+1044:         addLog('gm.npc', `${c.name}: Show HP = ${showHpChk.checked}`);
+1045:       } catch (e) { showToast('Failed to update HP visibility'); }
+1046:     });
+
+
+=== static/js/gm/02-characters.js line 1054 ===
+1051:   if (playerPlaceChk) {
+1052:     playerPlaceChk.addEventListener('change', async () => {
+1053:       try {
+1054:         await api.patch(`/api/characters/${c.id}/table-visibility`, { place_at_table: playerPlaceChk.checked });
+1055:         c.place_at_table = playerPlaceChk.checked;
+1056:         if (playerPlaceChk.checked) {
+1057:           const tokenOnMap = mapCanvas?.tokens?.find(t => t.character_id === c.id);
+
+
+=== static/js/gm/02-characters.js line 1061 ===
+1058:           const hasCoords = tokenOnMap && tokenOnMap.x != null && tokenOnMap.y != null;
+1059:           if (!hasCoords) {
+1060:             try {
+1061:               await api.patch(`/api/map/token/${c.id}`, { x: 0.5, y: 0.5 });
+1062:               if (mapCanvas) mapCanvas.setTokens(mapCanvas.tokens.map(t => t.character_id === c.id ? { ...t, x: 0.5, y: 0.5 } : t));
+1063:             } catch (mapErr) { console.warn('Auto-place token failed', mapErr); }
+1064:           }
+
+
+=== static/js/gm/02-characters.js line 1075 ===
+1072:   if (playerShowHpChk) {
+1073:     playerShowHpChk.addEventListener('change', async () => {
+1074:       try {
+1075:         await api.patch(`/api/characters/${c.id}/table-visibility`, { show_hp_to_players: playerShowHpChk.checked });
+1076:         c.show_hp_to_players = playerShowHpChk.checked;
+1077:         renderPartyList();
+1078:         showToast(`${c.name}: HP ${playerShowHpChk.checked ? 'visible' : 'hidden'}`);
+
+
+=== static/js/gm/02-characters.js line 1087 ===
+1084:   const abList = area.querySelector('#npc-abilities-list');
+1085:   if (abList) {
+1086:     try {
+1087:       const cas = await api.get(`/api/characters/${c.id}/abilities`);
+1088:       if (cas.length) {
+1089:         abList.innerHTML = cas.map(a => {
+1090:           const onCd = a.cooldown_remaining > 0;
+
+
+=== static/js/gm/02-characters.js line 1115 ===
+1112:         }).join('');
+1113:         abList.querySelectorAll('[data-rm-ca]').forEach(btn => {
+1114:           btn.addEventListener('click', async () => {
+1115:             await api.del(`/api/character-abilities/${btn.dataset.rmCa}`);
+1116:             renderCharDetail();
+1117:           });
+1118:         });
+
+
+=== static/js/gm/02-characters.js line 1122 ===
+1119:         abList.querySelectorAll('[data-promote-ca]').forEach(btn => {
+1120:           btn.addEventListener('click', async () => {
+1121:             try {
+1122:               const res = await api.post(`/api/characters/${c.id}/abilities/${btn.dataset.promoteCa}/promote-rank`);
+1123:               showToast(`${res.ability_name} promoted to ${res.ability_rank}!`);
+1124:               renderCharDetail();
+1125:             } catch (e) { showToast('Promotion failed'); }
+
+
+=== static/js/gm/02-characters.js line 1133 ===
+1130:             const caId = btn.dataset.useCa;
+1131:             const abName = btn.dataset.useName;
+1132:             try {
+1133:               const res = await api.post(`/api/character-abilities/${caId}/use`, {});
+1134:               if (res.results) res.results.forEach(r => addLog('gm.ability', `${c.name} → ${abName}: ${r}`));
+1135:               await refreshChars();
+1136:               renderCharDetail();
+
+
+=== static/js/gm/02-characters.js line 1135 ===
+1132:             try {
+1133:               const res = await api.post(`/api/character-abilities/${caId}/use`, {});
+1134:               if (res.results) res.results.forEach(r => addLog('gm.ability', `${c.name} → ${abName}: ${r}`));
+1135:               await refreshChars();
+1136:               renderCharDetail();
+1137:             } catch (e) {
+1138:               const d = e?.body?.detail;
+
+
+=== static/js/gm/02-characters.js line 1152 ===
+1149:   if (assignBtn) {
+1150:     assignBtn.addEventListener('click', async () => {
+1151:       try {
+1152:         const all = await api.get(`/api/abilities?session_id=${SESSION_ID}`);
+1153:         if (!all.length) { showToast('No abilities created yet. Create one in GM Tools.'); return; }
+1154:         const names = all.map((a, i) => `${i+1}. ${a.name} (🔮${a.mana_cost})`).join('\n');
+1155:         const pick = prompt(`Assign ability:\n${names}\nEnter number:`);
+
+
+=== static/js/gm/02-characters.js line 1159 ===
+1156:         if (!pick) return;
+1157:         const ab = all[parseInt(pick) - 1];
+1158:         if (!ab) return;
+1159:         await api.post(`/api/characters/${c.id}/abilities`, { ability_id: ab.id });
+1160:         renderCharDetail();
+1161:         addLog('gm.ability', `Assigned ${ab.name} to ${c.name}`);
+1162:       } catch (e) { showToast(e?.body?.detail || 'Failed'); }
+
+
+=== static/js/gm/02-characters.js line 1172 ===
+1169:     const stat = $('#gm-roll-stat').value;
+1170:     const rollType = $('#gm-roll-type').value;
+1171:     try {
+1172:       const res = await api.post(`/api/characters/${c.id}/roll-characteristic`, {
+1173:         stat, roll_type: rollType, advantage_mode: getAdvMode('gm_char_roll'),
+1174:       });
+1175:       let advTag = '';
+
+
+=== static/js/gm/02-characters.js line 1197 ===
+1194:     const er = parseInt($('#gm-di-enemy').value)||0;
+1195:     const dmg = parseInt($('#gm-di-dmg').value)||0;
+1196:     if (!er || !dmg) return;
+1197:     const res = await api.post('/api/calc/damage-intake', { character_id: c.id, enemy_roll: er, damage_rolled: dmg });
+1198:     if (res.final_damage > 0) {
+1199:       await api.patch(`/api/characters/${c.id}/hp`, { delta: -res.final_damage });
+1200:       await refreshChars();
+
+
+=== static/js/gm/02-characters.js line 1199 ===
+1196:     if (!er || !dmg) return;
+1197:     const res = await api.post('/api/calc/damage-intake', { character_id: c.id, enemy_roll: er, damage_rolled: dmg });
+1198:     if (res.final_damage > 0) {
+1199:       await api.patch(`/api/characters/${c.id}/hp`, { delta: -res.final_damage });
+1200:       await refreshChars();
+1201:     }
+1202:     const text = res.hit_diff <= 0
+
+
+=== static/js/gm/02-characters.js line 1200 ===
+1197:     const res = await api.post('/api/calc/damage-intake', { character_id: c.id, enemy_roll: er, damage_rolled: dmg });
+1198:     if (res.final_damage > 0) {
+1199:       await api.patch(`/api/characters/${c.id}/hp`, { delta: -res.final_damage });
+1200:       await refreshChars();
+1201:     }
+1202:     const text = res.hit_diff <= 0
+1203:       ? `<span style="color:var(--text-muted);font-weight:700">MISS</span> (diff: ${res.hit_diff})`
+
+
+=== static/js/gm/02-characters.js line 1249 ===
+1246:         if (newXp === null) return;
+1247:         const newLvl = prompt('Set level:', c.level ?? 0);
+1248:         if (newLvl === null) return;
+1249:         await api.patch(`/api/characters/${c.id}`, { experience: parseInt(newXp)||0, level: parseInt(newLvl)||0 });
+1250:         await refreshChars();
+1251:         renderCharDetail();
+1252:       });
+
+
+=== static/js/gm/02-characters.js line 1250 ===
+1247:         const newLvl = prompt('Set level:', c.level ?? 0);
+1248:         if (newLvl === null) return;
+1249:         await api.patch(`/api/characters/${c.id}`, { experience: parseInt(newXp)||0, level: parseInt(newLvl)||0 });
+1250:         await refreshChars();
+1251:         renderCharDetail();
+1252:       });
+1253:     }
+
+
+=== static/js/gm/02-characters.js line 1262 ===
+1259:         const amt = prompt('Grant how much XP?', '50');
+1260:         if (amt === null) return;
+1261:         try {
+1262:           const res = await api.post(`/api/characters/${c.id}/grant-xp`, { amount: parseInt(amt, 10) || 0 });
+1263:           addLog('gm.xp', `${c.name}: +${amt} XP → ${res.experience}/${res.xp_to_next}`);
+1264:           await refreshChars();
+1265:           renderCharDetail();
+
+
+=== static/js/gm/02-characters.js line 1264 ===
+1261:         try {
+1262:           const res = await api.post(`/api/characters/${c.id}/grant-xp`, { amount: parseInt(amt, 10) || 0 });
+1263:           addLog('gm.xp', `${c.name}: +${amt} XP → ${res.experience}/${res.xp_to_next}`);
+1264:           await refreshChars();
+1265:           renderCharDetail();
+1266:         } catch (e) { showToast('Failed to grant XP'); }
+1267:       });
+
+
+=== static/js/gm/02-characters.js line 1290 ===
+1287:   (async () => {
+1288:     // Detect current forced adv/disadv from status penalties
+1289:     try {
+1290:       const pen = await api.get(`/api/characters/${c.id}/status-penalties`);
+1291:       let curMode = 'normal';
+1292:       if (pen.forced_advantage) curMode = 'advantage';
+1293:       else if (pen.forced_disadvantage) curMode = 'disadvantage';
+
+
+=== static/js/gm/02-characters.js line 1302 ===
+1299:     b.addEventListener('click', async () => {
+1300:       const mode = b.dataset.mode;
+1301:       try {
+1302:         await api.post(`/api/characters/${c.id}/set-advantage`, { mode });
+1303:         area.querySelectorAll('#gm-force-adv-toggle button').forEach(x => x.classList.toggle('active', x === b));
+1304:         loadStatusBadges(c.id);
+1305:         addLog('gm.status', `Set ${c.name} → ${mode === 'normal' ? 'Normal' : mode.toUpperCase()}`);
+
+
+=== static/js/gm/02-characters.js line 1319 ===
+1316:   // Load and display currency
+1317:   (async () => {
+1318:     try {
+1319:       const cur = await api.get(`/api/characters/${c.id}/currency`);
+1320:       const d = cur.currency;
+1321:       const parts = [];
+1322:       if (d.platinum) parts.push(`<span style="color:#e0c97f">${d.platinum}P</span>`);
+
+
+=== static/js/gm/02-characters.js line 1337 ===
+1334:     const s = parseInt($('#gm-give-silver').value) || 0;
+1335:     const co = parseInt($('#gm-give-bronze').value) || 0;
+1336:     if (!p && !g && !s && !co) return;
+1337:     await api.post(`/api/characters/${c.id}/give-gold`, { platinum: p, gold: g, silver: s, bronze: co });
+1338:     await refreshChars();
+1339:     addLog('gm.gold', `Gave ${c.name}: ${p}P ${g}G ${s}S ${co}B`);
+1340:   });
+
+
+=== static/js/gm/02-characters.js line 1338 ===
+1335:     const co = parseInt($('#gm-give-bronze').value) || 0;
+1336:     if (!p && !g && !s && !co) return;
+1337:     await api.post(`/api/characters/${c.id}/give-gold`, { platinum: p, gold: g, silver: s, bronze: co });
+1338:     await refreshChars();
+1339:     addLog('gm.gold', `Gave ${c.name}: ${p}P ${g}G ${s}S ${co}B`);
+1340:   });
+1341: 
+
+
+=== static/js/gm/02-characters.js line 1349 ===
+1346:     const s = parseInt($('#gm-give-silver').value) || 0;
+1347:     const co = parseInt($('#gm-give-bronze').value) || 0;
+1348:     if (!p && !g && !s && !co) return;
+1349:     await api.post(`/api/characters/${c.id}/give-gold`, { platinum: -p, gold: -g, silver: -s, bronze: -co, note: 'GM deduction' });
+1350:     await refreshChars();
+1351:     addLog('gm.gold', `Took from ${c.name}: ${p}P ${g}G ${s}S ${co}B`);
+1352:   });
+
+
+=== static/js/gm/02-characters.js line 1350 ===
+1347:     const co = parseInt($('#gm-give-bronze').value) || 0;
+1348:     if (!p && !g && !s && !co) return;
+1349:     await api.post(`/api/characters/${c.id}/give-gold`, { platinum: -p, gold: -g, silver: -s, bronze: -co, note: 'GM deduction' });
+1350:     await refreshChars();
+1351:     addLog('gm.gold', `Took from ${c.name}: ${p}P ${g}G ${s}S ${co}B`);
+1352:   });
+1353: 
+
+
+=== static/js/gm/02-characters.js line 1357 ===
+1354:   // Set total bronze
+1355:   $('#btn-gm-set-gold').addEventListener('click', async () => {
+1356:     const v = parseInt($('#gm-wealth-bronze').value) || 0;
+1357:     await api.put(`/api/characters/${c.id}`, { wealth_bronze: v });
+1358:     await refreshChars();
+1359:     addLog('gm.gold', `${c.name}: wealth_bronze = ${v}`);
+1360:   });
+
+
+=== static/js/gm/02-characters.js line 1358 ===
+1355:   $('#btn-gm-set-gold').addEventListener('click', async () => {
+1356:     const v = parseInt($('#gm-wealth-bronze').value) || 0;
+1357:     await api.put(`/api/characters/${c.id}`, { wealth_bronze: v });
+1358:     await refreshChars();
+1359:     addLog('gm.gold', `${c.name}: wealth_bronze = ${v}`);
+1360:   });
+1361: 
+
+
+=== static/js/gm/02-characters.js line 1368 ===
+1365:   // ── Inventory wiring ──
+1366:   // Can edit toggle
+1367:   $('#gm-can-edit-items').addEventListener('change', async () => {
+1368:     await api.put(`/api/characters/${c.id}`, { can_edit_own_items: $('#gm-can-edit-items').checked });
+1369:     addLog('gm.perm', `${c.name}: can_edit_own_items = ${$('#gm-can-edit-items').checked}`);
+1370:   });
+1371: 
+
+
+=== static/js/gm/02-characters.js line 1398 ===
+1395:   const container = $('#gm-char-inventory');
+1396:   if (!container) return;
+1397:   try {
+1398:     const data = await api.get(`/api/characters/${charId}/inventory`);
+1399:     if (!data.items || !data.items.length) {
+1400:       container.innerHTML = '<span class="text-muted">No items in inventory.</span>';
+1401:       return;
+
+
+=== static/js/gm/02-characters.js line 1446 ===
+1443:         const invId = btn.dataset.gmEquip;
+1444:         const isEq = btn.dataset.gmEquipped === 'true';
+1445:         if (isEq) {
+1446:           await api.patch(`/api/inventory/${invId}/equip`, { equip: false });
+1447:         } else {
+1448:           await api.patch(`/api/inventory/${invId}/equip`, { equip: true, slot: 'main_hand' });
+1449:         }
+
+
+=== static/js/gm/02-characters.js line 1448 ===
+1445:         if (isEq) {
+1446:           await api.patch(`/api/inventory/${invId}/equip`, { equip: false });
+1447:         } else {
+1448:           await api.patch(`/api/inventory/${invId}/equip`, { equip: true, slot: 'main_hand' });
+1449:         }
+1450:         loadGmCharInventory(charId);
+1451:       });
+
+
+=== static/js/gm/02-characters.js line 1457 ===
+1454:     // Remove
+1455:     container.querySelectorAll('[data-gm-remove-inv]').forEach(btn => {
+1456:       btn.addEventListener('click', async () => {
+1457:         await api.del(`/api/inventory/${btn.dataset.gmRemoveInv}`);
+1458:         loadGmCharInventory(charId);
+1459:       });
+1460:     });
+
+
+=== static/js/gm/02-characters.js line 1468 ===
+1465:         const itemName = btn.dataset.gmUseName;
+1466:         if (!confirm(`Use "${itemName}" on this character?`)) return;
+1467:         try {
+1468:           const res = await api.post(`/api/inventory/${invId}/use`, {});
+1469:           const breakdown = res.breakdown || res.results?.join('; ') || 'applied';
+1470:           addLog('inventory.use', `${itemName} used → ${breakdown}`);
+1471:           showToast(`✅ ${itemName} used: ${breakdown}`);
+
+
+=== static/js/gm/02-characters.js line 1501 ===
+1498: // Rework Phase 5: GM-side poison application (mirrors player flow).
+1499: async function openGmApplyPoisonModal(inventoryId, charId) {
+1500:   let poisons = [];
+1501:   try { poisons = await api.get('/api/poison-templates'); } catch {}
+1502:   if (!poisons.length) {
+1503:     if (!confirm('No poisons yet. Create a sample poison now?')) return;
+1504:     try {
+
+
+=== static/js/gm/02-characters.js line 1505 ===
+1502:   if (!poisons.length) {
+1503:     if (!confirm('No poisons yet. Create a sample poison now?')) return;
+1504:     try {
+1505:       await api.post('/api/poison-templates', {
+1506:         name: 'Basic Poison', damage_dice_count: 1, damage_dice_type: 4,
+1507:         damage_type: 'poison', default_charges: 3, default_turns_per_hit: 3,
+1508:       });
+
+
+=== static/js/gm/02-characters.js line 1509 ===
+1506:         name: 'Basic Poison', damage_dice_count: 1, damage_dice_type: 4,
+1507:         damage_type: 'poison', default_charges: 3, default_turns_per_hit: 3,
+1508:       });
+1509:       poisons = await api.get('/api/poison-templates');
+1510:     } catch { showToast('Failed to create default poison'); return; }
+1511:   }
+1512:   let current = null;
+
+
+=== static/js/gm/02-characters.js line 1513 ===
+1510:     } catch { showToast('Failed to create default poison'); return; }
+1511:   }
+1512:   let current = null;
+1513:   try { current = await api.get(`/api/inventory/${inventoryId}/applied-poison`); } catch {}
+1514: 
+1515:   const overlay = document.createElement('div');
+1516:   overlay.className = 'modal-overlay';
+
+
+=== static/js/gm/02-characters.js line 1556 ===
+1553:   overlay.querySelector('#gm-poison-cancel').addEventListener('click', () => overlay.remove());
+1554:   const rm = overlay.querySelector('#gm-poison-remove');
+1555:   if (rm) rm.addEventListener('click', async () => {
+1556:     try { await api.del(`/api/inventory/${inventoryId}/apply-poison`); overlay.remove(); loadGmCharInventory(charId); addLog('gm.poison','Poison removed'); }
+1557:     catch { showToast('Failed to remove poison'); }
+1558:   });
+1559:   overlay.querySelector('#gm-poison-apply').addEventListener('click', async () => {
+
+
+=== static/js/gm/02-characters.js line 1564 ===
+1561:     const charges = parseInt(overlay.querySelector('#gm-poison-charges').value, 10);
+1562:     const turns_per_hit = parseInt(overlay.querySelector('#gm-poison-turns').value, 10);
+1563:     try {
+1564:       await api.post(`/api/inventory/${inventoryId}/apply-poison`, { poison_template_id, charges, turns_per_hit });
+1565:       addLog('gm.poison', `Coated weapon with poison (${charges}x charges, ${turns_per_hit} turns/hit)`);
+1566:       overlay.remove();
+1567:       loadGmCharInventory(charId);
+
+
+=== static/js/gm/02-characters.js line 1579 ===
+1576:   const container = document.querySelector('#gm-char-professions');
+1577:   if (!container) return;
+1578:   try {
+1579:     const list = await api.get(`/api/characters/${charId}/professions`);
+1580:     if (!list || !list.length) {
+1581:       container.innerHTML = '<span class="text-muted" style="font-size:0.78rem">No professions assigned.</span>';
+1582:       return;
+
+
+=== static/js/gm/02-characters.js line 1605 ===
+1602:         const lvlInput = container.querySelector(`[data-prof-level="${cpId}"]`);
+1603:         const level = Math.max(1, Math.min(5, parseInt(lvlInput?.value || '1', 10) || 1));
+1604:         try {
+1605:           await api.patch(`/api/characters/${charId}/professions/${cpId}`, { level });
+1606:           addLog('gm.prof', `Set profession level → ${level}`);
+1607:           loadGmCharProfessions(charId);
+1608:         } catch (e) { showToast('Failed to update profession'); }
+
+
+=== static/js/gm/02-characters.js line 1616 ===
+1613:         const cpId = btn.dataset.profDelete;
+1614:         if (!confirm('Remove this profession?')) return;
+1615:         try {
+1616:           await api.del(`/api/characters/${charId}/professions/${cpId}`);
+1617:           addLog('gm.prof', `Removed profession`);
+1618:           loadGmCharProfessions(charId);
+1619:         } catch (e) { showToast('Failed to remove profession'); }
+
+
+=== static/js/gm/02-characters.js line 1629 ===
+1626: 
+1627: async function openGmAddProfessionModal(charId) {
+1628:   let classes = [];
+1629:   try { classes = await api.get('/api/races-classes/classes'); } catch { classes = []; }
+1630:   if (!classes.length) { showToast('No classes defined. Seed them first.'); return; }
+1631: 
+1632:   // Filter out classes the char already has
+
+
+=== static/js/gm/02-characters.js line 1634 ===
+1631: 
+1632:   // Filter out classes the char already has
+1633:   let assigned = [];
+1634:   try { assigned = await api.get(`/api/characters/${charId}/professions`); } catch {}
+1635:   const taken = new Set((assigned||[]).map(p => p.class_id));
+1636:   const available = classes.filter(c => !taken.has(c.id));
+1637:   if (!available.length) { showToast('All available professions already assigned.'); return; }
+
+
+=== static/js/gm/02-characters.js line 1661 ===
+1658:     const class_id = parseInt(overlay.querySelector('#gm-prof-new-class').value, 10);
+1659:     const level = Math.max(1, Math.min(5, parseInt(overlay.querySelector('#gm-prof-new-level').value, 10) || 1));
+1660:     try {
+1661:       await api.post(`/api/characters/${charId}/professions`, { class_id, level });
+1662:       addLog('gm.prof', `Added profession (class #${class_id}) L${level}`);
+1663:       overlay.remove();
+1664:       loadGmCharProfessions(charId);
+
+
+=== static/js/gm/02-characters.js line 1709 ===
+1706:     const s = parseInt(overlay.querySelector('#bb-s').value) || 0;
+1707:     const b = parseInt(overlay.querySelector('#bb-b').value) || 0;
+1708:     try {
+1709:       const res = await api.post('/api/inventory/gm-buyback', {
+1710:         inventory_item_id: invId, platinum: p, gold: g, silver: s, bronze: b
+1711:       });
+1712:       overlay.querySelector('#bb-result').innerHTML = `<span style="color:var(--accent-green)">Bought ${res.item_name} for ${res.price_display}!</span>`;
+
+
+=== static/js/builder_v2/30-editor.js line 50 ===
+47:       return { col, row };
+48:     });
+49: 
+50:     // Reset queues *before* the await — if more strokes happen while
+51:     // the request is in flight they should accumulate as a fresh batch.
+52:     S.pendingSet.clear();
+53:     S.pendingErase.clear();
+
+
+=== static/js/builder_v2/30-editor.js line 58 ===
+55:     setIndicator('saving…', '');
+56:     S.suppressNextWs = true;
+57:     try {
+58:       await S.api.patchTiles(S.currentLocId, setArr, eraseArr);
+59:       setIndicator('✓ saved', 'ok');
+60:     } catch (e) {
+61:       console.error('bv2 save failed', e);
+
+
+=== static/js/builder_v2/30-editor.js line 75 ===
+72:   // ── Map list ──────────────────────────────────────────────
+73:   async function loadMaps() {
+74:     try {
+75:       S.maps = await S.api.listMaps();
+76:     } catch (e) {
+77:       console.error('bv2 listMaps', e);
+78:       S.maps = [];
+
+
+=== static/js/builder_v2/30-editor.js line 86 ===
+83:       const active = S.maps.find(m => m.is_active);
+84:       S.currentMapId = (active || S.maps[0]).id;
+85:     }
+86:     if (S.currentMapId) await loadLocations();
+87:     else updateEmptyMsg();
+88:   }
+89: 
+
+
+=== static/js/builder_v2/30-editor.js line 106 ===
+103:   async function loadLocations() {
+104:     if (!S.currentMapId) { S.locations = []; renderLocSelect(); return; }
+105:     try {
+106:       S.locations = await S.api.listLocs(S.currentMapId);
+107:     } catch (e) {
+108:       console.error('bv2 listLocs', e);
+109:       S.locations = [];
+
+
+=== static/js/builder_v2/30-editor.js line 117 ===
+114:       const active = S.locations.find(l => l.is_active);
+115:       const stillValid = S.locations.find(l => l.id === S.currentLocId);
+116:       const target = active || stillValid || S.locations[0];
+117:       await loadLocation(target.id);
+118:     } else {
+119:       S.currentLocId = null;
+120:       S.view && S.view.loadLocation({ location: null, tiles: [] });
+
+
+=== static/js/builder_v2/30-editor.js line 145 ===
+142:     S.pendingErase.clear();
+143:     setIndicator('', '');
+144:     try {
+145:       const payload = await S.api.getLoc(locId);
+146:       S.view.loadLocation(payload);
+147:       // Phase 9: load characters on this location for token preview
+148:       try {
+
+
+=== static/js/builder_v2/30-editor.js line 149 ===
+146:       S.view.loadLocation(payload);
+147:       // Phase 9: load characters on this location for token preview
+148:       try {
+149:         const allChars = await api.get(`/api/sessions/${SESSION_CODE}/characters`);
+150:         const hereChars = (allChars || []).filter(c => c.current_location_id === locId);
+151:         S.view.setCharacters(hereChars);
+152:       } catch (e) {
+
+
+=== static/js/builder_v2/30-editor.js line 193 ===
+190:     const name = prompt('Map name:', 'New Map');
+191:     if (!name) return;
+192:     try {
+193:       const m = await S.api.createMap({ name: name.trim() });
+194:       S.maps.push(m);
+195:       S.currentMapId = m.id;
+196:       S.currentLocId = null;
+
+
+=== static/js/builder_v2/30-editor.js line 204 ===
+201:       S.locations = [];
+202:       renderMapSelect();
+203:       renderLocSelect();
+204:       await createLocation(/*silent*/ true);
+205:     } catch (e) {
+206:       console.error('bv2 createMap', e);
+207:       alert('Failed to create map: ' + (e.message || e));
+
+
+=== static/js/builder_v2/30-editor.js line 225 ===
+222:       btn.textContent = 'Deleting…';
+223:     }
+224:     try {
+225:       await S.api.deleteMap(S.currentMapId);
+226:       S.maps = S.maps.filter(x => x.id !== S.currentMapId);
+227:       S.currentMapId = S.maps[0]?.id || null;
+228:       S.currentLocId = null;
+
+
+=== static/js/builder_v2/30-editor.js line 230 ===
+227:       S.currentMapId = S.maps[0]?.id || null;
+228:       S.currentLocId = null;
+229:       renderMapSelect();
+230:       if (S.currentMapId) await loadLocations();
+231:       else { S.locations = []; renderLocSelect(); updateEmptyMsg(); S.view && S.view.loadLocation({ location: null, tiles: [] }); }
+232:     } catch (e) {
+233:       console.error('bv2 deleteMap', e);
+
+
+=== static/js/builder_v2/30-editor.js line 254 ===
+251:     const name = silent ? defaultName : prompt('Location name:', defaultName);
+252:     if (!name) return;
+253:     try {
+254:       const loc = await S.api.createLoc(S.currentMapId, { name: name.trim() });
+255:       S.locations.push(loc);
+256:       S.currentLocId = loc.id;
+257:       renderLocSelect();
+
+
+=== static/js/builder_v2/30-editor.js line 258 ===
+255:       S.locations.push(loc);
+256:       S.currentLocId = loc.id;
+257:       renderLocSelect();
+258:       await loadLocation(loc.id);
+259:     } catch (e) {
+260:       console.error('bv2 createLoc', e);
+261:       alert('Failed to create location: ' + (e.message || e));
+
+
+=== static/js/builder_v2/30-editor.js line 279 ===
+276:       btn.textContent = 'Deleting…';
+277:     }
+278:     try {
+279:       await S.api.deleteLoc(S.currentLocId);
+280:       S.locations = S.locations.filter(x => x.id !== S.currentLocId);
+281:       S.currentLocId = S.locations[0]?.id || null;
+282:       renderLocSelect();
+
+
+=== static/js/builder_v2/30-editor.js line 283 ===
+280:       S.locations = S.locations.filter(x => x.id !== S.currentLocId);
+281:       S.currentLocId = S.locations[0]?.id || null;
+282:       renderLocSelect();
+283:       if (S.currentLocId) await loadLocation(S.currentLocId);
+284:       else { S.view.loadLocation({ location: null, tiles: [] }); updateEmptyMsg(); }
+285:     } catch (e) {
+286:       console.error('bv2 deleteLoc', e);
+
+
+=== static/js/builder_v2/30-editor.js line 300 ===
+297:   async function applyToGame() {
+298:     if (!S.currentLocId) { alert('No location selected.'); return; }
+299:     // Make sure pending strokes hit the server first
+300:     await flushSave();
+301:     try {
+302:       await S.api.activateLoc(S.currentLocId);
+303:       // Mark active in local state
+
+
+=== static/js/builder_v2/30-editor.js line 302 ===
+299:     // Make sure pending strokes hit the server first
+300:     await flushSave();
+301:     try {
+302:       await S.api.activateLoc(S.currentLocId);
+303:       // Mark active in local state
+304:       S.locations.forEach(l => { l.is_active = (l.id === S.currentLocId); });
+305:       S.maps.forEach(m => { m.is_active = (m.id === S.currentMapId); });
+
+
+=== static/js/builder_v2/30-editor.js line 322 ===
+319:     clearTimeout(_settingsTimer);
+320:     _settingsTimer = setTimeout(async () => {
+321:       try {
+322:         const updated = await S.api.updateLoc(S.currentLocId, patch);
+323:         // Reflect server-clamped values back into local state + view
+324:         const idx = S.locations.findIndex(l => l.id === updated.id);
+325:         if (idx >= 0) S.locations[idx] = updated;
+
+
+=== static/js/builder_v2/30-editor.js line 376 ===
+373:       onEntityClick: async (ent, action) => {
+374:         if (typeof S.openEntityModal === 'function') {
+375:           if (action === 'delete') S.openEntityModal(ent, 'delete');
+376:           else await S.openEntityModal(ent, 'edit');
+377:         }
+378:       },
+379:       onCellClick: async (col, row, entityType) => {
+
+
+=== static/js/builder_v2/30-editor.js line 381 ===
+378:       },
+379:       onCellClick: async (col, row, entityType) => {
+380:         if (typeof S.openEntityModal === 'function') {
+381:           await S.openEntityModal(null, 'create', { col, row, entity_type: entityType });
+382:         }
+383:       },
+384:     });
+
+
+=== static/js/builder_v2/30-editor.js line 395 ===
+392:     document.getElementById('bv2-map-select')?.addEventListener('change', async e => {
+393:       S.currentMapId = parseInt(e.target.value, 10);
+394:       S.currentLocId = null;
+395:       await loadLocations();
+396:     });
+397:     document.getElementById('bv2-loc-select')?.addEventListener('change', async e => {
+398:       const id = parseInt(e.target.value, 10);
+
+
+=== static/js/builder_v2/30-editor.js line 399 ===
+396:     });
+397:     document.getElementById('bv2-loc-select')?.addEventListener('change', async e => {
+398:       const id = parseInt(e.target.value, 10);
+399:       await loadLocation(id);
+400:     });
+401: 
+402:     // Buttons
+
+
+=== static/js/builder_v2/30-editor.js line 412 ===
+409:       if (!S.currentLocId) return;
+410:       if (!confirm('Clear ALL tiles on this location?')) return;
+411:       try {
+412:         await S.api.replaceTiles(S.currentLocId, []);
+413:         S.view.clearTiles();
+414:         setIndicator('cleared', 'ok');
+415:       } catch (e) { console.error('bv2 clear', e); }
+
+
+=== static/js/builder_v2/30-editor.js line 483 ===
+480:       // Phase 8: negative-direction resize requires server-side shift.
+481:       if (shift_col || shift_row) {
+482:         try {
+483:           await api.post(`/api/builder-v2/locations/${S.currentLocId}/shift`, {
+484:             delta_col: shift_col,
+485:             delta_row: shift_row,
+486:           });
+
+
+=== static/js/builder_v2/30-editor.js line 498 ===
+495:     document.addEventListener('keydown', onHotkey);
+496: 
+497:     // Initial load
+498:     await loadMaps();
+499:     setBrush(S.brush);
+500:   }
+501: 
+
+

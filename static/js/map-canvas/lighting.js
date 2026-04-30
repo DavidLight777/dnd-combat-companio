@@ -8,6 +8,7 @@
     };
   }
 
+  // Phase 15 Round 1 — world-space lighting (no manual offset/scale).
   // Phase 13 REDO R2 — coloured additive lighting with bright/dim radii.
   // Phase 13 REDO R3 — animation perturbation added.
   MapCanvas.prototype._drawOneLight = function(lctx, light, blocksAt) {
@@ -17,6 +18,8 @@
         ? light.bright_radius_cells
         : radius * 0.5;
     let radiusPx = radius * gs;
+
+    // World-space center (NO offsetX/offsetY — we are inside ctx.save/translate)
     const cxWorld = (light.col + 0.5) * gs;
     const cyWorld = (light.row + 0.5) * gs;
 
@@ -36,18 +39,16 @@
     radiusPx = radiusPx * radiusMod;
 
     const poly = this._raycastPolygon(cxWorld, cyWorld, radiusPx, blocksAt, 120);
-    const sx = cxWorld * this.scale + this.offsetX;
-    const sy = cyWorld * this.scale + this.offsetY;
-    const rPx = (isFinite(radiusPx) && radiusPx > 0 ? radiusPx : 1) * this.scale;
-    const brightPx = (isFinite(bright) && bright > 0 ? bright : 0) * gs * this.scale;
 
-    // Polygon clip
+    // All coords in world space (no scale/offset needed — lctx NOT transformed)
+    const rPx = isFinite(radiusPx) && radiusPx > 0 ? radiusPx : 1;
+    const brightPx = isFinite(bright) && bright > 0 ? bright * gs : 0;
+
     lctx.save();
     lctx.beginPath();
     for (let i = 0; i < poly.length; i++) {
-      const px = poly[i][0] * this.scale + this.offsetX;
-      const py = poly[i][1] * this.scale + this.offsetY;
-      if (i === 0) lctx.moveTo(px, py); else lctx.lineTo(px, py);
+      if (i === 0) lctx.moveTo(poly[i][0], poly[i][1]);
+      else lctx.lineTo(poly[i][0], poly[i][1]);
     }
     lctx.closePath();
     lctx.clip();
@@ -56,19 +57,23 @@
     const rgb = _hexToRgb(light.color_hex || '#ffd9a0');
     const a0 = 1.0 * intensity;
     const a1 = 0.5 * intensity;
-    const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, rPx);
-    const stopAtBright = Math.min(0.99, brightPx / rPx);
-    grad.addColorStop(0,             `rgba(${rgb.r},${rgb.g},${rgb.b},${a0})`);
-    grad.addColorStop(stopAtBright,  `rgba(${rgb.r},${rgb.g},${rgb.b},${a1})`);
-    grad.addColorStop(1,             `rgba(${rgb.r},${rgb.g},${rgb.b},0)`);
+    const grad = lctx.createRadialGradient(cxWorld, cyWorld, 0, cxWorld, cyWorld, rPx);
+    const stopAtBright = rPx > 0 ? Math.min(0.99, brightPx / rPx) : 0;
+    grad.addColorStop(0,            `rgba(${rgb.r},${rgb.g},${rgb.b},${a0})`);
+    grad.addColorStop(stopAtBright, `rgba(${rgb.r},${rgb.g},${rgb.b},${a1})`);
+    grad.addColorStop(1,            `rgba(${rgb.r},${rgb.g},${rgb.b},0)`);
     lctx.fillStyle = grad;
-    lctx.fillRect(sx - rPx, sy - rPx, rPx * 2, rPx * 2);
+    lctx.fillRect(cxWorld - rPx, cyWorld - rPx, rPx * 2, rPx * 2);
     lctx.restore();
   };
 
   MapCanvas.prototype._renderLightingOverlay = function(ctx) {
-    const w = this.canvas.width, h = this.canvas.height;
+    // w/h in world space (map size, not canvas size)
+    const w = this.mapWidth || this.canvas.width;
+    const h = this.mapHeight || this.canvas.height;
     if (w === 0 || h === 0) return;
+
+    // Ensure offscreen layers match MAP size, not canvas size
     this._ensureLayer('dark', w, h);
     this._ensureLayer('light', w, h);
     const dctx = this._darkLayer.getContext('2d');
@@ -78,8 +83,71 @@
     const ambient = this.ambientLight ?? 1.0;
     const darkAlpha = this.isIndoor ? 0.88 : Math.max(0, 1 - ambient);
     dctx.clearRect(0, 0, w, h);
-    dctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
-    dctx.fillRect(0, 0, w, h);
+
+    const gs = this.gridSize || 50;
+
+    // Phase 15 Round 4: player vision — smooth gradient (same pipeline as GM)
+    if (this.role === 'player' && this.ownCharacterId != null) {
+      const own = (this.tokens || []).find(t => t.character_id === this.ownCharacterId);
+      if (own && own.x != null) {
+        const col = Math.floor(own.x * this.mapWidth / gs);
+        const row = Math.floor(own.y * this.mapHeight / gs);
+        const visionRange = own.sight_range_cells || 8;
+
+        // Keep cell-accurate visibility for NPC hiding logic
+        const visSet = this.computeVisibleCells(col, row, visionRange);
+        this.currentVisible = visSet;
+        if (!this.revealedCells) this.revealedCells = new Set();
+        for (const key of visSet) this.revealedCells.add(key);
+
+        // Layer 1: unexplored darkness (respects ambient light)
+        const unexploredAlpha = Math.max(darkAlpha, 0.85);
+        dctx.fillStyle = `rgba(0,0,0,${unexploredAlpha})`;
+        dctx.fillRect(0, 0, w, h);
+
+        // Layer 2: grey for explored but not currently visible (cell-accurate is fine here)
+        for (const key of this.revealedCells) {
+          if (visSet.has(key)) continue;
+          const [c, r] = key.split(',').map(Number);
+          dctx.fillStyle = 'rgba(0,0,0,0.55)';
+          dctx.fillRect(c * gs, r * gs, gs, gs);
+        }
+
+        // Layer 3: punch a SMOOTH radial gradient for the visible area
+        // This replaces the pixelated clearRect approach with the same
+        // ray-cast polygon + radial gradient used by GM lighting.
+        const cxWorld = (col + 0.5) * gs;
+        const cyWorld = (row + 0.5) * gs;
+        const radiusPx = visionRange * gs;
+        const blocksAt = this._makeBlocksAt();
+        const poly = this._raycastPolygon(cxWorld, cyWorld, radiusPx, blocksAt, 180);
+
+        dctx.globalCompositeOperation = 'destination-out';
+        dctx.save();
+        dctx.beginPath();
+        for (let i = 0; i < poly.length; i++) {
+          if (i === 0) dctx.moveTo(poly[i][0], poly[i][1]);
+          else dctx.lineTo(poly[i][0], poly[i][1]);
+        }
+        dctx.closePath();
+        dctx.clip();
+        // Radial gradient: fully clear at centre, fades to ~20% transparent at edge
+        const grad = dctx.createRadialGradient(cxWorld, cyWorld, 0, cxWorld, cyWorld, radiusPx);
+        grad.addColorStop(0,    'rgba(0,0,0,1)');   // full erase at centre
+        grad.addColorStop(0.75, 'rgba(0,0,0,1)');   // solid visible zone
+        grad.addColorStop(1,    'rgba(0,0,0,0)');   // soft edge fade
+        dctx.fillStyle = grad;
+        dctx.fillRect(cxWorld - radiusPx, cyWorld - radiusPx, radiusPx * 2, radiusPx * 2);
+        dctx.restore();
+        dctx.globalCompositeOperation = 'source-over';
+      } else {
+        dctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
+        dctx.fillRect(0, 0, w, h);
+      }
+    } else {
+      dctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
+      dctx.fillRect(0, 0, w, h);
+    }
 
     const hasLights = this.lights.length > 0;
     const hasTokenVision = (this.tokens || []).some(function(t) {
@@ -104,8 +172,8 @@
       if (!t.sight_range_cells || t.sight_range_cells <= 0) continue;
       const fake = {
         id: -t.character_id,
-        col: Math.floor(t.x * this.mapWidth / this.gridSize),
-        row: Math.floor(t.y * this.mapHeight / this.gridSize),
+        col: Math.floor(t.x * this.mapWidth / gs),
+        row: Math.floor(t.y * this.mapHeight / gs),
         radius_cells: t.sight_range_cells,
         bright_radius_cells: t.sight_range_cells * 0.5,
         color_hex: '#ffffff',

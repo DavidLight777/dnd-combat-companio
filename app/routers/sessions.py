@@ -199,7 +199,41 @@ async def get_session_info(code: str, db: AsyncSession = Depends(get_session)):
         id=session.id, code=session.code, name=session.name,
         status=session.status, turn_number=session.turn_number,
         player_count=player_count,
+        map_locked_for_players=session.map_locked_for_players,
     )
+
+
+# ── Update session settings (GM only) ────────────────────────
+@router.patch("/{code}/settings")
+async def update_session_settings(code: str, body: dict, db: AsyncSession = Depends(get_session)):
+    gm_token = body.get("gm_token")
+    if not gm_token:
+        raise HTTPException(400, "gm_token required")
+    result = await db.execute(select(Session).where(Session.code == code))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.gm_token != gm_token:
+        raise HTTPException(403, "Invalid GM token")
+
+    changed = False
+    if "map_locked_for_players" in body:
+        session.map_locked_for_players = bool(body["map_locked_for_players"])
+        changed = True
+
+    if changed:
+        await db.commit()
+        try:
+            await manager.broadcast_to_session(session.code, "map.lock_changed", {
+                "locked": session.map_locked_for_players,
+            })
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "map_locked_for_players": session.map_locked_for_players,
+    }
 
 
 # ── List characters in session ───────────────────────────────

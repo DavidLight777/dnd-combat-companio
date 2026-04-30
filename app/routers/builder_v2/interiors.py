@@ -9,12 +9,66 @@ from app.models import (
     BV2InteriorCell,
     BV2InteriorZone,
     BV2Location,
+    BV2Tile,
 )
 from app.routers.builder_v2.common import (
     broadcast,
     router,
     session_code_for_location,
+    tile_blocks,
 )
+
+
+async def _stamp_perimeter_walls(db: AsyncSession, location_id: int, cells: list[dict]):
+    """For building zones: upsert wall tiles on the OUTSIDE perimeter.
+
+    For each zone cell, if a 4-directional neighbour is NOT in the zone,
+    stamp a wall tile at that neighbour position. Existing wall tiles are
+    preserved; existing floor tiles inside the zone are NOT overwritten.
+    """
+    cell_set = {(int(c["col"]), int(c["row"])) for c in cells}
+    if not cell_set:
+        return
+
+    # Find outside-neighbour positions that need walls
+    wall_positions = set()
+    for col, row in cell_set:
+        for dc, dr in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            nb = (col + dc, row + dr)
+            if nb not in cell_set:
+                wall_positions.add(nb)
+
+    if not wall_positions:
+        return
+
+    # Load existing tiles for these neighbour cells
+    cols = [c for c, _ in wall_positions]
+    rows = [r for _, r in wall_positions]
+    existing_q = await db.execute(
+        select(BV2Tile)
+        .where(BV2Tile.location_id == location_id)
+        .where(BV2Tile.col.in_(cols))
+        .where(BV2Tile.row.in_(rows))
+    )
+    existing = {}
+    for t in existing_q.scalars().all():
+        existing[(t.col, t.row)] = t
+
+    blocks = tile_blocks("wall")
+    for col, row in wall_positions:
+        t = existing.get((col, row))
+        if t:
+            continue  # never overwrite any existing tile (wall, door, floor, etc.)
+        db.add(BV2Tile(
+            location_id=location_id,
+            col=col,
+            row=row,
+            tile_type="wall",
+            blocks_movement=blocks["blocks_movement"],
+            blocks_vision=blocks["blocks_vision"],
+            extra_json="{}",
+        ))
+    await db.commit()
 
 
 def _zone_payload(z: BV2InteriorZone, cells: list[dict] | None = None) -> dict:
@@ -79,6 +133,10 @@ async def create_interior(location_id: int, body: dict, db: AsyncSession = Depen
             row=int(cell.get("row", 0)),
         ))
     await db.commit()
+
+    # Phase 16 Round 3: auto-generate wall tiles on perimeter for buildings
+    if z.kind == "building":
+        await _stamp_perimeter_walls(db, location_id, cells)
 
     sess_code = await session_code_for_location(location_id, db)
     if sess_code:

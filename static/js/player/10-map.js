@@ -378,6 +378,12 @@ $('#btn-close-map').addEventListener('click', () => {
 if (typeof ws !== 'undefined' && ws && typeof ws.on === 'function') {
   ws.on('bv2.map_activated',      () => { loadPlayerMapState(); });
   ws.on('bv2.location_activated', () => { loadPlayerMapState(); });
+  ws.on('map.lock_changed', d => {
+    window.__lastMapLockState = !!d.locked;
+    const panel = document.getElementById('player-grid-panel');
+    if (panel) panel.classList.toggle('map-locked', !!d.locked);
+    if (d.locked) showToast('🗺 Map locked by GM');
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
