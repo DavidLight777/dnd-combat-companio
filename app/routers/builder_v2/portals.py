@@ -38,6 +38,7 @@ async def _portal_detail(entity_id: int, db: AsyncSession) -> dict:
         "requires_key_item_id": p.requires_key_item_id,
         "label": p.label,
         "is_active": p.is_active,
+        "size_cells": p.size_cells,
     })
     return base
 
@@ -72,6 +73,7 @@ async def create_portal(location_id: int, body: dict, db: AsyncSession = Depends
         requires_key_item_id=body.get("requires_key_item_id"),
         label=str(body.get("label", ""))[:200],
         is_active=bool(body.get("is_active", True)),
+        size_cells=max(1, int(body.get("size_cells", 1))),
     )
     db.add(p)
     await db.commit()
@@ -115,6 +117,8 @@ async def update_portal(entity_id: int, body: dict, db: AsyncSession = Depends(g
         p.label = str(body["label"])[:200]
     if "is_active" in body:
         p.is_active = bool(body["is_active"])
+    if "size_cells" in body:
+        p.size_cells = max(1, int(body["size_cells"]))
 
     await db.commit()
     await db.refresh(e)
