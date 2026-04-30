@@ -152,12 +152,6 @@
         _field('Locked', _toggle('bv2-chest-locked', data.is_locked, 'Locked')) +
         _field('Lock DC', _inp('bv2-chest-lock-dc', data.lock_dc, 'number'))
       ),
-      _section('🎨 Appearance',
-        _field('Icon', _inp('bv2-chest-icon', data.icon))
-      ),
-      _section('📦 State',
-        _field('Opened', _toggle('bv2-chest-opened', data.is_opened, 'Opened'))
-      ),
       _section('🎒 Contents',
         '<div id="bv2-chest-items"></div><div style="display:flex;gap:4px;margin-top:4px"><select id="bv2-chest-item-select" style="flex:1"><option value="">Loading items...</option></select><input type="number" id="bv2-chest-item-qty" value="1" min="1" style="width:50px"><button class="btn btn-primary btn-xs" id="bv2-chest-add-item">Add</button></div>'
       ),
@@ -197,26 +191,33 @@
       return {
         is_locked: $('bv2-chest-locked').checked,
         lock_dc: parseInt($('bv2-chest-lock-dc').value, 10) || 10,
-        icon: $('bv2-chest-icon').value || 'chest',
-        is_opened: $('bv2-chest-opened').checked,
         items: items.filter(i => i.item_id).map(i => ({ item_id: i.item_id, quantity: i.quantity })),
       };
     }};
   }
 
-  function _buildTrapForm(data) {
+  async function _buildTrapForm(data) {
     const sec = _createSection();
     const types = ['spike','dart','pit','fire','poison','magic','custom'];
     const dmgTypes = ['piercing','slashing','bludgeoning','fire','cold','lightning','poison','necrotic','radiant','psychic','acid','thunder','force'];
     const abilities = ['str','dex','con','int','wis','cha'];
     const triggers = ['on_enter','on_exit','proximity','manual'];
 
-    const dotVal = data.dot_effect_json || '';
+    // Fetch status effect templates for DoT dropdown
+    let dotOptions = [];
+    try {
+      const tpls = await api.get('/api/status-templates');
+      dotOptions = (tpls || []).map(t => ({ value: t.id, label: t.name }));
+    } catch (e) {
+      console.error('bv2 failed to load status effect templates', e);
+    }
+    dotOptions.unshift({ value: '', label: 'None' });
 
     sec.innerHTML = [
       _section('⚙️ Configuration',
         _field('Trap type', _sel('bv2-trap-type', types.map(t => ({value:t,label:t})), data.trap_type)) +
-        _field('Trigger mode', _sel('bv2-trap-trigger', triggers.map(t => ({value:t,label:t})), data.trigger_mode))
+        _field('Trigger mode', _sel('bv2-trap-trigger', triggers.map(t => ({value:t,label:t})), data.trigger_mode)) +
+        _field('Size (cells)', _inp('bv2-trap-size', data.size_cells ?? 1, 'number'))
       ),
       _section('🗡️ Damage',
         _field('Damage dice', _inp('bv2-trap-dice', data.damage_dice)) +
@@ -226,15 +227,12 @@
           _field('Attack bonus', _inp('bv2-trap-atk', data.attack_bonus, 'number'))
         )
       ),
-      _section('🔍 Detection',
+      _section('🔧 Interaction',
         _row(
-          _field('DC Detect', _inp('bv2-trap-dc-detect', data.dc_detect, 'number')),
-          _field('DC Disarm', _inp('bv2-trap-dc-disarm', data.dc_disarm, 'number'))
+          _field('DC Disarm', _inp('bv2-trap-dc-disarm', data.dc_disarm, 'number')),
+          _field('DC Save', _inp('bv2-trap-dc-save', data.dc_save, 'number'))
         ) +
-        _row(
-          _field('DC Save', _inp('bv2-trap-dc-save', data.dc_save, 'number')),
-          _field('Save ability', _sel('bv2-trap-save-abil', abilities.map(t => ({value:t,label:t.toUpperCase()})), data.save_ability))
-        )
+        _field('Save ability', _sel('bv2-trap-save-abil', abilities.map(t => ({value:t,label:t.toUpperCase()})), data.save_ability))
       ),
       _section('📦 State',
         _row(
@@ -248,7 +246,7 @@
         _field('Reset on trigger', _toggle('bv2-trap-reset', data.reset_on_trigger, 'Auto-reset'))
       ),
       _section('☠️ DoT Effect',
-        _field('Effect JSON', `<textarea id="bv2-trap-dot" rows="2" placeholder='{"type":"poison","dice":"1d4","turns":3}'>${escapeHtml(dotVal)}</textarea>`)
+        _field('Status Effect', _sel('bv2-trap-dot-tpl', dotOptions, data.dot_template_id ?? ''))
       ),
     ].join('');
 
@@ -256,7 +254,6 @@
       trap_type: $('bv2-trap-type').value,
       damage_dice: $('bv2-trap-dice').value || '1d6',
       damage_type: $('bv2-trap-dmg-type').value,
-      dc_detect: parseInt($('bv2-trap-dc-detect').value, 10) || 12,
       dc_disarm: parseInt($('bv2-trap-dc-disarm').value, 10) || 12,
       dc_save: parseInt($('bv2-trap-dc-save').value, 10) || 12,
       save_ability: $('bv2-trap-save-abil').value,
@@ -269,7 +266,8 @@
       charges: parseInt($('bv2-trap-charges').value, 10) ?? 1,
       charges_used: parseInt($('bv2-trap-charges-used').value, 10) || 0,
       is_armed: $('bv2-trap-armed').checked,
-      dot_effect_json: $('bv2-trap-dot').value || null,
+      dot_template_id: $('bv2-trap-dot-tpl').value ? parseInt($('bv2-trap-dot-tpl').value, 10) : null,
+      size_cells: Math.max(1, parseInt($('bv2-trap-size').value, 10) || 1),
     })};
   }
 
@@ -289,6 +287,7 @@
       ),
       _section('⚙️ Settings',
         _field('Label', _inp('bv2-portal-label', data.label)) +
+        _field('Size (cells)', _inp('bv2-portal-size', data.size_cells ?? 1, 'number')) +
         _row(
           _field('One way', _toggle('bv2-portal-oneway', data.is_one_way, 'One way')),
           _field('Active', _toggle('bv2-portal-active', data.is_active !== false, 'Active'))
@@ -304,6 +303,7 @@
         is_one_way: $('bv2-portal-oneway').checked,
         label: $('bv2-portal-label').value || '',
         is_active: $('bv2-portal-active').checked,
+        size_cells: Math.max(1, parseInt($('bv2-portal-size').value, 10) || 1),
       };
     }};
   }
@@ -326,6 +326,7 @@
       _section('⚙️ Spawn Settings',
         _field('Trigger', _sel('bv2-npc-trigger', triggers.map(t => ({value:t,label:t})), data.auto_spawn_trigger)) +
         _field('Count', _inp('bv2-npc-count', data.spawn_count, 'number')) +
+        _field('Trigger zone (cells)', _inp('bv2-npc-zone-size', data.trigger_zone_size ?? 1, 'number')) +
         _field('Hostile', _toggle('bv2-npc-hostile', data.is_hostile !== false, 'Hostile'))
       ),
     ].join('');
@@ -333,6 +334,7 @@
       npc_template_id: parseInt($('bv2-npc-tpl-id').value, 10) || 0,
       auto_spawn_trigger: $('bv2-npc-trigger').value,
       spawn_count: parseInt($('bv2-npc-count').value, 10) || 1,
+      trigger_zone_size: Math.max(1, parseInt($('bv2-npc-zone-size').value, 10) || 1),
       is_hostile: $('bv2-npc-hostile').checked,
     })};
   }
@@ -436,7 +438,7 @@
     const data = (mode === 'edit' && ent) ? ent : {};
     let formApi = null;
     if (type === 'chest') formApi = _buildChestForm(data);
-    else if (type === 'trap') formApi = _buildTrapForm(data);
+    else if (type === 'trap') formApi = await _buildTrapForm(data);
     else if (type === 'portal') formApi = _buildPortalForm(data);
     else if (type === 'npc_spawn') formApi = await _buildNpcSpawnForm(data);
     else if (type === 'cover_zone') formApi = _buildCoverZoneForm(data);
