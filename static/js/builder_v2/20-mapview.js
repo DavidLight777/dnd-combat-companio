@@ -74,6 +74,12 @@
       this._hoveredEntity = null;
       this._boundsDrag = null;
 
+      // Phase 17 R5: entity zone sizing drag
+      this._isEntitySizing = false;
+      this._entitySizeStart = null;  // {col,row}
+      this._entitySizeEnd = null;    // {col,row}
+      this._entitySizeType = null;   // e.g. 'trap'
+
       // Callbacks
       this.onPaint = opts.onPaint || null;       // (col,row,brush) => void
       this.onErase = opts.onErase || null;       // (col,row) => void
@@ -262,6 +268,7 @@
       this._drawGrid(ctx);
       this._drawBoundary(ctx);
       if (this.mode === 'edit') this._drawBoundsHandles(ctx);
+      if (this._isEntitySizing) this._drawEntitySizingPreview(ctx);
 
       ctx.restore();
     }
@@ -384,6 +391,23 @@
           }
         }
       }
+
+      // Draw light source icons on top of darkness
+      for (const li of this.lights) {
+        let lx, ly;
+        if (isHex) {
+          const ctr = this._tileCenterPx(li.col, li.row);
+          lx = ctr.x; ly = ctr.y;
+        } else {
+          lx = li.col * gs + gs / 2;
+          ly = li.row * gs + gs / 2;
+        }
+        ctx.font = `${gs * 0.45}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = li.color_hex || '#ffd9a0';
+        ctx.fillText('💡', lx, ly);
+      }
     }
 
     _drawEntities(ctx) {
@@ -391,24 +415,66 @@
       const isHex = this._isHex();
       for (const ent of this.entities) {
         // FOV filter: skip entities outside visibleSet unless permanently visible
-        if (this.visibleSet && !this.visibleSet.has(`${ent.col},${ent.row}`)) {
-          let permanent = false;
-          if (ent.entity_type === 'chest') {
-            permanent = ent.is_locked === false;
-          } else if (ent.props && ent.props.is_opened === true) {
-            permanent = true;
+        if (this.visibleSet) {
+          let visible = false;
+          const zoneSize = ent.size_cells || ent.trigger_zone_size || 1;
+          // Always show if explicitly marked visible to players
+          if (ent.visible_to_players === true) {
+            visible = true;
+          } else if (zoneSize > 1 && ['trap','portal','npc_spawn'].includes(ent.entity_type)) {
+            for (let zc = 0; zc < zoneSize; zc++) {
+              for (let zr = 0; zr < zoneSize; zr++) {
+                if (this.visibleSet.has(`${ent.col + zc},${ent.row + zr}`)) {
+                  visible = true;
+                  break;
+                }
+              }
+              if (visible) break;
+            }
+          } else if (this.visibleSet.has(`${ent.col},${ent.row}`)) {
+            visible = true;
           }
-          if (!permanent) continue;
+          if (!visible) {
+            let permanent = false;
+            if (ent.entity_type === 'chest') {
+              permanent = ent.is_locked === false;
+            } else if (ent.props && ent.props.is_opened === true) {
+              permanent = true;
+            }
+            if (!permanent) continue;
+          }
         }
         const visual = ENTITY_VISUAL[ent.entity_type] || { icon: '?', color: '#fff' };
+
+        // Zone size for trap / portal / npc_spawn
+        const zoneSize = ent.size_cells || ent.trigger_zone_size || 1;
+        const hasZone = zoneSize > 1 && ['trap','portal','npc_spawn'].includes(ent.entity_type);
+
         let centerX, centerY;
         if (isHex) {
+          // For hex, zone rendering is complex; just centre on anchor for now
           const ctr = this._tileCenterPx(ent.col, ent.row);
           centerX = ctr.x; centerY = ctr.y;
         } else {
-          centerX = ent.col * gs + gs / 2;
-          centerY = ent.row * gs + gs / 2;
+          if (hasZone) {
+            // Centre of the zone
+            centerX = (ent.col + zoneSize / 2) * gs;
+            centerY = (ent.row + zoneSize / 2) * gs;
+          } else {
+            centerX = ent.col * gs + gs / 2;
+            centerY = ent.row * gs + gs / 2;
+          }
         }
+
+        // Draw zone rectangle (square grid only)
+        if (hasZone && !isHex) {
+          ctx.fillStyle = visual.color + '40'; // 25% alpha
+          ctx.fillRect(ent.col * gs, ent.row * gs, zoneSize * gs, zoneSize * gs);
+          ctx.strokeStyle = visual.color;
+          ctx.lineWidth = 2 / this.scale;
+          ctx.strokeRect(ent.col * gs, ent.row * gs, zoneSize * gs, zoneSize * gs);
+        }
+
         const radius = gs * 0.35;
 
         // Highlight if hovered
@@ -577,6 +643,28 @@
       }
     }
 
+    _drawEntitySizingPreview(ctx) {
+      if (!this._entitySizeStart || !this._entitySizeEnd) return;
+      const gs = this._gridSize();
+      const c1 = this._entitySizeStart.col;
+      const r1 = this._entitySizeStart.row;
+      const c2 = this._entitySizeEnd.col;
+      const r2 = this._entitySizeEnd.row;
+      const minCol = Math.min(c1, c2);
+      const minRow = Math.min(r1, r2);
+      const maxCol = Math.max(c1, c2);
+      const maxRow = Math.max(r1, r2);
+      const w = (maxCol - minCol + 1) * gs;
+      const h = (maxRow - minRow + 1) * gs;
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.25)';
+      ctx.fillRect(minCol * gs, minRow * gs, w, h);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2 / this.scale;
+      ctx.setLineDash([6 / this.scale, 4 / this.scale]);
+      ctx.strokeRect(minCol * gs, minRow * gs, w, h);
+      ctx.setLineDash([]);
+    }
+
     _hitHandle(sx, sy) {
       if (!this.location) return null;
       const gs = this._gridSize();
@@ -674,6 +762,22 @@
           }
           const brush = this.getBrush();
           const ent = this._entityAtScreen(e.offsetX, e.offsetY);
+          if (brush === 'edge') {
+            // Edge brush: click on border cell opens edge modal
+            const { col, row } = this._screenToTile(e.offsetX, e.offsetY);
+            if (!this._inBounds(col, row)) return;
+            const cols = this._cols();
+            const rows = this._rows();
+            let side = null;
+            if (col === 0) side = 'west';
+            else if (col === cols - 1) side = 'east';
+            else if (row === 0) side = 'north';
+            else if (row === rows - 1) side = 'south';
+            if (side && window.bv2 && typeof window.bv2.openEdgeModal === 'function') {
+              window.bv2.openEdgeModal({ side, range_start: (side === 'west' || side === 'east') ? row : col, range_end: (side === 'west' || side === 'east') ? row : col });
+            }
+            return;
+          }
           if (brush.startsWith('entity:')) {
             // Entity brush mode
             if (ent && e.shiftKey) {
@@ -683,10 +787,13 @@
               // Click on existing entity = edit
               if (this.onEntityClick) this.onEntityClick(ent, 'edit');
             } else {
-              // Click on empty cell = place new entity
+              // Click on empty cell = start zone sizing drag
               const { col, row } = this._screenToTile(e.offsetX, e.offsetY);
-              if (this._inBounds(col, row) && this.onCellClick) {
-                this.onCellClick(col, row, brush.replace('entity:', ''));
+              if (this._inBounds(col, row)) {
+                this._isEntitySizing = true;
+                this._entitySizeStart = { col, row };
+                this._entitySizeEnd = { col, row };
+                this._entitySizeType = brush.replace('entity:', '');
               }
             }
           } else if (brush.startsWith('light:')) {
@@ -745,6 +852,14 @@
           }));
           return;
         }
+        if (this._isEntitySizing) {
+          const { col, row } = this._screenToTile(e.offsetX, e.offsetY);
+          if (this._inBounds(col, row)) {
+            this._entitySizeEnd = { col, row };
+            this.render();
+          }
+          return;
+        }
         if (this._isPainting) this._paintAt(e.offsetX, e.offsetY);
         else if (this._isDragging) {
           this.offsetX = e.offsetX - this._dragStart.x;
@@ -781,6 +896,22 @@
             }
           }));
         }
+        if (this._isEntitySizing) {
+          const start = this._entitySizeStart;
+          const end = this._entitySizeEnd;
+          const sizeCells = Math.max(
+            Math.abs(end.col - start.col) + 1,
+            Math.abs(end.row - start.row) + 1
+          );
+          const type = this._entitySizeType;
+          this._isEntitySizing = false;
+          this._entitySizeStart = null;
+          this._entitySizeEnd = null;
+          this._entitySizeType = null;
+          if (this.onCellClick) {
+            this.onCellClick(start.col, start.row, type, { size_cells: sizeCells });
+          }
+        }
       });
       c.addEventListener('mouseleave', () => {
         this._isPainting = false;
@@ -807,7 +938,15 @@
       // Find entity at this cell (last one wins — they can overlap)
       for (let i = this.entities.length - 1; i >= 0; i--) {
         const ent = this.entities[i];
-        if (ent.col === col && ent.row === row) return ent;
+        const zoneSize = ent.size_cells || ent.trigger_zone_size || 1;
+        if (zoneSize > 1 && ['trap','portal','npc_spawn'].includes(ent.entity_type)) {
+          if (col >= ent.col && col < ent.col + zoneSize &&
+              row >= ent.row && row < ent.row + zoneSize) {
+            return ent;
+          }
+        } else if (ent.col === col && ent.row === row) {
+          return ent;
+        }
       }
       return null;
     }

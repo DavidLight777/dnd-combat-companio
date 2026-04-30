@@ -617,22 +617,30 @@
           ctx.fillRect(px + gs - 2, py, 2, gs);  // east shadow
         }
       }
-      // Traps (square)
+      // Traps (square) — Phase 17 R5: support size_cells zone
       for (const t of (this.traps || [])) {
+        const size = t.size_cells || 1;
         const px = t.col * gs, py = t.row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
         if (this.role !== 'gm' && t.is_hidden) continue;
+        if (size > 1) {
+          ctx.fillStyle = 'rgba(255,69,0,0.25)';
+          ctx.fillRect(px, py, size * gs, size * gs);
+          ctx.strokeStyle = 'rgba(255,69,0,0.6)';
+          ctx.lineWidth = 2 / this.scale;
+          ctx.strokeRect(px, py, size * gs, size * gs);
+        }
         ctx.fillStyle = 'rgba(255,69,0,0.6)';
         ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
         ctx.font = `${gs * 0.5}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(t.is_triggered ? '💥' : t.is_disarmed ? '🔒' : '⚠', px + gs / 2, py + gs / 2);
       }
-      // MapChests (square)
+      // MapChests (square) — visible_to_players bypasses hidden
       for (const ch of (this.mapChests || [])) {
         const px = ch.col * gs, py = ch.row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
-        if (this.role !== 'gm' && ch.is_hidden) continue;
+        if (this.role !== 'gm' && ch.is_hidden && ch.visible_to_players !== true) continue;
         ctx.fillStyle = 'rgba(139,69,19,0.75)';
         ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
         ctx.strokeStyle = '#FFD700';
@@ -642,10 +650,18 @@
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('📦', px + gs / 2, py + gs / 2);
       }
-      // Portals (square)
+      // Portals (square) — Phase 17 R5: support size_cells zone
       for (const p of (this.portals || [])) {
+        const size = p.size_cells || 1;
         const px = p.col * gs, py = p.row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
+        if (size > 1) {
+          ctx.fillStyle = 'rgba(153,50,204,0.25)';
+          ctx.fillRect(px, py, size * gs, size * gs);
+          ctx.strokeStyle = 'rgba(153,50,204,0.6)';
+          ctx.lineWidth = 2 / this.scale;
+          ctx.strokeRect(px, py, size * gs, size * gs);
+        }
         ctx.fillStyle = 'rgba(153,50,204,0.6)';
         ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
         ctx.font = `${gs * 0.5}px sans-serif`;

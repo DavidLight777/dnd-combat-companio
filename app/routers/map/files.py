@@ -215,7 +215,7 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
             "bv2_col": c.col, "bv2_row": c.row,
         })
 
-    # Chests (only visible ones for public payload)
+    # Chests (visible ones + unlocked ones always shown)
     ents_q = await db.execute(
         select(BV2Entity).where(BV2Entity.location_id == loc.id)
     )
@@ -227,7 +227,8 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         chest = await db.get(BV2Chest, e.id)
         if not chest:
             continue
-        if not e.visible_to_players:
+        # Show if visible_to_players OR unlocked (opened)
+        if not e.visible_to_players and chest.is_locked:
             continue
         items = []
         if not chest.is_locked:
@@ -240,11 +241,15 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
                 items.append({"name": it.name, "quantity": ci.quantity})
         chests.append({
             "id": e.id,
+            "col": e.col,
+            "row": e.row,
             "x": (e.col + 0.5) / cols,
             "y": (e.row + 0.5) / rows,
             "name": e.name or "Chest",
             "icon": chest.icon,
             "items": items,
+            "is_locked": chest.is_locked,
+            "visible_to_players": e.visible_to_players,
         })
 
     # Traps
@@ -259,11 +264,14 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
             continue
         traps.append({
             "id": e.id,
+            "col": e.col,
+            "row": e.row,
             "x": (e.col + 0.5) / cols,
             "y": (e.row + 0.5) / rows,
             "is_hidden": not e.visible_to_players,
             "damage_dice": trap.damage_dice,
             "name": e.name or "Trap",
+            "size_cells": trap.size_cells or 1,
         })
 
     # Portals
@@ -271,14 +279,16 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
     for e in entities:
         if e.entity_type != "portal":
             continue
+        portal = await db.get(BV2Portal, e.id)
         portals.append({
             "id": e.id,
-            "x": (e.col + 0.5) / cols,
-            "y": (e.row + 0.5) / rows,
             "col": e.col,
             "row": e.row,
+            "x": (e.col + 0.5) / cols,
+            "y": (e.row + 0.5) / rows,
             "name": e.name or "Portal",
             "visible_to_players": e.visible_to_players,
+            "size_cells": portal.size_cells if portal else 1,
         })
 
     # Lights

@@ -376,9 +376,9 @@
           else await S.openEntityModal(ent, 'edit');
         }
       },
-      onCellClick: async (col, row, entityType) => {
+      onCellClick: async (col, row, entityType, extra = {}) => {
         if (typeof S.openEntityModal === 'function') {
-          await S.openEntityModal(null, 'create', { col, row, entity_type: entityType });
+          await S.openEntityModal(null, 'create', { col, row, entity_type: entityType, ...extra });
         }
       },
     });
