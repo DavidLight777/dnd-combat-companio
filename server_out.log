@@ -1,0 +1,94 @@
+gm.html: 0 tags updated
+player.html: 0 tags updated
+lobby.html: 0 tags updated
+Total: 0
+gm.html: 0 tags updated
+player.html: 0 tags updated
+lobby.html: 0 tags updated
+Total: 0
+INFO:     127.0.0.1:59608 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59608 - "GET /static/css/base.css?v=5c9db4df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59608 - "GET /api/server-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65319 - "GET /api/server-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /gm?code=HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/css/base.css?v=5c9db4df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/css/gm.css?v=ab5ac895 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/character-sheet-core.js?v=ed9108df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/websocket-client.js?v=fa4e4b73 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/sprite-loader.js?v=c49054d2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/map-canvas/index.js?v=11474c6a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/map-canvas/state.js?v=1e92a56c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/map-canvas/render.js?v=c9ec7f6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/map-canvas/lighting.js?v=20352246 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/map-canvas/events.js?v=df817a7a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/map-canvas/token-anim.js?v=710c8860 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/map-canvas/hex-math.js?v=e7f00c5a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/map-canvas/fog.js?v=85919ea5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/01-core.js?v=93197955 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/02-characters.js?v=945df34f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/03-level-up.js?v=c7001bc4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/05-npc-sidebar.js?v=124a08ba HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/04-status-effects.js?v=990f9e4d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/07-session-ops.js?v=458b41e4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/06-map-main.js?v=0c583f7f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/08-websocket.js?v=d936a328 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/09-items.js?v=d916d660 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/11-combat.js?v=e42458ed HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/10-ai-chat.js?v=3a6ce006 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/13-quests.js?v=a3737178 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/12-races-classes.js?v=c90bcad8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/14-npc-library.js?v=84546120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/15-meta-stage10.js?v=bd282fba HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/16-abilities.js?v=0f651965 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/17-npc-panels.js?v=8d30c997 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/gm/19-chests.js?v=a2298fe5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/gm/20-init.js?v=df88a1f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /static/js/builder_v2/00-state.js?v=66efba55 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/builder_v2/30-editor.js?v=bc063c49 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/builder_v2/20-mapview.js?v=494e54da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /static/js/builder_v2/10-api.js?v=3c76e9e0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/builder_v2/40-websocket.js?v=0831c400 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/builder_v2/60-fov.js?v=8d02af1e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /static/js/builder_v2/50-entities.js?v=b746e160 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /static/js/builder_v2/80-edges.js?v=28713c9a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/builder_v2/70-lights.js?v=b9a8dc77 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/builder_v2/90-library.js?v=eee7c1f5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/js/builder_v2/95-interiors.js?v=6e72efbb HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/js/builder_v2/96-building.js?v=1653fc40 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /api/races-classes/races HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /api/races-classes/classes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /api/initiative/HAWK-9907/order HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/ai/history/HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /api/npc-library/templates?session_id=11834 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/npc-library/events?session_id=11834 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /api/npc-library/folders?session_id=11834 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62775 - "GET /api/item-categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /api/sessions/HAWK-9907/characters HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57030 - "GET /api/combat/session/HAWK-9907/active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /api/wizard/session/11834/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62775 - "GET /api/abilities?session_id=11834 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /api/cards?session_id=11834 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /api/sessions/HAWK-9907/timer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /api/characters/4658/status-effects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/announcements/HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62775 - "GET /api/map/HAWK-9907/chests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /api/sessions/HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /api/quest-templates?session_id=12197 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /api/items HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57030 - "GET /api/map/HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57030 - "GET /static/assets/tiles/floor_stone.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /static/assets/tiles/floor_wood.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/assets/tiles/floor_grass.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/assets/tiles/wall_stone.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /static/assets/tiles/wall_wood.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62775 - "GET /api/quests/session/HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62775 - "GET /static/assets/tiles/door_closed.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62504 - "GET /static/assets/tiles/door_open.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /static/assets/tiles/water.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /static/assets/tiles/lava.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57030 - "GET /static/assets/tiles/pit.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59225 - "GET /static/assets/tiles/rough.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/map/HAWK-9907 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/map/HAWK-9907/overlays HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/builder-v2/sessions/HAWK-9907/maps HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57325 - "GET /api/builder-v2/maps/8830/locations HTTP/1.1" 200 OK

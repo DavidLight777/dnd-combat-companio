@@ -147,7 +147,7 @@ async def create_trap(location_id: int, body: dict, db: AsyncSession = Depends(g
         reset_on_trigger=bool(body.get("reset_on_trigger", False)),
         undodgeable=bool(body.get("undodgeable", False)),
         attack_bonus=int(body.get("attack_bonus", 0)),
-        charges=int(body.get("charges", 1)),
+        charges=int(body.get("charges") or 1),
         charges_used=0,
         is_armed=bool(body.get("is_armed", True)),
         dot_effect_json=body.get("dot_effect_json") if body.get("dot_effect_json") else None,
@@ -188,9 +188,11 @@ async def update_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
     for k in ("trap_type", "damage_dice", "damage_type", "save_ability", "trigger_mode"):
         if k in body:
             setattr(t, k, str(body[k]))
-    for k in ("dc_detect", "dc_disarm", "dc_save", "attack_bonus", "charges", "size_cells"):
-        if k in body:
+    for k in ("dc_detect", "dc_disarm", "dc_save", "attack_bonus", "size_cells"):
+        if k in body and body[k] is not None:
             setattr(t, k, max(1, int(body[k])))
+    if "charges" in body and body["charges"] is not None:
+        t.charges = int(body["charges"])
     for k in ("is_triggered", "is_disarmed", "reset_on_trigger", "undodgeable", "is_armed"):
         if k in body:
             setattr(t, k, bool(body[k]))

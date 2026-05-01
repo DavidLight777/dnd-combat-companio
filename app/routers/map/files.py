@@ -19,6 +19,7 @@ from app.models import (
     BV2Light,
     BV2Location,
     BV2Map,
+    BV2Portal,
     BV2Tile,
     BV2Trap,
     BV2VisitState,

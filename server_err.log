@@ -1,0 +1,15 @@
+INFO:     Started server process [51900]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:60243 - "WebSocket /ws/DEEP-5815?token=ae243253b40ce3fa2258708613648415" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53693 - "WebSocket /ws/HAWK-9907?token=f83a2f4477666a8eed4730258a9b7ac6" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:53812 - "WebSocket /ws/HAWK-9907?token=f83a2f4477666a8eed4730258a9b7ac6" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60653 - "WebSocket /ws/HAWK-9907?token=f83a2f4477666a8eed4730258a9b7ac6" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed

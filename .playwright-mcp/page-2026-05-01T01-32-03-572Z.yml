@@ -1,0 +1,132 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: ⚔
+      - generic [ref=e5]:
+        - generic [ref=e6]: Combat Companion
+        - generic [ref=e7]: Game Master
+    - generic [ref=e8]:
+      - generic [ref=e9]: Session
+      - generic "Click to copy" [ref=e10] [cursor=pointer]: DAWN-0245
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: —
+        - generic [ref=e15]: Name
+      - generic [ref=e16]:
+        - generic [ref=e17]: waiting
+        - generic [ref=e18]: Status
+      - generic [ref=e19]:
+        - generic [ref=e20]: "0"
+        - generic [ref=e21]: Turn
+      - generic [ref=e22]:
+        - generic [ref=e23]: "0"
+        - generic [ref=e24]: Online
+      - generic [ref=e25]:
+        - generic [ref=e28]: connecting
+        - generic [ref=e29]: Server
+      - generic [ref=e30]:
+        - generic [ref=e31]: "0"
+        - generic [ref=e32]: Players
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]: ⏱
+        - strong [ref=e36]: 0:00:00
+        - button "▶" [ref=e37] [cursor=pointer]
+      - button "🌙 Full Rest" [ref=e38] [cursor=pointer]
+      - button "End Session" [ref=e39] [cursor=pointer]
+  - generic [ref=e40]:
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - heading "Party" [level=2] [ref=e44]: Party
+        - paragraph [ref=e47]: Waiting for players...
+      - generic [ref=e48]:
+        - generic [ref=e49]:
+          - heading "NPCs" [level=2] [ref=e50]: NPCs
+          - button "+ NPC" [ref=e51] [cursor=pointer]
+        - paragraph [ref=e54]: No NPCs
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]: Session
+          - generic [ref=e59]: —
+        - generic [ref=e60]:
+          - generic [ref=e61]: Status
+          - generic [ref=e62]: Waiting
+        - generic [ref=e63]:
+          - generic [ref=e64]: Round
+          - generic [ref=e65]: "0"
+        - generic [ref=e66]:
+          - generic [ref=e67]: Connected
+          - generic [ref=e68]: "0"
+      - generic [ref=e69]:
+        - navigation [ref=e70]:
+          - generic [ref=e71]:
+            - generic [ref=e72]: Character
+            - button "◉ Detail" [ref=e73] [cursor=pointer]:
+              - generic [ref=e74]: ◉
+              - text: Detail
+            - button "✦ Abilities" [ref=e75] [cursor=pointer]:
+              - generic [ref=e76]: ✦
+              - text: Abilities
+          - generic [ref=e77]:
+            - generic [ref=e78]: Combat
+            - button "⚔ Combat" [ref=e79] [cursor=pointer]:
+              - generic [ref=e80]: ⚔
+              - text: Combat
+            - button "⟳ Initiative" [ref=e81] [cursor=pointer]:
+              - generic [ref=e82]: ⟳
+              - text: Initiative
+            - button "⚡ Quick Actions" [ref=e83] [cursor=pointer]:
+              - generic [ref=e84]: ⚡
+              - text: Quick Actions
+          - generic [ref=e85]:
+            - generic [ref=e86]: World
+            - button "◈ Map" [ref=e87] [cursor=pointer]:
+              - generic [ref=e88]: ◈
+              - text: Map
+            - button "⊕ Builder" [ref=e89] [cursor=pointer]:
+              - generic [ref=e90]: ⊕
+              - text: Builder
+            - button "⊞ Items" [ref=e91] [cursor=pointer]:
+              - generic [ref=e92]: ⊞
+              - text: Items
+            - button "🃏 Cards" [ref=e93] [cursor=pointer]:
+              - generic [ref=e94]: 🃏
+              - text: Cards
+            - button "⊛ NPC Library" [ref=e95] [cursor=pointer]:
+              - generic [ref=e96]: ⊛
+              - text: NPC Library
+            - button "◎ Races & Prof." [ref=e97] [cursor=pointer]:
+              - generic [ref=e98]: ◎
+              - text: Races & Prof.
+          - generic [ref=e99]:
+            - generic [ref=e100]: Session
+            - button "⊚ Quests" [ref=e101] [cursor=pointer]:
+              - generic [ref=e102]: ⊚
+              - text: Quests
+            - button "⊜ Board" [ref=e103] [cursor=pointer]:
+              - generic [ref=e104]: ⊜
+              - text: Board
+            - button "≡ Event Log" [ref=e105] [cursor=pointer]:
+              - generic [ref=e106]: ≡
+              - text: Event Log
+        - paragraph [ref=e110]: Select a character from the sidebar to view details.
+    - generic [ref=e111]:
+      - generic [ref=e112] [cursor=pointer]:
+        - heading "ARIA AI" [level=2] [ref=e114]
+        - button "◀" [ref=e115]
+      - generic [ref=e116]:
+        - generic [ref=e117]:
+          - button "🎭 Narrate" [ref=e118] [cursor=pointer]
+          - button "⚔ NPC" [ref=e119] [cursor=pointer]
+          - button "🗡 Item" [ref=e120] [cursor=pointer]
+          - button "📜 Summary" [ref=e121] [cursor=pointer]
+        - generic [ref=e123]:
+          - textbox "Ask ARIA…" [ref=e124]
+          - button "Send" [ref=e125] [cursor=pointer]
+  - generic [ref=e126]:
+    - generic [ref=e127] [cursor=pointer]:
+      - generic [ref=e128]: 🎲
+      - generic [ref=e129]: Dice Roll Log
+      - button "▼" [ref=e130]
+    - generic [ref=e132]: Rolls will appear here…

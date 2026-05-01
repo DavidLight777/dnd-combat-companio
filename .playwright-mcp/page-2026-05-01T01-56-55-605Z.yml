@@ -1,0 +1,166 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]: ⚔️ TestHero Lvl 0
+    - generic [ref=e6]: connected
+    - generic "Click to transfer" [ref=e7] [cursor=pointer]: 💰 undefinedB
+    - generic [ref=e8]:
+      - text: ⏱
+      - generic [ref=e9]: 0:00:00
+    - generic [ref=e10]:
+      - text: "Session:"
+      - strong [ref=e11]: DAWN-0245
+    - button "🗺️ Map" [ref=e12] [cursor=pointer]
+  - generic [ref=e15]:
+    - complementary [ref=e16]:
+      - generic "Character portrait" [ref=e17]:
+        - generic [ref=e18]: T
+      - generic [ref=e19]:
+        - generic [ref=e20]: TestHero
+        - generic [ref=e21]: Lvl 0
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - generic [ref=e24]: ❤️ HP
+          - generic [ref=e25]: 0 / 0
+        - generic [ref=e28]: "KD: 0"
+      - generic [ref=e30]:
+        - generic [ref=e31]: 💙 Spiritual HP
+        - generic [ref=e32]: 0 / 0
+      - generic [ref=e36]:
+        - generic [ref=e37]: 🔮 Mana
+        - generic [ref=e38]: 10 / 10
+      - generic [ref=e42]:
+        - generic [ref=e43]: ⭐ XP
+        - generic [ref=e44]: Lvl 0 · 0/100
+      - generic [ref=e47]:
+        - generic "Platinum" [ref=e48]:
+          - generic [ref=e49]: ◆
+          - generic [ref=e50]: "0"
+        - generic "Gold" [ref=e51]:
+          - generic [ref=e52]: ●
+          - generic [ref=e53]: "0"
+        - generic "Silver" [ref=e54]:
+          - generic [ref=e55]: ●
+          - generic [ref=e56]: "0"
+        - generic "Bronze" [ref=e57]:
+          - generic [ref=e58]: ●
+          - generic [ref=e59]: "0"
+      - generic [ref=e60]:
+        - generic [ref=e61]: 📊 Characteristics
+        - generic [ref=e62]:
+          - generic [ref=e64]:
+            - generic [ref=e65]: STR
+            - generic [ref=e66]: "1"
+          - generic [ref=e68]:
+            - generic [ref=e69]: DEX
+            - generic [ref=e70]: "1"
+          - generic [ref=e72]:
+            - generic [ref=e73]: CON
+            - generic [ref=e74]: "1"
+          - generic [ref=e76]:
+            - generic [ref=e77]: INT
+            - generic [ref=e78]: "1"
+          - generic [ref=e80]:
+            - generic [ref=e81]: WIS
+            - generic [ref=e82]: "1"
+          - generic [ref=e84]:
+            - generic [ref=e85]: CHA
+            - generic [ref=e86]: "1"
+      - generic [ref=e87]:
+        - generic [ref=e88]: 🎲 Characteristic Roll
+        - combobox [ref=e89]:
+          - option "Strength" [selected]
+          - option "Dexterity"
+          - option "Constitution"
+          - option "Intelligence"
+          - option "Wisdom"
+          - option "Charisma"
+        - combobox [ref=e90]:
+          - option "Ability Check" [selected]
+          - option "Saving Throw"
+          - option "Skill Check"
+        - generic [ref=e91]:
+          - generic [ref=e92]: "Dice:"
+          - spinbutton [ref=e93]: "1"
+          - generic [ref=e94]: d
+          - combobox [ref=e95]:
+            - option "4"
+            - option "6"
+            - option "8"
+            - option "10"
+            - option "12"
+            - option "20" [selected]
+            - option "100"
+        - generic [ref=e96]:
+          - button "Normal" [ref=e97] [cursor=pointer]
+          - button "ADV" [ref=e98] [cursor=pointer]
+          - button "DIS" [ref=e99] [cursor=pointer]
+        - button "🎲 Roll" [ref=e100] [cursor=pointer]
+    - generic [ref=e104]:
+      - heading "🗺️ Battle Field" [level=2] [ref=e105]
+      - generic [ref=e146]: 0 tokens
+      - button "🖼️" [ref=e106] [cursor=pointer]
+      - button "⛶" [ref=e107] [cursor=pointer]
+    - complementary [ref=e111]:
+      - generic [ref=e112]:
+        - heading "⚡ Actions" [level=2] [ref=e114]
+        - generic [ref=e147]: No actions available — equip a weapon, learn an ability, or get items
+      - generic [ref=e116]:
+        - heading "✅ Active Bonuses" [level=2] [ref=e118]
+        - generic [ref=e119]: No active bonuses
+      - generic [ref=e120]:
+        - heading "❌ Active Penalties" [level=2] [ref=e122]
+        - generic [ref=e123]: No active penalties
+      - group [ref=e124]:
+        - generic "⚙️ Advanced / manual roll tools" [ref=e125] [cursor=pointer]
+        - option "4"
+        - option "6"
+        - option "8"
+        - option "10"
+        - option "12"
+        - option "20" [selected]
+        - option "100"
+        - option "Strength" [selected]
+        - option "Dexterity"
+        - option "Constitution"
+        - option "Intelligence"
+        - option "Wisdom"
+        - option "Charisma"
+        - option "Ability Check" [selected]
+        - option "Saving Throw"
+        - option "Skill Check"
+        - option "4"
+        - option "6"
+        - option "8" [selected]
+        - option "10"
+        - option "12"
+        - option "20"
+        - option "100"
+      - group [ref=e126]:
+        - generic "📜 Quests" [ref=e127] [cursor=pointer]
+      - generic [ref=e128]:
+        - heading "📢 Announcements" [level=2] [ref=e130]
+        - paragraph [ref=e148]: No announcements yet.
+  - navigation [ref=e133]:
+    - button "⚔️ Main" [ref=e134] [cursor=pointer]:
+      - text: ⚔️
+      - generic [ref=e135]: Main
+    - button "🎒 Inventory" [ref=e136] [cursor=pointer]:
+      - text: 🎒
+      - generic [ref=e137]: Inventory
+    - button "✨ Skills" [ref=e138] [cursor=pointer]:
+      - text: ✨
+      - generic [ref=e139]: Skills
+    - button "🛡️ Professions" [ref=e140] [cursor=pointer]:
+      - text: 🛡️
+      - generic [ref=e141]: Professions
+    - button "📖 Memory" [ref=e142] [cursor=pointer]:
+      - text: 📖
+      - generic [ref=e143]: Memory
+    - button "⚙️ More" [ref=e144] [cursor=pointer]:
+      - text: ⚙️
+      - generic [ref=e145]: More
+  - generic [ref=e150]:
+    - heading "🎲 Starting Item" [level=2] [ref=e151]
+    - paragraph [ref=e152]: Every adventurer begins with a single piece of gear. Roll the dice to determine its quality, then describe the item. Your GM will approve it before it goes into your bag.
+    - button "🎲 Roll d20" [active] [ref=e155] [cursor=pointer]
+  - generic [ref=e156]: Roll failed
