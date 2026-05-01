@@ -1,0 +1,5 @@
+[     624ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/favicon.ico:0
+[  455802ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:8000/api/builder-v2/locations/10230/traps:0
+[  455823ms] [ERROR] bv2 saveEntity Error: Internal Server Error
+    at Object.post (http://localhost:8000/static/js/gm/01-core.js?v=93197955:50:153)
+    at async HTMLButtonElement.onSave (http://localhost:8000/static/js/builder_v2/50-entities.js?v=b746e160:479:35) @ http://localhost:8000/static/js/builder_v2/50-entities.js?v=b746e160:486

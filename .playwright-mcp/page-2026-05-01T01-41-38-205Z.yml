@@ -1,0 +1,39 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "⚔️ Combat Companion" [level=1] [ref=e4]
+    - paragraph [ref=e5]: TTRPG Session Management Platform
+  - generic [ref=e6]:
+    - heading "Create New Session" [level=2] [ref=e7]
+    - generic [ref=e8]:
+      - generic [ref=e9]: Session Name
+      - textbox "Enter session name..." [ref=e10]: New Session
+    - button "Create Session (GM)" [ref=e11] [cursor=pointer]
+  - generic [ref=e12]: or
+  - generic [ref=e13]:
+    - heading "Join Existing Session" [level=2] [ref=e14]
+    - generic [ref=e15]:
+      - generic [ref=e16]: "1"
+      - generic [ref=e17]: "2"
+      - generic [ref=e18]: "3"
+      - generic [ref=e19]: "4"
+      - generic [ref=e20]: "5"
+      - generic [ref=e21]: "6"
+    - generic [ref=e22]:
+      - heading "Who are you?" [level=3] [ref=e23]
+      - generic [ref=e24]:
+        - generic [ref=e25]: Session Code
+        - textbox "WOLF-1234" [ref=e26]
+      - generic [ref=e27]:
+        - generic [ref=e28]: Character Name
+        - textbox "Your name..." [ref=e29]
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - generic [ref=e32]: Age
+          - spinbutton [ref=e33]
+        - generic [ref=e34]:
+          - generic [ref=e35]: Gender
+          - textbox "Male / Female / …" [ref=e36]
+      - button "Next →" [ref=e37] [cursor=pointer]
+  - generic [ref=e38]: "Other players connect at: http://192.168.1.182:8000"
+  - link "⚙️ Settings" [ref=e40] [cursor=pointer]:
+    - /url: /settings

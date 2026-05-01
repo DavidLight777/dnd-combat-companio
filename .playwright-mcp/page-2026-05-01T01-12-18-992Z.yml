@@ -1,0 +1,581 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: ⚔
+      - generic [ref=e5]:
+        - generic [ref=e6]: Combat Companion
+        - generic [ref=e7]: Game Master
+    - generic [ref=e8]: Session ----
+    - generic [ref=e9]:
+      - generic [ref=e10]: — Name
+      - generic [ref=e11]: waiting Status
+      - generic [ref=e12]: 0 Turn
+      - generic [ref=e13]: 0 Online
+      - generic [ref=e14]:
+        - generic [ref=e15]: connecting
+        - text: Server
+      - generic [ref=e16]: 0 Players
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - text: ⏱
+        - strong [ref=e19]: 0:00:00
+        - button "▶" [ref=e20]
+      - button "🌙 Full Rest" [ref=e21]
+      - button "End Session" [ref=e22]
+  - generic [ref=e23]:
+    - generic [ref=e24]:
+      - heading "Party" [level=2] [ref=e27]: Party
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - heading "NPCs" [level=2] [ref=e30]: NPCs
+          - button "+ NPC" [ref=e31]
+        - generic [ref=e33]:
+          - combobox [ref=e34]
+          - generic [ref=e35]:
+            - generic [ref=e36]: "Count:"
+            - spinbutton [ref=e37]: "1"
+            - button "Spawn" [ref=e38]
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]: Session —
+        - generic [ref=e42]: Status Waiting
+        - generic [ref=e43]: Round 0
+        - generic [ref=e44]: Connected 0
+      - generic [ref=e45]:
+        - navigation [ref=e46]:
+          - generic [ref=e47]:
+            - text: Character
+            - button "◉Detail" [ref=e48]
+            - button "✦Abilities" [ref=e49]
+          - generic [ref=e50]:
+            - text: Combat
+            - button "⚔Combat" [ref=e51]
+            - button "⟳Initiative" [ref=e52]
+            - button "⚡Quick Actions" [ref=e53]
+          - generic [ref=e54]:
+            - text: World
+            - button "◈Map" [ref=e55]
+            - button "⊕Builder" [ref=e56]
+            - button "⊞Items" [ref=e57]
+            - button "🃏Cards" [ref=e58]
+            - button "⊛NPC Library" [ref=e59]
+            - button "◎Races & Prof." [ref=e60]
+          - generic [ref=e61]:
+            - text: Session
+            - button "⊚Quests" [ref=e62]
+            - button "⊜Board" [ref=e63]
+            - button "≡Event Log" [ref=e64]
+        - generic [ref=e65]:
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - heading "✨ Ability Manager" [level=2] [ref=e69]
+              - button "+ New Ability" [ref=e70]
+            - generic [ref=e72]:
+              - generic [ref=e73]: "Filter:"
+              - generic [ref=e74]:
+                - checkbox "Starting Pool only" [ref=e75]
+                - text: Starting Pool only
+              - generic [ref=e76]:
+                - text: "Rarity:"
+                - combobox "Rarity:" [ref=e77]:
+                  - option "any" [selected]
+                  - option "common"
+                  - option "uncommon"
+                  - option "rare"
+                  - option "epic"
+                  - option "legendary"
+          - paragraph [ref=e80]: Select a character from the sidebar to view details.
+          - generic [ref=e82]:
+            - generic [ref=e83]:
+              - heading "🗄 Item Database" [level=2] [ref=e84]
+              - button "+ New Item" [ref=e85]
+              - button "+ Category" [ref=e86]
+            - generic [ref=e88]:
+              - textbox "Search items…" [ref=e89]
+              - combobox [ref=e90]:
+                - option "All Categories" [selected]
+              - combobox [ref=e91]:
+                - option "All Rarities" [selected]
+                - option "Common"
+                - option "Uncommon"
+                - option "Rare"
+                - option "Epic"
+                - option "Legendary"
+                - option "Mythic"
+                - option "Divine"
+          - generic [ref=e93]:
+            - generic [ref=e94]:
+              - heading "🃏 Card Library" [level=2] [ref=e95]
+              - generic [ref=e96]:
+                - button "+ New Card" [ref=e97]
+                - button "↻ Refresh" [ref=e98]
+            - generic [ref=e100]:
+              - textbox "Search cards…" [ref=e101]
+              - combobox [ref=e102]:
+                - option "All Types" [selected]
+                - option "Character"
+                - option "Location"
+                - option "Item"
+                - option "Custom"
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - heading "⚔ Initiative Tracker" [level=2] [ref=e106]
+              - generic [ref=e107]:
+                - button "🎲 Roll All" [ref=e108]
+                - button "▶ Start" [ref=e109]
+                - button "⏭ Next" [ref=e110]
+                - button "⏹ End" [ref=e111]
+            - paragraph [ref=e114]: Roll initiative to begin.
+          - generic [ref=e115]:
+            - generic [ref=e116]:
+              - button "📂 Load from Library" [ref=e117]
+              - button "🗑 Remove" [ref=e118]
+              - combobox "Switch active location" [ref=e119]:
+                - option "— No active location —" [selected]
+              - combobox [ref=e120]
+              - 'button "Grid: ON" [ref=e121]'
+              - button "▢ Square" [ref=e122]
+              - 'button "Fog: OFF" [ref=e123]'
+              - button "🖌 Reveal" [ref=e124]
+              - button "Reveal All" [ref=e125]
+              - button "Reset" [ref=e126]
+              - button "🎯 Center" [ref=e127]
+              - button "📦 Chest" [ref=e128]
+              - button "📦 List" [ref=e129]
+              - 'button "🗺 Map: ON" [ref=e130]'
+            - generic [ref=e131]:
+              - button "🖱" [ref=e132]
+              - button "✏" [ref=e133]
+              - button "▭" [ref=e134]
+              - button "○" [ref=e135]
+              - button "╱" [ref=e136]
+              - button "→" [ref=e137]
+              - button "📌" [ref=e138]
+              - button "🗑" [ref=e139]
+              - button "📏" [ref=e140]
+              - button "🧱" [ref=e141]
+              - button "🧨 Clear Walls" [ref=e142]
+              - textbox [ref=e143] [cursor=pointer]: "#ff0000"
+              - slider [ref=e144]: "2"
+              - generic [ref=e145]:
+                - checkbox "Visible" [checked] [ref=e146]
+                - text: Visible
+              - button "🧹 Clear" [ref=e147]
+          - generic [ref=e152]:
+            - generic [ref=e153]:
+              - generic [ref=e154]: Map
+              - combobox [ref=e155]
+              - generic [ref=e156]:
+                - button "+ New Map" [ref=e157]
+                - button "🗑" [ref=e158]
+            - generic [ref=e159]:
+              - generic [ref=e160]: Location
+              - combobox [ref=e161]
+              - generic [ref=e162]:
+                - button "+ New" [ref=e163]
+                - button "🗑" [ref=e164]
+              - generic [ref=e165]:
+                - generic [ref=e166]: Ambient light
+                - slider [ref=e167]: "1"
+                - generic [ref=e168]: "1.00"
+                - generic [ref=e169]:
+                  - checkbox "Indoor (heavy darkness fallback)" [ref=e170]
+                  - text: Indoor (heavy darkness fallback)
+                - generic [ref=e171]: Bright
+              - button "▶ Apply to Game" [ref=e172]
+            - generic [ref=e174]:
+              - generic [ref=e175]: Grid
+              - button "▢ Square Grid" [ref=e176]
+              - generic [ref=e177]: "Tile Size: 50px"
+              - slider [ref=e178]: "50"
+              - generic [ref=e179]:
+                - generic [ref=e180]: "W:"
+                - spinbutton [ref=e181]: "40"
+                - generic [ref=e182]: "H:"
+                - spinbutton [ref=e183]: "30"
+            - generic [ref=e184]:
+              - generic [ref=e185]: Terrain
+              - generic [ref=e186]:
+                - button "⬜Floor" [ref=e187]
+                - button "🧱Wall" [ref=e188]
+                - button "💧Water" [ref=e189]
+                - button "🔥Lava" [ref=e190]
+                - button "🕳Pit" [ref=e191]
+                - button "🚪Door" [ref=e192]
+                - button "⛰Rough" [ref=e193]
+                - button "🧹Erase" [ref=e194]
+                - button "▦Zone" [ref=e195]
+                - button "🏠Building" [ref=e196]
+              - button "🗑 Clear All Tiles" [ref=e197]
+            - generic [ref=e198]:
+              - generic [ref=e199]: Entities
+              - generic [ref=e200]:
+                - button "🗃Chest" [ref=e201]
+                - button "⚠Trap" [ref=e202]
+                - button "🌀Portal" [ref=e203]
+                - button "⊛NPC" [ref=e204]
+                - button "⛑Cover" [ref=e205]
+            - generic [ref=e206]:
+              - generic [ref=e207]: Lights
+              - generic [ref=e208]: "Ambient: 0.40"
+              - slider [ref=e209]: "0.4"
+              - generic [ref=e210]:
+                - button "🔥Torch" [ref=e211]
+                - button "💡Lamp" [ref=e212]
+                - button "✨Magic" [ref=e213]
+            - generic [ref=e214]:
+              - generic [ref=e215]: Edges
+              - button "🔗 Draw Edge" [ref=e216]
+            - generic [ref=e217]:
+              - generic [ref=e218]: Library
+              - button "💾 Save Snapshot" [ref=e219]
+              - button "📂 Open Library" [ref=e220]
+            - generic [ref=e221]:
+              - strong [ref=e222]: Hotkeys
+              - text: 1-7 select brush · E erase
+              - text: Left drag = paint · Right drag = pan · Wheel = zoom
+              - text: Click = place entity · Shift+click = delete entity
+              - emphasis [ref=e223]: Auto-saves on every stroke.
+              - text: Apply pushes the location live to all players.
+          - generic [ref=e227]:
+            - heading "⚔ Damage All Players" [level=2] [ref=e229]
+            - generic [ref=e230]:
+              - generic [ref=e231]:
+                - generic [ref=e232]: "Enemy Roll:"
+                - spinbutton [ref=e233]
+                - generic [ref=e234]: "Damage:"
+                - spinbutton [ref=e235]
+                - button "Apply to All" [ref=e236]
+              - generic [ref=e237]: —
+          - generic [ref=e239]:
+            - generic [ref=e240]:
+              - heading "📜 Event Log" [level=2] [ref=e241]
+              - button "📥 Export" [ref=e242]
+            - generic [ref=e244]:
+              - button "All" [ref=e245]
+              - button "⚔ Combat" [ref=e246]
+              - button "💰 Economy" [ref=e247]
+              - button "🎒 Inventory" [ref=e248]
+              - button "📜 Quests" [ref=e249]
+              - button "🗺 Map" [ref=e250]
+              - textbox "Search…" [ref=e251]
+          - generic [ref=e253]:
+            - generic [ref=e254]:
+              - heading "📜 Quests" [level=2] [ref=e255]
+              - generic [ref=e256]:
+                - button "📤 Assign" [ref=e257]
+                - button "+ Template" [ref=e258]
+            - generic [ref=e260]:
+              - button "Active Quests" [ref=e261]
+              - button "Templates" [ref=e262]
+          - generic [ref=e264]:
+            - generic [ref=e265]:
+              - heading "📚 NPC Library" [level=2] [ref=e266]
+              - generic [ref=e267]:
+                - button "+ Folder" [ref=e268]
+                - button "+ NPC" [ref=e269]
+                - button "+ Event" [ref=e270]
+            - generic [ref=e272]:
+              - generic [ref=e273]:
+                - paragraph [ref=e274]: Folders & Templates
+                - separator [ref=e275]
+              - paragraph [ref=e277]: Event Templates
+          - generic [ref=e279]:
+            - generic [ref=e280]:
+              - heading "🧬 Races & Professions" [level=2] [ref=e281]
+              - button "Seed Defaults" [ref=e282]
+            - generic [ref=e284]:
+              - generic [ref=e286]:
+                - paragraph [ref=e287]: Races
+                - button "+ Race" [ref=e288]
+              - generic [ref=e290]:
+                - paragraph [ref=e291]: Professions
+                - button "+ Profession" [ref=e292]
+          - generic [ref=e294]:
+            - heading "📢 Announcement Board" [level=2] [ref=e296]
+            - generic [ref=e298]:
+              - textbox "Write an announcement…" [ref=e299]
+              - generic [ref=e300]:
+                - button "📤 Post" [ref=e301]
+                - generic [ref=e302]:
+                  - checkbox "📌 Pin" [ref=e303]
+                  - text: 📌 Pin
+    - generic [ref=e304]:
+      - generic [ref=e305]:
+        - heading "ARIA AI" [level=2] [ref=e306]
+        - button "◀" [ref=e307]
+      - generic [ref=e308]:
+        - generic [ref=e309]:
+          - button "🎭 Narrate" [ref=e310]
+          - button "⚔ NPC" [ref=e311]
+          - button "🗡 Item" [ref=e312]
+          - button "📜 Summary" [ref=e313]
+        - generic [ref=e314]:
+          - textbox "Ask ARIA…" [ref=e315]
+          - button "Send" [ref=e316]
+  - generic [ref=e318]:
+    - generic [ref=e319]:
+      - heading "New Item" [level=2] [ref=e320]
+      - button "✕" [ref=e321]
+    - generic [ref=e322]:
+      - generic [ref=e323]:
+        - generic [ref=e324]:
+          - text: Name
+          - textbox "Item name" [ref=e325]
+        - generic [ref=e326]:
+          - text: Category
+          - combobox [ref=e327]
+        - generic [ref=e328]:
+          - text: Rarity
+          - combobox [ref=e329]:
+            - option "Common" [selected]
+            - option "Uncommon"
+            - option "Rare"
+            - option "Epic"
+            - option "Legendary"
+            - option "Mythic"
+            - option "Divine"
+        - generic [ref=e330]:
+          - text: Price
+          - generic [ref=e331]:
+            - generic [ref=e332]: P
+            - spinbutton [ref=e333]: "0"
+            - generic [ref=e334]: G
+            - spinbutton [ref=e335]: "0"
+            - generic [ref=e336]: S
+            - spinbutton [ref=e337]: "0"
+            - generic [ref=e338]: B
+            - spinbutton [ref=e339]: "0"
+        - generic [ref=e340]:
+          - generic [ref=e341]:
+            - checkbox "Equippable" [ref=e342]
+            - text: Equippable
+          - generic [ref=e343]:
+            - checkbox "Consumable" [ref=e344]
+            - text: Consumable
+          - generic [ref=e345]:
+            - checkbox "Potion" [ref=e346]
+            - text: Potion
+        - generic [ref=e347]:
+          - text: Mana Cost
+          - spinbutton [ref=e348]: "0"
+      - generic [ref=e349]:
+        - heading "🧪 Potion Identity" [level=3] [ref=e350]
+        - generic [ref=e351]: Icon
+      - generic [ref=e352]:
+        - text: Description
+        - textbox "Item description…" [ref=e353]
+      - generic [ref=e354]:
+        - text: Tags (comma-separated)
+        - textbox "magic, cursed, two-handed" [ref=e355]
+      - generic [ref=e357]:
+        - checkbox "This is a weapon" [ref=e358]
+        - text: This is a weapon
+      - generic [ref=e359]:
+        - generic [ref=e360]:
+          - generic [ref=e361]: "Dice:"
+          - spinbutton [ref=e362]: "1"
+          - generic [ref=e363]: d
+          - spinbutton [ref=e364]: "6"
+          - generic [ref=e365]: "Type:"
+          - combobox [ref=e366]:
+            - option "Physical" [selected]
+            - option "Fire"
+            - option "Ice"
+            - option "Lightning"
+            - option "Poison"
+            - option "Magic"
+            - option "Necrotic"
+            - option "Radiant"
+          - generic [ref=e367]: "Range:"
+          - textbox "melee" [ref=e368]
+          - generic [ref=e369]: "Cells:"
+          - spinbutton [ref=e370]: "1"
+        - generic [ref=e371]:
+          - generic [ref=e372]: "Hit stat:"
+          - combobox [ref=e373]:
+            - option "Strength" [selected]
+            - option "Dexterity"
+            - option "Constitution"
+            - option "Intelligence"
+            - option "Wisdom"
+            - option "Charisma"
+          - generic [ref=e374]: "Damage stat:"
+          - combobox [ref=e375]:
+            - option "Strength" [selected]
+            - option "Dexterity"
+            - option "Constitution"
+            - option "Intelligence"
+            - option "Wisdom"
+            - option "Charisma"
+            - option "None"
+        - generic [ref=e377]:
+          - generic [ref=e378]: Damage Modes
+          - button "+ Add mode" [ref=e379]
+      - generic [ref=e381]:
+        - heading "🧪 Use Effects" [level=3] [ref=e382]
+        - button "+ Add Effect" [ref=e383]
+      - generic [ref=e385]:
+        - heading "Bonuses" [level=3] [ref=e386]
+        - button "+ Add Bonus" [ref=e387]
+    - generic [ref=e388]:
+      - button "Cancel" [ref=e389]
+      - button "Delete Item" [ref=e390]
+      - button "Save Item" [ref=e391]
+  - generic [ref=e393]:
+    - generic [ref=e394]:
+      - heading "New Category" [level=2] [ref=e395]
+      - button "✕" [ref=e396]
+    - generic [ref=e397]:
+      - generic [ref=e398]:
+        - text: Name
+        - textbox "Category name" [ref=e399]
+      - generic [ref=e400]:
+        - text: Icon (emoji)
+        - textbox [ref=e401]: 📦
+    - generic [ref=e402]:
+      - button "Cancel" [ref=e403]
+      - button "Save" [ref=e404]
+  - generic [ref=e406]:
+    - generic [ref=e407]:
+      - heading "New Card" [level=2] [ref=e408]
+      - button "✕" [ref=e409]
+    - generic [ref=e410]:
+      - generic [ref=e411]:
+        - generic [ref=e412]:
+          - text: Name
+          - textbox "Card name" [ref=e413]
+        - generic [ref=e414]:
+          - text: Type
+          - combobox [ref=e415]:
+            - option "Character" [selected]
+            - option "Location"
+            - option "Item"
+            - option "Custom"
+      - generic [ref=e416]:
+        - text: Description
+        - textbox "Card description…" [ref=e417]
+      - generic [ref=e418]:
+        - text: Extra Data (JSON)
+        - 'textbox "{\"key\": \"value\"}" [ref=e419]'
+      - generic [ref=e420]:
+        - text: Image
+        - generic [ref=e422]: No image
+        - generic [ref=e423] [cursor=pointer]: 📁 Upload Image
+    - generic [ref=e424]:
+      - button "Cancel" [ref=e425]
+      - button "Delete" [ref=e426]
+      - button "Save Card" [ref=e427]
+  - generic [ref=e429]:
+    - generic [ref=e430]:
+      - heading "Entity" [level=2] [ref=e431]
+      - button "✕" [ref=e432]
+    - generic [ref=e434]:
+      - generic [ref=e435]: 📍 Base
+      - generic [ref=e436]:
+        - text: Name
+        - textbox "Name" [ref=e437]
+      - generic [ref=e438]:
+        - text: Type
+        - textbox [ref=e439]
+      - generic [ref=e441] [cursor=pointer]:
+        - checkbox "Visible to players" [ref=e442]
+        - generic [ref=e443]: Visible to players
+    - generic [ref=e444]:
+      - button "Delete" [ref=e445]
+      - button "Cancel" [ref=e446]
+      - button "Save" [ref=e447]
+  - generic [ref=e448]:
+    - generic [ref=e449]:
+      - text: New Light
+      - button "✕" [ref=e450]
+    - generic [ref=e452]:
+      - generic [ref=e453]: 💡 Light Settings
+      - generic [ref=e454]:
+        - text: Radius (cells)
+        - generic [ref=e455]:
+          - slider [ref=e456]: "4"
+          - text: "4"
+      - generic [ref=e457]:
+        - generic [ref=e458]: Bright radius (cells) 0 = auto
+        - generic [ref=e459]:
+          - slider [ref=e460]: "0"
+          - text: "0"
+      - generic [ref=e461]:
+        - text: Intensity
+        - generic [ref=e462]:
+          - slider [ref=e463]: "1"
+          - text: "1"
+      - generic [ref=e464]:
+        - text: Color
+        - textbox [ref=e465]: "#000000"
+      - generic [ref=e466]:
+        - text: Kind
+        - combobox [ref=e467]:
+          - option "torch" [selected]
+          - option "lamp"
+          - option "magic"
+          - option "sun"
+          - option "custom"
+    - generic [ref=e468]:
+      - button "Delete" [ref=e469]
+      - button "👁 Preview" [ref=e470]
+      - button "Cancel" [ref=e471]
+      - button "Save" [ref=e472]
+  - generic [ref=e474]:
+    - generic [ref=e475]:
+      - heading "New Edge" [level=2] [ref=e476]
+      - button "✕" [ref=e477]
+    - generic [ref=e479]:
+      - generic [ref=e480]:
+        - text: Side
+        - combobox [ref=e481]:
+          - option "North" [selected]
+          - option "South"
+          - option "East"
+          - option "West"
+      - generic [ref=e482]:
+        - generic [ref=e483]:
+          - text: Range Start
+          - spinbutton [ref=e484]
+        - generic [ref=e485]:
+          - text: Range End
+          - spinbutton [ref=e486]
+      - generic [ref=e487]:
+        - text: Target Location
+        - combobox [ref=e488]:
+          - option "None" [selected]
+      - generic [ref=e489]:
+        - generic [ref=e490]:
+          - text: Target Col
+          - spinbutton [ref=e491]
+        - generic [ref=e492]:
+          - text: Target Row
+          - spinbutton [ref=e493]
+    - generic [ref=e494]:
+      - button "Cancel" [ref=e495]
+      - button "Save" [ref=e496]
+  - generic [ref=e498]:
+    - generic [ref=e499]:
+      - heading "Library" [level=2] [ref=e500]
+      - button "✕" [ref=e501]
+    - button "Close" [ref=e503]
+  - generic [ref=e504]:
+    - generic [ref=e505]:
+      - text: 🎲 Dice Roll Log 0
+      - button "▼" [ref=e506]
+    - generic [ref=e508]: Rolls will appear here…
+  - generic [ref=e509]:
+    - text: Tweaks
+    - generic [ref=e510]:
+      - text: AI Sidebar
+      - checkbox "AI Sidebar" [checked] [ref=e512]
+    - generic [ref=e513]:
+      - text: Dice Log
+      - checkbox "Dice Log" [checked] [ref=e515]
+    - generic [ref=e516]:
+      - text: Compact Nav
+      - checkbox "Compact Nav" [ref=e518]
+    - generic [ref=e519]:
+      - text: Accent
+      - textbox "Accent" [ref=e520] [cursor=pointer]: "#b8821e"

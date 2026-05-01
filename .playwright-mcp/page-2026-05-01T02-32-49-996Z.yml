@@ -1,0 +1,177 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: ⚔
+      - generic [ref=e5]:
+        - generic [ref=e6]: Combat Companion
+        - generic [ref=e7]: Game Master
+    - generic [ref=e8]:
+      - generic [ref=e9]: Session
+      - generic "Click to copy" [ref=e10] [cursor=pointer]: HAWK-9907
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: —
+        - generic [ref=e15]: Name
+      - generic [ref=e16]:
+        - generic [ref=e17]: waiting
+        - generic [ref=e18]: Status
+      - generic [ref=e19]:
+        - generic [ref=e20]: "0"
+        - generic [ref=e21]: Turn
+      - generic [ref=e22]:
+        - generic [ref=e23]: "0"
+        - generic [ref=e24]: Online
+      - generic [ref=e25]:
+        - generic [ref=e28]: reconnecting (6)...
+        - generic [ref=e29]: Server
+      - generic [ref=e30]:
+        - generic [ref=e31]: "1"
+        - generic [ref=e32]: Players
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]: ⏱
+        - strong [ref=e36]: 0:00:00
+        - button "▶" [ref=e37] [cursor=pointer]
+      - button "🌙 Full Rest" [ref=e38] [cursor=pointer]
+      - button "End Session" [ref=e39] [cursor=pointer]
+  - generic [ref=e40]:
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - heading "Party (1)" [level=2] [ref=e129]
+        - generic [ref=e131] [cursor=pointer]:
+          - generic [ref=e133]: Hero
+          - generic [ref=e135]:
+            - generic [ref=e136]: HP 50/50
+            - generic [ref=e137]: KD 0
+          - generic [ref=e141]:
+            - button "📍 Place" [ref=e142]
+            - button "🔒" [ref=e143]
+          - generic [ref=e144]:
+            - spinbutton [ref=e145]: "2"
+            - generic [ref=e146]: min
+            - button "⏱" [ref=e147]
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - heading "NPCs" [level=2] [ref=e48]: NPCs
+          - button "+ NPC" [ref=e49] [cursor=pointer]
+        - paragraph [ref=e149]: No NPCs
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]: Session
+          - generic [ref=e55]: —
+        - generic [ref=e56]:
+          - generic [ref=e57]: Status
+          - generic [ref=e58]: Waiting
+        - generic [ref=e59]:
+          - generic [ref=e60]: Round
+          - generic [ref=e61]: "0"
+        - generic [ref=e62]:
+          - generic [ref=e63]: Connected
+          - generic [ref=e64]: "0"
+      - generic [ref=e65]:
+        - navigation [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e68]: Character
+            - button "◉ Detail" [ref=e69] [cursor=pointer]:
+              - generic [ref=e70]: ◉
+              - text: Detail
+            - button "✦ Abilities" [ref=e71] [cursor=pointer]:
+              - generic [ref=e72]: ✦
+              - text: Abilities
+          - generic [ref=e73]:
+            - generic [ref=e74]: Combat
+            - button "⚔ Combat" [ref=e75] [cursor=pointer]:
+              - generic [ref=e76]: ⚔
+              - text: Combat
+            - button "⟳ Initiative" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: ⟳
+              - text: Initiative
+            - button "⚡ Quick Actions" [ref=e79] [cursor=pointer]:
+              - generic [ref=e80]: ⚡
+              - text: Quick Actions
+          - generic [ref=e81]:
+            - generic [ref=e82]: World
+            - button "◈ Map" [active] [ref=e83] [cursor=pointer]:
+              - generic [ref=e84]: ◈
+              - text: Map
+            - button "⊕ Builder" [ref=e85] [cursor=pointer]:
+              - generic [ref=e86]: ⊕
+              - text: Builder
+            - button "⊞ Items" [ref=e87] [cursor=pointer]:
+              - generic [ref=e88]: ⊞
+              - text: Items
+            - button "🃏 Cards" [ref=e89] [cursor=pointer]:
+              - generic [ref=e90]: 🃏
+              - text: Cards
+            - button "⊛ NPC Library" [ref=e91] [cursor=pointer]:
+              - generic [ref=e92]: ⊛
+              - text: NPC Library
+            - button "◎ Races & Prof." [ref=e93] [cursor=pointer]:
+              - generic [ref=e94]: ◎
+              - text: Races & Prof.
+          - generic [ref=e95]:
+            - generic [ref=e96]: Session
+            - button "⊚ Quests" [ref=e97] [cursor=pointer]:
+              - generic [ref=e98]: ⊚
+              - text: Quests
+            - button "⊜ Board" [ref=e99] [cursor=pointer]:
+              - generic [ref=e100]: ⊜
+              - text: Board
+            - button "≡ Event Log" [ref=e101] [cursor=pointer]:
+              - generic [ref=e102]: ≡
+              - text: Event Log
+        - generic [ref=e150]:
+          - generic [ref=e151]:
+            - button "📂 Load from Library" [ref=e152] [cursor=pointer]
+            - button "🗑 Remove" [ref=e153] [cursor=pointer]
+            - combobox "Switch active location" [ref=e154]:
+              - option "— No active location —" [selected]
+            - combobox [ref=e156] [cursor=pointer]
+            - 'button "Grid: ON" [ref=e158] [cursor=pointer]'
+            - button "▢ Square" [ref=e159] [cursor=pointer]
+            - 'button "Fog: OFF" [ref=e161] [cursor=pointer]'
+            - button "🖌 Reveal" [ref=e162] [cursor=pointer]
+            - button "Reveal All" [ref=e163] [cursor=pointer]
+            - button "Reset" [ref=e164] [cursor=pointer]
+            - button "🎯 Center" [ref=e166] [cursor=pointer]
+            - button "📦 Chest" [ref=e168] [cursor=pointer]
+            - button "📦 List" [ref=e169] [cursor=pointer]
+            - 'button "🗺 Map: ON" [ref=e171] [cursor=pointer]'
+          - generic [ref=e172]:
+            - button "🖱" [ref=e173] [cursor=pointer]
+            - button "✏" [ref=e174] [cursor=pointer]
+            - button "▭" [ref=e175] [cursor=pointer]
+            - button "○" [ref=e176] [cursor=pointer]
+            - button "╱" [ref=e177] [cursor=pointer]
+            - button "→" [ref=e178] [cursor=pointer]
+            - button "📌" [ref=e179] [cursor=pointer]
+            - button "🗑" [ref=e180] [cursor=pointer]
+            - button "📏" [ref=e181] [cursor=pointer]
+            - button "🧱" [ref=e183] [cursor=pointer]
+            - button "🧨 Clear Walls" [ref=e184] [cursor=pointer]
+            - textbox [ref=e186] [cursor=pointer]: "#ff0000"
+            - slider [ref=e187]: "2"
+            - generic [ref=e188]:
+              - checkbox "Visible" [checked] [ref=e189]
+              - text: Visible
+            - button "🧹 Clear" [ref=e190] [cursor=pointer]
+    - generic [ref=e107]:
+      - generic [ref=e108] [cursor=pointer]:
+        - heading "ARIA AI" [level=2] [ref=e110]
+        - button "◀" [ref=e111]
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - button "🎭 Narrate" [ref=e114] [cursor=pointer]
+          - button "⚔ NPC" [ref=e115] [cursor=pointer]
+          - button "🗡 Item" [ref=e116] [cursor=pointer]
+          - button "📜 Summary" [ref=e117] [cursor=pointer]
+        - generic [ref=e119]:
+          - textbox "Ask ARIA…" [ref=e120]
+          - button "Send" [ref=e121] [cursor=pointer]
+  - generic [ref=e122]:
+    - generic [ref=e123] [cursor=pointer]:
+      - generic [ref=e124]: 🎲
+      - generic [ref=e125]: Dice Roll Log
+      - button "▼" [ref=e126]
+    - generic [ref=e128]: Rolls will appear here…

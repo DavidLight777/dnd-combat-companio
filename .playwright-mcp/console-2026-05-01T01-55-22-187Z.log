@@ -1,0 +1,7 @@
+[     535ms] [WARNING] loadInventory: TypeError: Cannot read properties of null (reading 'style')
+    at updateCurrencyDisplay (http://localhost:8000/static/js/player/08-log-inventory.js?v=6a00ac5b:106:13)
+    at loadInventory (http://localhost:8000/static/js/player/08-log-inventory.js?v=6a00ac5b:73:5) @ http://localhost:8000/static/js/player/08-log-inventory.js?v=6a00ac5b:76
+[   91685ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/wizard/4549/starting-roll:0
+[ 1142897ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/api/wizard/4549/starting-roll:0
+[ 1866675ms] [ERROR] WebSocket connection to 'ws://localhost:8000/ws/DAWN-0245?token=101dbe346b4283efc2a8bfadedc70d45' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8000/static/js/websocket-client.js?v=fa4e4b73:18
+[ 1871031ms] [ERROR] WebSocket connection to 'ws://localhost:8000/ws/DAWN-0245?token=101dbe346b4283efc2a8bfadedc70d45' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:8000/static/js/websocket-client.js?v=fa4e4b73:18
