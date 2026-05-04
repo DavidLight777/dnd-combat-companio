@@ -104,6 +104,51 @@ async def test_trap_dodge_offer_blocks_retrigger(client):
 
 
 @pytest.mark.asyncio
+async def test_trap_accept_hit_applies_damage(client):
+    sr = await client.post("/api/sessions/create", json={"name": "T"})
+    code = sr.json()["session_code"]
+
+    jr = await client.post("/api/sessions/join", json={
+        "session_code": code, "player_name": "Hero",
+    })
+    char_id = jr.json()["character_id"]
+    await client.patch(f"/api/characters/{char_id}", json={
+        "current_hp": 50,
+        "max_hp": 50,
+        "dexterity": 0,
+    })
+
+    mr = await client.post(f"/api/builder-v2/sessions/{code}/maps", json={"name": "M"})
+    map_id = mr.json()["id"]
+    lr = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 10, "rows": 10})
+    loc_id = lr.json()["id"]
+
+    tr = await client.post(f"/api/builder-v2/locations/{loc_id}/traps", json={
+        "col": 3, "row": 3, "name": "Dart",
+        "damage_dice": "1d6",
+        "undodgeable": False,
+        "charges": 1,
+    })
+    trap_id = tr.json()["id"]
+
+    await client.post(f"/api/builder-v2/characters/{char_id}/move-grid", json={
+        "location_id": loc_id, "col": 2, "row": 2,
+    })
+    await client.post(f"/api/builder-v2/characters/{char_id}/move-grid", json={
+        "col": 3, "row": 3,
+    })
+
+    res = await client.post(f"/api/builder-v2/traps/{trap_id}/dodge", json={
+        "character_id": char_id,
+        "force_hit": True,
+    })
+    assert res.status_code == 200
+    assert res.json()["missed"] is False
+    assert res.json()["damage"] > 0
+    assert res.json()["new_hp"] < 50
+
+
+@pytest.mark.asyncio
 async def test_chest_lockpick(client):
     """Chest lockpick endpoint unlocks on success."""
     sr = await client.post("/api/sessions/create", json={"name": "T"})
@@ -162,6 +207,159 @@ async def test_portal_size_cells(client):
     })
     assert ur.status_code == 200
     assert ur.json()["size_cells"] == 2
+
+
+@pytest.mark.asyncio
+async def test_portal_use_moves_character_to_target_location(client):
+    sr = await client.post("/api/sessions/create", json={"name": "T"})
+    code = sr.json()["session_code"]
+
+    jr = await client.post("/api/sessions/join", json={
+        "session_code": code, "player_name": "Hero",
+    })
+    char_id = jr.json()["character_id"]
+
+    mr = await client.post(f"/api/builder-v2/sessions/{code}/maps", json={"name": "M"})
+    map_id = mr.json()["id"]
+    lr1 = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"name": "A", "cols": 10, "rows": 10})
+    lr2 = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"name": "B", "cols": 8, "rows": 8})
+    loc_a = lr1.json()["id"]
+    loc_b = lr2.json()["id"]
+
+    pr = await client.post(f"/api/builder-v2/locations/{loc_a}/portals", json={
+        "col": 1,
+        "row": 1,
+        "target_location_id": loc_b,
+        "target_col": 3,
+        "target_row": 4,
+    })
+    portal_id = pr.json()["id"]
+
+    await client.post(f"/api/builder-v2/characters/{char_id}/move-grid", json={
+        "location_id": loc_a,
+        "col": 1,
+        "row": 1,
+    })
+
+    res = await client.post(f"/api/builder-v2/portals/{portal_id}/use", json={
+        "character_id": char_id,
+    })
+    assert res.status_code == 200
+    assert res.json()["location_id"] == loc_b
+    assert res.json()["col"] == 3
+    assert res.json()["row"] == 4
+
+    char = await client.get(f"/api/characters/{char_id}")
+    assert char.json()["current_location_id"] == loc_b
+    assert char.json()["col"] == 3
+    assert char.json()["row"] == 4
+
+
+@pytest.mark.asyncio
+async def test_trap_disarm_marks_trap_disarmed(client):
+    sr = await client.post("/api/sessions/create", json={"name": "T"})
+    code = sr.json()["session_code"]
+
+    jr = await client.post("/api/sessions/join", json={
+        "session_code": code, "player_name": "Hero",
+    })
+    char_id = jr.json()["character_id"]
+
+    mr = await client.post(f"/api/builder-v2/sessions/{code}/maps", json={"name": "M"})
+    map_id = mr.json()["id"]
+    lr = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 10, "rows": 10})
+    loc_id = lr.json()["id"]
+
+    tr = await client.post(f"/api/builder-v2/locations/{loc_id}/traps", json={
+        "col": 2,
+        "row": 2,
+        "name": "Wire",
+        "damage_dice": "1d4",
+        "dc_disarm": 1,
+    })
+    trap_id = tr.json()["id"]
+
+    res = await client.post(f"/api/builder-v2/traps/{trap_id}/disarm", json={
+        "character_id": char_id,
+    })
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    assert res.json()["is_disarmed"] is True
+
+    trap = await client.get(f"/api/builder-v2/traps/{trap_id}")
+    assert trap.json()["is_disarmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_player_map_hides_interior_objects_until_zone_entered(client):
+    sr = await client.post("/api/sessions/create", json={"name": "T"})
+    code = sr.json()["session_code"]
+
+    jr = await client.post("/api/sessions/join", json={
+        "session_code": code, "player_name": "Hero",
+    })
+    char_id = jr.json()["character_id"]
+
+    mr = await client.post(f"/api/builder-v2/sessions/{code}/maps", json={"name": "M"})
+    map_id = mr.json()["id"]
+    lr = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 8, "rows": 8})
+    loc_id = lr.json()["id"]
+
+    await client.post(f"/api/builder-v2/locations/{loc_id}/interiors", json={
+        "name": "House",
+        "kind": "building",
+        "reveal_mode": "on_enter",
+        "cells": [
+            {"col": 2, "row": 2},
+            {"col": 3, "row": 2},
+            {"col": 2, "row": 3},
+            {"col": 3, "row": 3},
+        ],
+    })
+    chest = await client.post(f"/api/builder-v2/locations/{loc_id}/chests", json={
+        "col": 2,
+        "row": 2,
+        "name": "House Chest",
+    })
+    trap = await client.post(f"/api/builder-v2/locations/{loc_id}/traps", json={
+        "col": 3,
+        "row": 3,
+        "name": "House Trap",
+        "damage_dice": "1d4",
+    })
+    portal = await client.post(f"/api/builder-v2/locations/{loc_id}/portals", json={
+        "col": 3,
+        "row": 2,
+        "name": "House Portal",
+        "target_location_id": loc_id,
+    })
+    await client.post(f"/api/builder-v2/maps/{map_id}/activate", json={})
+    await client.post(f"/api/builder-v2/locations/{loc_id}/activate", json={})
+
+    await client.patch(f"/api/characters/{char_id}", json={
+        "current_location_id": loc_id,
+        "col": 0,
+        "row": 0,
+    })
+    outside = (await client.get(f"/api/map/{code}?character_id={char_id}")).json()
+    assert chest.json()["id"] not in [c["id"] for c in outside["_mapChests"]]
+    assert trap.json()["id"] not in [t["id"] for t in outside["_traps"]]
+    assert portal.json()["id"] not in [p["id"] for p in outside["_portals"]]
+
+    gm_state = (await client.get(f"/api/map/{code}")).json()
+    assert chest.json()["id"] in [c["id"] for c in gm_state["_mapChests"]]
+    assert trap.json()["id"] in [t["id"] for t in gm_state["_traps"]]
+    assert portal.json()["id"] in [p["id"] for p in gm_state["_portals"]]
+
+    await client.patch(f"/api/characters/{char_id}", json={
+        "current_location_id": loc_id,
+        "col": 2,
+        "row": 2,
+    })
+    inside = (await client.get(f"/api/map/{code}?character_id={char_id}")).json()
+    assert chest.json()["id"] in [c["id"] for c in inside["_mapChests"]]
+    assert trap.json()["id"] in [t["id"] for t in inside["_traps"]]
+    assert portal.json()["id"] in [p["id"] for p in inside["_portals"]]
 
 
 @pytest.mark.asyncio

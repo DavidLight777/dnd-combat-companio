@@ -42,7 +42,7 @@ async function openPlayerChestModal(chest) {
         </div>`;
       content.querySelector('#pc-pick-lock').addEventListener('click', async () => {
         try {
-          const res = await api.post(`/api/chests/${chest.id}/pick-lock`, { character_id: CHAR_ID });
+          const res = await api.post(`/api/builder-v2/chests/${chest.id}/pick-lock`, { character_id: CHAR_ID });
           showToast(res.success ? '🔓 Lock picked!' : '🔒 Lockpick failed!');
           if (res.success) {
             overlay.remove();
@@ -119,13 +119,10 @@ function openPlayerPortalModal(portal) {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector('#pp-enter').addEventListener('click', async () => {
     try {
-      const res = await api.post(`/api/map-builder/portals/${portal.id}/use`, { character_id: CHAR_ID });
+      const res = await api.post(`/api/builder-v2/portals/${portal.id}/use`, { character_id: CHAR_ID });
       showToast('Teleported!');
       overlay.remove();
-      // If target floor changed, refresh map
-      if (res.target_floor_id) {
-        loadPlayerMapState();
-      }
+      loadPlayerMapState();
     } catch (e) {
       showToast('Failed to use portal');
       console.error(e);

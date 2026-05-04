@@ -221,9 +221,64 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         select(BV2Entity).where(BV2Entity.location_id == loc.id)
     )
     entities = ents_q.scalars().all()
+
+    zones_q = await db.execute(
+        select(BV2InteriorZone).where(BV2InteriorZone.location_id == loc.id)
+    )
+    interiors = []
+    cell_zone_ids = {}
+    for z in zones_q.scalars().all():
+        cells_q = await db.execute(
+            select(BV2InteriorCell).where(BV2InteriorCell.zone_id == z.id)
+        )
+        cells = [{"col": c.col, "row": c.row} for c in cells_q.scalars().all()]
+        interiors.append({
+            "id": z.id,
+            "name": z.name,
+            "kind": z.kind,
+            "reveal_mode": z.reveal_mode,
+            "ambient_light_override": z.ambient_light_override,
+            "cells": cells,
+        })
+        for c in cells:
+            cell_zone_ids.setdefault((c["col"], c["row"]), set()).add(z.id)
+
+    revealed_cells: list[str] = []
+    if character_id:
+        visit_q = await db.execute(
+            select(BV2VisitState)
+            .where(BV2VisitState.character_id == character_id)
+            .where(BV2VisitState.location_id == loc.id)
+        )
+        visit = visit_q.scalar_one_or_none()
+        if visit and visit.explored_tiles_json:
+            try:
+                tiles_list = json.loads(visit.explored_tiles_json)
+                revealed_cells = [f"{c},{r}" for c, r in tiles_list]
+            except Exception:
+                revealed_cells = []
+    revealed_set = set(revealed_cells)
+    revealed_zone_ids = {
+        zone_id
+        for (col, row), zone_ids in cell_zone_ids.items()
+        if f"{col},{row}" in revealed_set
+        for zone_id in zone_ids
+    }
+    own_char = next((c for c in chars if character_id and c.id == character_id), None)
+    if own_char and own_char.current_location_id == loc.id:
+        revealed_zone_ids.update(cell_zone_ids.get((own_char.col or 0, own_char.row or 0), set()))
+
+    def player_can_see_entity(e: BV2Entity) -> bool:
+        if not character_id:
+            return True
+        zone_ids = cell_zone_ids.get((e.col, e.row), set())
+        return not zone_ids or bool(zone_ids & revealed_zone_ids)
+
     chests = []
     for e in entities:
         if e.entity_type != "chest":
+            continue
+        if not player_can_see_entity(e):
             continue
         chest = await db.get(BV2Chest, e.id)
         if not chest:
@@ -262,6 +317,8 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         trap = await db.get(BV2Trap, e.id)
         if not trap:
             continue
+        if not player_can_see_entity(e):
+            continue
         if not e.visible_to_players:
             continue
         traps.append({
@@ -280,6 +337,10 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
     portals = []
     for e in entities:
         if e.entity_type != "portal":
+            continue
+        if not player_can_see_entity(e):
+            continue
+        if character_id and not e.visible_to_players:
             continue
         portal = await db.get(BV2Portal, e.id)
         portals.append({
@@ -324,40 +385,6 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
         }
         for e in edges_q.scalars().all()
     ]
-
-    # Interior zones
-    zones_q = await db.execute(
-        select(BV2InteriorZone).where(BV2InteriorZone.location_id == loc.id)
-    )
-    interiors = []
-    for z in zones_q.scalars().all():
-        cells_q = await db.execute(
-            select(BV2InteriorCell).where(BV2InteriorCell.zone_id == z.id)
-        )
-        interiors.append({
-            "id": z.id,
-            "name": z.name,
-            "kind": z.kind,
-            "reveal_mode": z.reveal_mode,
-            "ambient_light_override": z.ambient_light_override,
-            "cells": [{"col": c.col, "row": c.row} for c in cells_q.scalars().all()],
-        })
-
-    # Revealed cells from visit state
-    revealed_cells: list[str] = []
-    if character_id:
-        visit_q = await db.execute(
-            select(BV2VisitState)
-            .where(BV2VisitState.character_id == character_id)
-            .where(BV2VisitState.location_id == loc.id)
-        )
-        visit = visit_q.scalar_one_or_none()
-        if visit and visit.explored_tiles_json:
-            try:
-                tiles_list = json.loads(visit.explored_tiles_json)
-                revealed_cells = [f"{c},{r}" for c, r in tiles_list]
-            except Exception:
-                revealed_cells = []
 
     return {
         "has_map": True,
@@ -468,13 +495,21 @@ async def get_map_state(session_code: str, character_id: int | None = None, db: 
     )
     bv2_map = bv2_map_q.scalar_one_or_none()
     if bv2_map:
-        loc_q = await db.execute(
-            select(BV2Location)
-            .where(BV2Location.map_id == bv2_map.id)
-            .where(BV2Location.is_active == True)
-            .limit(1)
-        )
-        bv2_loc = loc_q.scalar_one_or_none()
+        bv2_loc = None
+        if character_id is not None:
+            char = next((c for c in chars if c.id == character_id), None)
+            if char and char.current_location_id:
+                candidate = await db.get(BV2Location, char.current_location_id)
+                if candidate and candidate.map_id == bv2_map.id:
+                    bv2_loc = candidate
+        if not bv2_loc:
+            loc_q = await db.execute(
+                select(BV2Location)
+                .where(BV2Location.map_id == bv2_map.id)
+                .where(BV2Location.is_active == True)
+                .limit(1)
+            )
+            bv2_loc = loc_q.scalar_one_or_none()
         if not bv2_loc:
             loc_q = await db.execute(
                 select(BV2Location)

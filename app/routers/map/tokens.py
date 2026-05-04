@@ -157,8 +157,10 @@ async def move_token(character_id: int, body: dict, db: AsyncSession = Depends(g
             sess = await db.get(Session, c.session_id)
             if sess:
                 await check_trap_trigger(db, c.current_location_id, c, sess.code)
-    except Exception:
-        pass
+    except Exception as e:
+        import traceback
+        print(f"[trap] check_trap_trigger failed: {e}")
+        traceback.print_exc()
 
     # Resolve session code so we can broadcast. If this character has
     # somehow been orphaned (no session), we skip the broadcast rather
