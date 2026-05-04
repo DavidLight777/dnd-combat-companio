@@ -1,6 +1,7 @@
 """Portal entity CRUD — typed detail table, no JSON."""
 
 from fastapi import Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -8,6 +9,8 @@ from app.models import (
     BV2Entity,
     BV2Location,
     BV2Portal,
+    Character,
+    InventoryItem,
 )
 from app.routers.builder_v2.common import (
     broadcast,
@@ -90,6 +93,67 @@ async def create_portal(location_id: int, body: dict, db: AsyncSession = Depends
 @router.get("/portals/{entity_id}")
 async def get_portal(entity_id: int, db: AsyncSession = Depends(get_session)):
     return await _portal_detail(entity_id, db)
+
+
+@router.post("/portals/{entity_id}/use")
+async def use_portal(entity_id: int, body: dict, db: AsyncSession = Depends(get_session)):
+    e = await _get_portal_entity(entity_id, db)
+    p = await db.get(BV2Portal, entity_id)
+    if not p:
+        raise HTTPException(404, "Portal detail missing")
+    if not p.is_active:
+        raise HTTPException(400, "Portal is inactive")
+    if p.target_location_id is None:
+        raise HTTPException(400, "Portal has no target")
+
+    char_id = int(body.get("character_id", 0))
+    char = await db.get(Character, char_id)
+    if not char:
+        raise HTTPException(404, "Character not found")
+
+    if p.requires_key_item_id is not None:
+        key_r = await db.execute(
+            select(InventoryItem)
+            .where(InventoryItem.character_id == char_id)
+            .where(InventoryItem.item_id == p.requires_key_item_id)
+            .where(InventoryItem.quantity > 0)
+        )
+        if not key_r.scalar_one_or_none():
+            raise HTTPException(403, "Required key item missing")
+
+    target = await db.get(BV2Location, p.target_location_id)
+    if not target:
+        raise HTTPException(404, "Target location not found")
+
+    from_location_id = char.current_location_id
+    col = max(0, min(target.cols - 1, int(p.target_col)))
+    row = max(0, min(target.rows - 1, int(p.target_row)))
+    char.current_location_id = target.id
+    char.col = col
+    char.row = row
+    char.map_x = (col + 0.5) / max(1, target.cols)
+    char.map_y = (row + 0.5) / max(1, target.rows)
+    await db.commit()
+    await db.refresh(char)
+
+    sess_code = await session_code_for_location(e.location_id, db)
+    if sess_code:
+        await broadcast(sess_code, "bv2.character_edge_transitioned", {
+            "character_id": char.id,
+            "from_location_id": from_location_id,
+            "to_location_id": char.current_location_id,
+            "col": char.col,
+            "row": char.row,
+        })
+    return {
+        "ok": True,
+        "character_id": char.id,
+        "from_location_id": from_location_id,
+        "to_location_id": char.current_location_id,
+        "location_id": char.current_location_id,
+        "col": char.col,
+        "row": char.row,
+    }
 
 
 @router.patch("/portals/{entity_id}")

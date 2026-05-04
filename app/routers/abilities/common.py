@@ -27,7 +27,10 @@ _ABILITY_JSON_FIELDS = ["tags", "passive_effect", "effect"]
 def _set_ability_fields(a: Ability, body: dict):
     for f in _ABILITY_FIELDS:
         if f in body:
-            setattr(a, f, body[f])
+            v = body[f]
+            if f == "rarity" and isinstance(v, str):
+                v = v.lower()
+            setattr(a, f, v)
     for f in _ABILITY_JSON_FIELDS:
         if f in body:
             v = body[f]

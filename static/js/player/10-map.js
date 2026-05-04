@@ -116,12 +116,12 @@ async function loadPlayerMapState() {
     state._drawings = ov.drawings || [];
     state._markers  = ov.markers  || [];
     state._objects  = ov.objects  || [];
-    state._traps    = ov.traps    || [];
+    if (!state.bv2_active_location_id) state._traps = ov.traps || [];
   } catch {
     state._drawings = [];
     state._markers  = [];
     state._objects  = [];
-    state._traps    = [];
+    if (!state.bv2_active_location_id) state._traps = [];
   }
   // Phase 7: bv2 bridge already populated _mapChests / _portals
   // when active_floor_id is null (bv2-sourced state). Only fetch
@@ -289,6 +289,7 @@ function _playerCanvasOptions() {
     },
     onMapChestClick: (chest) => openPlayerChestModal(chest),
     onPortalClick: (portal) => openPlayerPortalModal(portal),
+    onTrapClick: (trap) => openPlayerTrapModal(trap),
   };
 }
 

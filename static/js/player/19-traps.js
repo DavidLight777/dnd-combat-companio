@@ -1,4 +1,32 @@
 // Phase 17 Round 5: Player trap notifications
+function openPlayerTrapModal(trap) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:320px;text-align:center">
+      <h3>⚠️ ${trap.name || 'Trap'}</h3>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin:12px 0">Attempt to disarm this trap?</p>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-ghost btn-sm" id="tp-disarm-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="tp-disarm-roll">🔧 Disarm</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#tp-disarm-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#tp-disarm-roll').addEventListener('click', async () => {
+    try {
+      const res = await api.post(`/api/builder-v2/traps/${trap.id}/disarm`, { character_id: CHAR_ID });
+      showToast(res.success ? '🔧 Trap disarmed!' : '🔧 Disarm failed!');
+      overlay.remove();
+      if (typeof loadPlayerMapState === 'function') loadPlayerMapState();
+    } catch (e) {
+      showToast('Failed to disarm');
+      console.error(e);
+      overlay.remove();
+    }
+  });
+}
+
 ws.on('trap.triggered', d => {
   if (d.character_id !== CHAR_ID) return;
   if (d.missed) {
@@ -28,11 +56,20 @@ ws.on('trap.dodge_offer', d => {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.querySelector('#tp-dodge-cancel').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#tp-dodge-cancel').addEventListener('click', async () => {
+    try {
+      const res = await api.post(`/api/builder-v2/traps/${d.trap_id}/dodge`, { character_id: CHAR_ID, force_hit: true });
+      showToast(`💥 Trap hit you for ${res.damage || 0} damage!`);
+      if (typeof loadChar === 'function') loadChar();
+    } catch (e) {
+      showToast('Failed to resolve trap');
+      console.error(e);
+    }
+    overlay.remove();
+  });
   overlay.querySelector('#tp-dodge-roll').addEventListener('click', async () => {
     try {
-      const res = await api.post(`/api/traps/${d.trap_id}/dodge`, { character_id: CHAR_ID });
+      const res = await api.post(`/api/builder-v2/traps/${d.trap_id}/dodge`, { character_id: CHAR_ID });
       showToast(res.missed ? '🛡️ You dodged the trap!' : '💥 Dodge failed!');
       overlay.remove();
       if (typeof loadChar === 'function') loadChar();

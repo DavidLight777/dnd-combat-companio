@@ -484,9 +484,9 @@
       // Check portal click
       const portal = this._hitPortal(m.x, m.y);
       if (portal && this.onPortalClick) { this.onPortalClick(portal); return; }
-      // Check trap click (GM only — shows trap details)
+      // Check trap click
       const trap = this._hitTrap(m.x, m.y);
-      if (trap && this.role === 'gm' && this.onTrapClick) { this.onTrapClick(trap); return; }
+      if (trap && this.onTrapClick) { this.onTrapClick(trap); return; }
       const token = this._hitToken(m.x, m.y);
       if (token && this.onTokenClick) { this.onTokenClick(token, e.shiftKey); return; }
       // If nothing was clicked, fire onMapClick with normalized coords

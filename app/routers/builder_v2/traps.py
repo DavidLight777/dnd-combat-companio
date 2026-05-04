@@ -362,8 +362,9 @@ async def dodge_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get_
     char = await db.get(Character, char_id)
     if not char:
         raise HTTPException(404, "Character not found")
-    dodge_roll = random.randint(1, 20) + (char.dexterity or 0)
-    missed = dodge_roll >= (t.attack_bonus or 0) + 10  # simple dodge threshold
+    force_hit = bool(body.get("force_hit", False))
+    dodge_roll = 0 if force_hit else random.randint(1, 20) + (char.dexterity or 0)
+    missed = False if force_hit else dodge_roll >= (t.attack_bonus or 0) + 10  # simple dodge threshold
     if not missed:
         # apply damage
         damage = 0
@@ -388,7 +389,7 @@ async def dodge_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get_
             "new_hp": char.current_hp,
             "damage": damage if not missed else 0,
         })
-    return {"missed": missed, "new_hp": char.current_hp}
+    return {"missed": missed, "new_hp": char.current_hp, "damage": damage if not missed else 0}
 
 
 @router.post("/traps/{entity_id}/disarm")

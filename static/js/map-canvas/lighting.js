@@ -101,16 +101,18 @@
         for (const key of visSet) this.revealedCells.add(key);
 
         // Layer 1: unexplored darkness (respects ambient light)
-        const unexploredAlpha = Math.max(darkAlpha, 0.85);
+        const unexploredAlpha = darkAlpha;
         dctx.fillStyle = `rgba(0,0,0,${unexploredAlpha})`;
         dctx.fillRect(0, 0, w, h);
 
         // Layer 2: grey for explored but not currently visible (cell-accurate is fine here)
-        for (const key of this.revealedCells) {
-          if (visSet.has(key)) continue;
-          const [c, r] = key.split(',').map(Number);
-          dctx.fillStyle = 'rgba(0,0,0,0.55)';
-          dctx.fillRect(c * gs, r * gs, gs, gs);
+        if (darkAlpha > 0) {
+          for (const key of this.revealedCells) {
+            if (visSet.has(key)) continue;
+            const [c, r] = key.split(',').map(Number);
+            dctx.fillStyle = 'rgba(0,0,0,0.55)';
+            dctx.fillRect(c * gs, r * gs, gs, gs);
+          }
         }
 
         // Layer 3: punch a SMOOTH radial gradient for the visible area
