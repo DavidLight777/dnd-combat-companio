@@ -27,6 +27,20 @@ from app.routers.builder_v2.common import (
 from app.websocket_manager import manager
 
 _DICE_RE = re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
+_ABILITY_FIELDS = {
+    "str": "strength",
+    "strength": "strength",
+    "dex": "dexterity",
+    "dexterity": "dexterity",
+    "con": "constitution",
+    "constitution": "constitution",
+    "int": "intelligence",
+    "intelligence": "intelligence",
+    "wis": "wisdom",
+    "wisdom": "wisdom",
+    "cha": "charisma",
+    "charisma": "charisma",
+}
 
 
 def _parse_damage_dice(body: dict) -> tuple[int, int]:
@@ -403,7 +417,15 @@ async def disarm_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
     char = await db.get(Character, char_id)
     if not char:
         raise HTTPException(404, "Character not found")
-    disarm_roll = random.randint(1, 20) + (char.dexterity or 0)
+    ability = _ABILITY_FIELDS.get(str(body.get("ability", "dexterity")).lower(), "dexterity")
+    advantage_mode = str(body.get("advantage_mode", "normal")).lower()
+    if advantage_mode not in ("normal", "advantage", "disadvantage"):
+        advantage_mode = "normal"
+    d20_count = max(1, min(5, int(body.get("d20_count", 1))))
+    rolls = [random.randint(1, 20) for _ in range(d20_count)]
+    chosen_roll = max(rolls) if advantage_mode == "advantage" else min(rolls) if advantage_mode == "disadvantage" else rolls[0]
+    modifier = getattr(char, ability, 0) or 0
+    disarm_roll = chosen_roll + modifier
     success = disarm_roll >= t.dc_disarm
     if success:
         t.is_disarmed = True
@@ -415,5 +437,22 @@ async def disarm_trap(entity_id: int, body: dict, db: AsyncSession = Depends(get
             "trap_id": entity_id,
             "success": success,
             "is_disarmed": t.is_disarmed,
+            "ability": ability,
+            "rolls": rolls,
+            "chosen_roll": chosen_roll,
+            "modifier": modifier,
+            "total": disarm_roll,
+            "dc": t.dc_disarm,
+            "advantage_mode": advantage_mode,
         })
-    return {"success": success, "is_disarmed": t.is_disarmed}
+    return {
+        "success": success,
+        "is_disarmed": t.is_disarmed,
+        "ability": ability,
+        "rolls": rolls,
+        "chosen_roll": chosen_roll,
+        "modifier": modifier,
+        "total": disarm_roll,
+        "dc": t.dc_disarm,
+        "advantage_mode": advantage_mode,
+    }

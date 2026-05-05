@@ -145,10 +145,11 @@ function renderProfessionsPanel(professions) {
       return `<span class="chip-muted">${(b.type||'').replace(/_/g,' ')}+${b.value||0}</span>`;
     }).join('');
     const abilities = Array.isArray(p.special_abilities) ? p.special_abilities : [];
-    return `<div class="profession-card">
+    return `<div class="profession-card prof-card">
       <div class="prof-head">
+        <div class="ab-ico" style="width:34px;height:34px;border-radius:8px;background:rgba(184,130,30,0.18);display:flex;align-items:center;justify-content:center;font-size:1.1rem">⚒</div>
         <span class="prof-name">${p.name || 'Profession'}</span>
-        <span class="prof-level">L ${p.level}/5</span>
+        <span class="prof-level prof-lvl">LV ${p.level}</span>
         ${p.is_active ? '' : '<span class="chip-muted">inactive</span>'}
       </div>
       ${p.description ? `<div class="prof-desc">${p.description}</div>` : ''}
@@ -220,40 +221,31 @@ function renderCharSidebar() {
   }
 }
 
-// FIX 2: Sidebar characteristic roll (wired once at init)
-let _csRollAdv = 'normal';
-document.addEventListener('click', (e) => {
-  if (e.target && e.target.closest('#cs-roll-adv button')) {
-    const btn = e.target.closest('button');
-    _csRollAdv = btn.dataset.mode;
-    document.querySelectorAll('#cs-roll-adv button').forEach(b => b.classList.toggle('active', b === btn));
-  }
-});
-document.addEventListener('click', async (e) => {
-  if (e.target && e.target.id === 'btn-cs-roll') {
-    const stat = document.getElementById('cs-roll-stat').value;
-    const rollType = document.getElementById('cs-roll-type').value;
-    const diceCount = parseInt(document.getElementById('cs-roll-dice-count')?.value) || 1;
-    const diceType = parseInt(document.getElementById('cs-roll-dice-type')?.value) || 20;
-    const resEl = document.getElementById('cs-roll-result');
-    try {
+function initSidebarRollWidget() {
+  const host = document.getElementById('cs-roll-widget-host');
+  if (!host || typeof createD20RollForm !== 'function') return;
+  createD20RollForm(host, {
+    idPrefix: 'cs-roll',
+    title: 'Characteristic Roll',
+    diceTypes: [4, 6, 8, 10, 12, 20, 100],
+    defaultDiceType: 20,
+    maxDice: 20,
+    rollButtonText: 'Roll',
+    onRoll: async ({ ability, rollType, diceCount, diceType, advantageMode }) => {
       const res = await api.post(`/api/characters/${CHAR_ID}/roll-characteristic`, {
-        stat, roll_type: rollType, advantage_mode: _csRollAdv,
+        stat: ability, roll_type: rollType, advantage_mode: advantageMode,
         dice_count: diceCount, dice_type: diceType,
       });
-      let advTag = '';
-      if (res.advantage_mode === 'advantage') advTag = ' <span class="adv-badge advantage">ADV</span>';
-      else if (res.advantage_mode === 'disadvantage') advTag = ' <span class="adv-badge disadvantage">DISADV</span>';
-      resEl.innerHTML = `<span style="color:var(--accent)">${res.description}</span>${advTag}`;
       addLog(`🎲 ${res.description}`);
       if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
         ws.ws.send(JSON.stringify({ type: 'roll.characteristic', ...res }));
       }
-    } catch {
-      if (resEl) resEl.textContent = 'Roll failed';
-    }
-  }
-});
+      return res;
+    },
+    resultFormatter: res => `<span style="color:var(--accent)">${res.description}</span>`,
+  });
+}
+document.addEventListener('DOMContentLoaded', initSidebarRollWidget);
 function renderAll() {
   renderHP();
   renderStats();

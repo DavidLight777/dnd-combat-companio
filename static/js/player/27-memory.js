@@ -40,14 +40,14 @@ function renderMemory() {
   const labels = { npc_encounter: '👤 NPC Encounters', event: '📍 Events', note: '📝 My Notes' };
   for (const [type, entries] of Object.entries(groups)) {
     if (!entries.length) continue;
-    html += `<div style="font-weight:700;font-size:0.82rem;margin:8px 0 4px">${labels[type]}</div>`;
-    html += entries.map(m => `<div class="memory-entry" data-mem-id="${m.id}">
+    html += `<div class="page-title" style="font-size:0.68rem;margin-top:12px">${labels[type]}</div>`;
+    html += entries.map(m => `<div class="memory-entry journal-entry" data-mem-id="${m.id}">
       <div style="display:flex;align-items:center;gap:8px">
-        <span class="me-title">${m.title}</span>
-        <span class="me-type">${m.entry_type}</span>
+        <span class="me-title je-title">${m.title}</span>
+        <span class="me-type je-type">${m.entry_type}</span>
         ${m.entry_type === 'note' ? `<button class="btn btn-ghost btn-xs" data-del-mem="${m.id}" style="margin-left:auto;color:var(--accent-red)">✕</button>` : ''}
       </div>
-      <div class="me-content">${m.content || ''}</div>
+      <div class="me-content je-excerpt">${m.content || ''}</div>
     </div>`).join('');
   }
   list.innerHTML = html;

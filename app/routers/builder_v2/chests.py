@@ -22,6 +22,21 @@ from app.routers.builder_v2.common import (
     session_code_for_location,
 )
 
+_ABILITY_FIELDS = {
+    "str": "strength",
+    "strength": "strength",
+    "dex": "dexterity",
+    "dexterity": "dexterity",
+    "con": "constitution",
+    "constitution": "constitution",
+    "int": "intelligence",
+    "intelligence": "intelligence",
+    "wis": "wisdom",
+    "wisdom": "wisdom",
+    "cha": "charisma",
+    "charisma": "charisma",
+}
+
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
@@ -187,13 +202,22 @@ async def pick_lock(entity_id: int, body: dict, db: AsyncSession = Depends(get_s
     if not chest:
         raise HTTPException(404, "Chest detail missing")
     if not chest.is_locked:
-        return {"success": True, "is_locked": False}
+        return {"success": True, "is_locked": False, "rolls": [], "chosen_roll": 0, "modifier": 0, "total": 0, "dc": chest.lock_dc, "advantage_mode": "normal", "ability": "dexterity"}
     char_id = int(body.get("character_id", 0))
     char = await db.get(Character, char_id)
     if not char:
         raise HTTPException(404, "Character not found")
-    roll = random.randint(1, 20) + (char.dexterity or 0)
+    ability = _ABILITY_FIELDS.get(str(body.get("ability", "dexterity")).lower(), "dexterity")
+    advantage_mode = str(body.get("advantage_mode", "normal")).lower()
+    if advantage_mode not in ("normal", "advantage", "disadvantage"):
+        advantage_mode = "normal"
+    d20_count = max(1, min(5, int(body.get("d20_count", 1))))
+    rolls = [random.randint(1, 20) for _ in range(d20_count)]
+    chosen_roll = max(rolls) if advantage_mode == "advantage" else min(rolls) if advantage_mode == "disadvantage" else rolls[0]
+    modifier = getattr(char, ability, 0) or 0
+    roll = chosen_roll + modifier
     success = roll >= chest.lock_dc
+
     if success:
         chest.is_locked = False
         chest.is_opened = True
@@ -204,7 +228,18 @@ async def pick_lock(entity_id: int, body: dict, db: AsyncSession = Depends(get_s
             "location_id": e.location_id,
             "entity": await _chest_detail(entity_id, db),
         })
-    return {"success": success, "is_locked": chest.is_locked, "roll": roll}
+    return {
+        "success": success,
+        "is_locked": chest.is_locked,
+        "roll": roll,
+        "rolls": rolls,
+        "chosen_roll": chosen_roll,
+        "modifier": modifier,
+        "total": roll,
+        "dc": chest.lock_dc,
+        "advantage_mode": advantage_mode,
+        "ability": ability,
+    }
 
 
 @router.delete("/chests/{entity_id}")

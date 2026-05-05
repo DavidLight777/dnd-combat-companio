@@ -7,9 +7,9 @@
 // ══════════════════════════════════════════════════════════════
 function renderLog() {
   const cl = $('#calc-log');
-  cl.innerHTML = calcLog.map(e => `<div class="log-entry"><span class="log-time">${e.time}</span> ${e.text}</div>`).join('');
+  cl.innerHTML = calcLog.map(e => `<div class="log-entry"><span class="log-time">${e.time}</span><span class="log-detail">${e.text}</span></div>`).join('');
   const rl = $('#roll-history-log');
-  rl.innerHTML = rollHistory.map(e => `<div class="log-entry"><span class="log-time">${e.time}</span> [${e.type}] ${e.desc} → <strong>${e.result}</strong></div>`).join('');
+  rl.innerHTML = rollHistory.map(e => `<div class="log-entry"><span class="log-time">${e.time}</span><span class="log-tag roll">${e.type}</span><span class="log-detail">${e.desc} → <strong>${e.result}</strong></span></div>`).join('');
 }
 
 // Log tab switching
@@ -101,12 +101,17 @@ function applyInvTab() {
 
 function updateCurrencyDisplay(c) {
   if (!c) return;
-  const pe = $('#curr-plat');
-  if (c.platinum > 0) { pe.style.display = ''; pe.querySelector('strong').textContent = c.platinum; }
-  else { pe.style.display = 'none'; }
-  $('#curr-gold').querySelector('strong').textContent = c.gold;
-  $('#curr-silver').querySelector('strong').textContent = c.silver;
-  $('#curr-copper').querySelector('strong').textContent = c.bronze || c.copper;
+  const pe = $('#curr-plat') || $('.inv-curr-plat');
+  if (pe) {
+    if (c.platinum > 0) { pe.style.display = ''; pe.querySelector('strong').textContent = c.platinum; }
+    else { pe.style.display = 'none'; }
+  }
+  const gold = $('#curr-gold') || $('.inv-curr-gold');
+  const silver = $('#curr-silver') || $('.inv-curr-silver');
+  const bronze = $('#curr-copper') || $('.inv-curr-copper');
+  if (gold) gold.querySelector('strong').textContent = c.gold || 0;
+  if (silver) silver.querySelector('strong').textContent = c.silver || 0;
+  if (bronze) bronze.querySelector('strong').textContent = c.bronze || c.copper || 0;
 }
 
 function renderEquipmentSlots(items) {

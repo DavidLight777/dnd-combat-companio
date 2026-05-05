@@ -3,27 +3,42 @@ function openPlayerTrapModal(trap) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal-content" style="max-width:320px;text-align:center">
+    <div class="modal-content" style="max-width:360px">
       <h3>⚠️ ${trap.name || 'Trap'}</h3>
       <p style="color:var(--text-muted);font-size:0.85rem;margin:12px 0">Attempt to disarm this trap?</p>
-      <div style="display:flex;gap:8px;justify-content:center">
+      <div id="tp-disarm-form"></div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:8px">
         <button class="btn btn-ghost btn-sm" id="tp-disarm-cancel">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="tp-disarm-roll">🔧 Disarm</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector('#tp-disarm-cancel').addEventListener('click', () => overlay.remove());
-  overlay.querySelector('#tp-disarm-roll').addEventListener('click', async () => {
-    try {
-      const res = await api.post(`/api/builder-v2/traps/${trap.id}/disarm`, { character_id: CHAR_ID });
-      showToast(res.success ? '🔧 Trap disarmed!' : '🔧 Disarm failed!');
-      overlay.remove();
+  if (typeof createD20RollForm !== 'function') {
+    showToast('Roll UI failed to load');
+    return;
+  }
+  createD20RollForm(overlay.querySelector('#tp-disarm-form'), {
+    idPrefix: 'tp-disarm',
+    hideRollType: true,
+    defaultAbility: 'dexterity',
+    maxDice: 5,
+    rollButtonText: 'Disarm',
+    onRoll: async ({ ability, diceCount, advantageMode }) => {
+      const advantage_mode = advantageMode;
+      const d20_count = diceCount;
+      const res = await api.post(`/api/builder-v2/traps/${trap.id}/disarm`, { character_id: CHAR_ID, ability, advantage_mode, d20_count });
+      if (!res?.rolls) throw new Error(res?.detail || 'Disarm failed');
+      const mod = res.modifier >= 0 ? `+${res.modifier}` : `${res.modifier}`;
+      showToast(`${res.success ? '🔧 Trap disarmed!' : '🔧 Disarm failed!'} Roll ${res.rolls.join(', ')} → ${res.chosen_roll}${mod} = ${res.total} vs DC ${res.dc}`);
+      setTimeout(() => overlay.remove(), 400);
       if (typeof loadPlayerMapState === 'function') loadPlayerMapState();
-    } catch (e) {
-      showToast('Failed to disarm');
-      console.error(e);
-      overlay.remove();
-    }
+      return res;
+    },
+    resultFormatter: res => {
+      if (!res?.rolls) return '';
+      const mod = res.modifier >= 0 ? `+${res.modifier}` : `${res.modifier}`;
+      return `<span style="color:var(--accent)">${res.rolls.join(', ')} → ${res.chosen_roll}${mod} = ${res.total} vs DC ${res.dc}</span>`;
+    },
   });
 }
 

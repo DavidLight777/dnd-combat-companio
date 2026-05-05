@@ -555,6 +555,365 @@
     .builder-brush.active { background: var(--accent) !important; color: #0a0806 !important; border-color: var(--accent) !important; }
 
     /* ═══════════════════════════════════════════════════════════
+       BUILDER — floating-panels redesign
+    ═══════════════════════════════════════════════════════════ */
+    .bld-stage {
+      flex: 1; position: relative; overflow: hidden;
+      background:
+        radial-gradient(1200px 700px at 50% 40%, #1a1612 0%, #0a0908 65%, #050403 100%);
+    }
+    .bld-empty {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; pointer-events: none;
+      color: var(--text-muted); text-align: center;
+    }
+    .bld-empty-glyph {
+      font-size: 3rem; color: var(--accent); opacity: 0.6; margin-bottom: 10px;
+      font-family: var(--font-d);
+    }
+    .bld-empty-title { font-size: 1rem; color: var(--text-primary); margin-bottom: 4px; letter-spacing: 0.05em; }
+    .bld-empty-hint  { font-size: 0.78rem; }
+
+    /* Generic floating panel */
+    .bld-panel {
+      position: absolute; z-index: 20;
+      background: rgba(17,16,16,0.92);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(220,175,90,0.14);
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03) inset;
+      color: var(--text-primary);
+      font-size: 0.78rem;
+      user-select: none;
+    }
+    .bld-panel.collapsed .bld-panel-body { display: none; }
+    .bld-panel.collapsed .bld-collapse { transform: rotate(-90deg); }
+
+    /* Drag handle */
+    .bld-drag-handle {
+      cursor: grab; color: var(--text-faint);
+      letter-spacing: -2px; font-size: 0.7rem;
+      padding: 0 4px; user-select: none;
+    }
+    .bld-drag-handle:active { cursor: grabbing; }
+
+    .bld-panel-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(220,175,90,0.08);
+      background: linear-gradient(180deg, rgba(184,130,30,0.04) 0%, transparent 100%);
+      border-radius: 10px 10px 0 0;
+    }
+    .bld-panel-title {
+      flex: 1; font-family: var(--font-d); font-size: 0.65rem; font-weight: 600;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-primary);
+    }
+    .bld-collapse {
+      width: 20px; height: 20px; padding: 0; background: transparent;
+      border: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem;
+      transition: transform var(--t-fast), color var(--t-fast);
+    }
+    .bld-collapse:hover { color: var(--text-primary); }
+    .bld-panel-body { padding: 10px; }
+
+    .bld-count-badge {
+      font-size: 0.62rem; color: var(--accent);
+      background: rgba(184,130,30,0.12); padding: 2px 7px; border-radius: 10px;
+      font-variant-numeric: tabular-nums; font-weight: 600;
+      border: 1px solid rgba(184,130,30,0.18);
+    }
+
+    /* ── Top toolbar ───────────────────────────────── */
+    .bld-toolbar {
+      top: 12px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: stretch; gap: 0;
+      padding: 6px 8px;
+      max-width: calc(100% - 24px);
+    }
+    .bld-tb-group {
+      display: flex; flex-direction: column; gap: 3px; padding: 0 10px;
+      min-width: 0;
+    }
+    .bld-tb-grow { flex: 1; min-width: 200px; max-width: 280px; }
+    .bld-tb-label {
+      font-size: 0.55rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--text-faint); font-weight: 600;
+    }
+    .bld-tb-row { display: flex; align-items: center; gap: 4px; }
+    .bld-tb-sep { width: 1px; background: rgba(220,175,90,0.08); margin: 4px 0; }
+
+    .bld-input {
+      background: var(--bg-input); border: 1px solid var(--border);
+      color: var(--text-primary); border-radius: 6px;
+      padding: 5px 8px; font-size: 0.76rem; min-width: 0;
+      flex: 1; height: 28px;
+    }
+    .bld-input:focus { border-color: rgba(184,130,30,0.5); outline: none; }
+
+    .bld-icon-btn {
+      width: 28px; height: 28px; padding: 0;
+      background: rgba(255,255,255,0.02); color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: 6px;
+      cursor: pointer; font-size: 0.85rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: all var(--t-fast); flex-shrink: 0;
+    }
+    .bld-icon-btn:hover { color: var(--text-primary); border-color: var(--border-active); background: rgba(184,130,30,0.06); }
+    .bld-icon-btn.active { color: var(--accent); border-color: rgba(184,130,30,0.4); background: rgba(184,130,30,0.1); }
+    .bld-toggle-btn:not(.active) { opacity: 0.4; }
+
+    .bld-chip {
+      height: 28px; padding: 0 10px;
+      background: rgba(255,255,255,0.02); color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: 14px;
+      cursor: pointer; font-size: 0.7rem;
+      transition: all var(--t-fast); white-space: nowrap;
+    }
+    .bld-chip:hover { color: var(--accent); border-color: rgba(184,130,30,0.35); background: rgba(184,130,30,0.06); }
+
+    .bld-apply-btn {
+      height: 28px; padding: 0 16px;
+      background: linear-gradient(180deg, #c89028 0%, #a06f18 100%);
+      color: #1a0f04; font-weight: 700; font-size: 0.78rem;
+      border: 1px solid #d8a040; border-radius: 6px;
+      cursor: pointer; letter-spacing: 0.04em;
+      box-shadow: 0 2px 6px rgba(184,130,30,0.3), 0 1px 0 rgba(255,255,255,0.15) inset;
+      transition: all var(--t-fast); white-space: nowrap;
+    }
+    .bld-apply-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+    /* ── Left tools ───────────────────────────────── */
+    .bld-tools { top: 110px; left: 12px; width: 230px; }
+    .bld-subtabs {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 2px;
+      background: var(--bg-surface-3); padding: 2px; border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    .bld-subtab {
+      padding: 5px 0; font-size: 0.66rem; font-weight: 500;
+      background: transparent; border: none; color: var(--text-muted);
+      cursor: pointer; border-radius: 4px;
+      transition: all var(--t-fast);
+    }
+    .bld-subtab:hover { color: var(--text-primary); }
+    .bld-subtab.active { background: var(--accent); color: #0a0806; font-weight: 600; }
+
+    .bld-palette {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px;
+    }
+    .bld-tool {
+      position: relative;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; padding: 9px 4px;
+      background: rgba(255,255,255,0.015);
+      border: 1px solid var(--border); border-radius: 7px;
+      color: var(--text-primary); cursor: pointer;
+      transition: all var(--t-fast); font-size: 0.7rem;
+    }
+    .bld-tool:hover {
+      border-color: rgba(184,130,30,0.32);
+      background: rgba(184,130,30,0.05);
+      transform: translateY(-1px);
+    }
+    .bld-tool.active {
+      border-color: var(--accent);
+      background: rgba(184,130,30,0.13);
+      box-shadow: 0 0 0 1px rgba(184,130,30,0.4) inset, 0 4px 12px rgba(184,130,30,0.15);
+    }
+    .bld-tool-icon {
+      width: 30px; height: 30px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.95rem; color: #e8dcc4;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+    }
+    .bld-tool-name { font-weight: 500; font-size: 0.7rem; }
+    .bld-tool-key {
+      position: absolute; top: 4px; right: 5px;
+      font-size: 0.55rem; color: var(--text-faint);
+      background: rgba(0,0,0,0.4); padding: 1px 4px; border-radius: 3px;
+      letter-spacing: 0.05em;
+    }
+    .bld-tool.active .bld-tool-key { color: var(--accent); background: rgba(184,130,30,0.18); }
+
+    .bld-clear-btn {
+      width: 100%; margin-top: 10px; padding: 6px;
+      background: rgba(174,60,60,0.1); border: 1px solid rgba(174,60,60,0.3);
+      color: #d57272; border-radius: 6px; cursor: pointer;
+      font-size: 0.7rem; transition: all var(--t-fast);
+    }
+    .bld-clear-btn:hover { background: rgba(174,60,60,0.18); color: #fff; }
+
+    /* ── Inspector ───────────────────────────────── */
+    .bld-inspector { top: 12px; right: 12px; width: 250px; }
+    .bld-insp-section {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(220,175,90,0.06);
+    }
+    .bld-insp-section:first-child { padding-top: 0; }
+    .bld-insp-section:last-of-type { border-bottom: none; padding-bottom: 6px; }
+    .bld-insp-head {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--text-faint); font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .bld-active-brush {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 9px;
+      background: rgba(184,130,30,0.07);
+      border: 1px solid rgba(184,130,30,0.22);
+      border-radius: 7px;
+    }
+    .bld-active-name { font-weight: 600; font-size: 0.82rem; }
+    .bld-active-hint { font-size: 0.65rem; color: var(--text-muted); margin-top: 1px; }
+
+    .bld-status-pill {
+      font-size: 0.58rem; padding: 2px 7px; border-radius: 8px;
+      font-weight: 600; letter-spacing: 0.04em;
+    }
+    .bld-status-bright { color: #e8c578; background: rgba(232,197,120,0.12); border: 1px solid rgba(232,197,120,0.25); }
+    .bld-status-dim    { color: #8aa0c8; background: rgba(138,160,200,0.12); border: 1px solid rgba(138,160,200,0.25); }
+    .bld-status-dark   { color: #6a78a0; background: rgba(106,120,160,0.12); border: 1px solid rgba(106,120,160,0.25); }
+
+    .bld-row-label {
+      display: flex; justify-content: space-between;
+      font-size: 0.68rem; color: var(--text-muted); margin-bottom: 4px;
+    }
+    .bld-row-label span:last-child { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+    .bld-slider {
+      width: 100%; height: 4px; background: var(--bg-surface-3);
+      border-radius: 2px; outline: none; -webkit-appearance: none;
+      cursor: pointer;
+    }
+    .bld-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      background: var(--accent); border: 2px solid #1a1410; border-radius: 50%;
+      cursor: pointer;
+    }
+    .bld-slider::-moz-range-thumb {
+      width: 14px; height: 14px; background: var(--accent);
+      border: 2px solid #1a1410; border-radius: 50%; cursor: pointer;
+    }
+
+    .bld-checkbox {
+      display: flex; align-items: center; gap: 7px;
+      margin-top: 8px; font-size: 0.7rem; color: var(--text-muted);
+      cursor: pointer;
+    }
+    .bld-checkbox input { width: 13px; height: 13px; }
+
+    .bld-seg {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 0;
+      background: var(--bg-surface-3); border: 1px solid var(--border);
+      border-radius: 6px; padding: 2px;
+    }
+    .bld-seg button {
+      padding: 5px 0; background: transparent; border: none;
+      color: var(--text-muted); cursor: pointer; font-size: 0.68rem;
+      border-radius: 4px; transition: all var(--t-fast);
+    }
+    .bld-seg button:hover { color: var(--text-primary); }
+    .bld-seg button.active { background: var(--accent); color: #0a0806; font-weight: 600; }
+
+    .bld-grid-2 {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
+    }
+    .bld-num { display: flex; flex-direction: column; gap: 3px; }
+    .bld-num span { font-size: 0.62rem; color: var(--text-faint); letter-spacing: 0.06em; }
+    .bld-num input {
+      background: var(--bg-input); border: 1px solid var(--border);
+      color: var(--text-primary); border-radius: 5px;
+      padding: 4px 7px; font-size: 0.74rem; height: 26px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bld-save-line {
+      margin-top: 10px; font-size: 0.65rem; color: var(--accent-green);
+      text-align: center; opacity: 0.85;
+    }
+
+    /* ── Objects list ───────────────────────────────── */
+    .bld-objects { right: 12px; bottom: 48px; width: 270px; max-height: 38vh; display: flex; flex-direction: column; }
+    .bld-objects .bld-panel-body { display: flex; flex-direction: column; min-height: 0; gap: 8px; padding: 9px; }
+
+    .bld-search {
+      width: 100%; height: 28px; padding: 0 10px;
+      background: var(--bg-input); border: 1px solid var(--border);
+      color: var(--text-primary); border-radius: 6px;
+      font-size: 0.74rem;
+    }
+    .bld-search:focus { border-color: rgba(184,130,30,0.5); outline: none; }
+
+    .bld-obj-tabs {
+      display: flex; gap: 3px; flex-wrap: wrap;
+    }
+    .bld-obj-tab {
+      flex: 1; padding: 4px 6px; min-width: 0;
+      background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+      color: var(--text-muted); border-radius: 5px; cursor: pointer;
+      font-size: 0.65rem;
+      display: flex; align-items: center; justify-content: center; gap: 3px;
+      transition: all var(--t-fast);
+    }
+    .bld-obj-tab:hover { color: var(--text-primary); }
+    .bld-obj-tab.active { color: var(--accent); border-color: rgba(184,130,30,0.4); background: rgba(184,130,30,0.08); }
+    .bld-obj-tab span { font-variant-numeric: tabular-nums; opacity: 0.7; }
+
+    .bld-obj-list {
+      flex: 1; overflow-y: auto; min-height: 80px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .bld-obj-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.015);
+      border: 1px solid transparent; border-radius: 5px;
+      cursor: pointer; transition: all var(--t-fast);
+    }
+    .bld-obj-item:hover { background: rgba(184,130,30,0.06); border-color: rgba(184,130,30,0.18); }
+    .bld-obj-icon {
+      width: 22px; height: 22px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.78rem; flex-shrink: 0;
+    }
+    .bld-obj-info { flex: 1; min-width: 0; }
+    .bld-obj-name { font-size: 0.74rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bld-obj-coord { font-size: 0.6rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+    .bld-obj-del {
+      opacity: 0; width: 20px; height: 20px; padding: 0;
+      background: transparent; border: none; color: var(--accent-red);
+      cursor: pointer; font-size: 0.85rem;
+      transition: opacity var(--t-fast);
+    }
+    .bld-obj-item:hover .bld-obj-del { opacity: 0.7; }
+    .bld-obj-del:hover { opacity: 1 !important; }
+
+    /* ── Status bar ───────────────────────────────── */
+    .bld-statusbar {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      height: 28px; padding: 0 14px;
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(9,8,7,0.85);
+      backdrop-filter: blur(6px);
+      border-top: 1px solid var(--border);
+      font-size: 0.66rem; color: var(--text-muted);
+      z-index: 15;
+    }
+    .bld-stat-item strong { color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 600; }
+    .bld-stat-label { color: var(--text-faint); }
+    .bld-stat-sep { width: 1px; height: 12px; background: var(--border); }
+    .bld-stat-hint em { color: var(--accent); font-style: normal; font-weight: 500; }
+    .bld-stat-spacer { flex: 1; }
+    .bld-link-btn {
+      background: transparent; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 0.68rem; padding: 2px 6px;
+      border-radius: 4px; transition: all var(--t-fast);
+    }
+    .bld-link-btn:hover { color: var(--accent); background: rgba(184,130,30,0.06); }
+
+    /* ═══════════════════════════════════════════════════════════
        RESULT BOX
     ═══════════════════════════════════════════════════════════ */
     .result-box {
@@ -960,37 +1319,321 @@
 
         <!-- ── Builder ───────────────────────────────────────── -->
         <div class="tab-content" id="tab-builder">
-          <div class="map-toolbar" id="builder-toolbar">
-            <select id="builder-floor-select" class="btn btn-ghost btn-sm" style="min-width:110px"></select>
-            <button id="btn-new-floor" class="btn btn-primary btn-sm">+ Floor</button>
-            <button id="btn-delete-floor" class="btn btn-danger btn-sm">🗑</button>
-            <button id="btn-activate-floor" class="btn btn-ghost btn-sm">▶ Activate</button>
-            <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs">▢ Square</button>
-            <div class="sep"></div>
-            <label style="font-size:0.65rem;color:var(--text-muted)">Size:</label>
-            <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:74px">
-            <span id="builder-tile-size-val" style="font-size:0.65rem;min-width:22px">50</span>
-            <label style="font-size:0.65rem;color:var(--text-muted)">Bounds:</label>
-            <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:44px">
-            <span style="font-size:0.65rem;color:var(--text-muted)">×</span>
-            <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:44px">
-            <div class="sep"></div>
-            <button class="btn btn-ghost btn-xs builder-brush active" data-brush="floor">⬜</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="wall">🧱</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="door">🚪</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="water">💧</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="pit">🕳</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_up">⬆</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_down">⬇</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="trap">⚠</button>
-            <button class="btn btn-ghost btn-xs builder-brush" data-brush="erase">🧹</button>
-            <div class="sep"></div>
-            <button id="btn-clear-tiles" class="btn btn-ghost btn-xs">Clear</button>
-            <button id="btn-save-tiles" class="btn btn-primary btn-xs">💾 Save</button>
-            <button id="btn-place-trap" class="btn btn-danger btn-xs">⚠ Trap</button>
-          </div>
-          <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
+          <!-- Full-bleed canvas -->
+          <div class="bld-stage" id="bld-stage">
             <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
+
+            <!-- Empty state -->
+            <div class="bld-empty" id="bld-empty" style="display:none">
+              <div class="bld-empty-glyph">⊕</div>
+              <div class="bld-empty-title">No location loaded</div>
+              <div class="bld-empty-hint">Pick a Map &amp; Location in the toolbar above to start drawing.</div>
+            </div>
+
+            <!-- ───── TOP TOOLBAR (docked, draggable) ───── -->
+            <div class="bld-panel bld-toolbar" id="bld-toolbar" data-dock="top">
+              <div class="bld-drag-handle" data-handle="bld-toolbar" title="Drag">⋮⋮</div>
+
+              <!-- Map group -->
+              <div class="bld-tb-group">
+                <div class="bld-tb-label">Map</div>
+                <div class="bld-tb-row">
+                  <select id="bld-map-select" class="bld-input">
+                    <option>Stormhold Keep</option>
+                    <option>The Frozen Wastes</option>
+                  </select>
+                  <button class="bld-icon-btn" id="bld-map-new" title="New map">＋</button>
+                  <button class="bld-icon-btn" id="bld-map-del" title="Delete map">🗑</button>
+                </div>
+              </div>
+
+              <div class="bld-tb-sep"></div>
+
+              <!-- Location group -->
+              <div class="bld-tb-group bld-tb-grow">
+                <div class="bld-tb-label">Location</div>
+                <div class="bld-tb-row">
+                  <select id="bld-loc-select" class="bld-input">
+                    <option>Tavern — Ground Floor</option>
+                    <option>Tavern — Cellar</option>
+                    <option>Town Square</option>
+                  </select>
+                  <button class="bld-icon-btn" id="bld-loc-new" title="New location">＋</button>
+                  <button class="bld-icon-btn" id="bld-loc-del" title="Delete location">🗑</button>
+                </div>
+              </div>
+
+              <div class="bld-tb-sep"></div>
+
+              <!-- History -->
+              <div class="bld-tb-group">
+                <div class="bld-tb-label">History</div>
+                <div class="bld-tb-row">
+                  <button class="bld-icon-btn" id="bld-undo" title="Undo (Ctrl+Z)">↶</button>
+                  <button class="bld-icon-btn" id="bld-redo" title="Redo (Ctrl+Y)">↷</button>
+                </div>
+              </div>
+
+              <div class="bld-tb-sep"></div>
+
+              <!-- View -->
+              <div class="bld-tb-group">
+                <div class="bld-tb-label">View</div>
+                <div class="bld-tb-row">
+                  <button class="bld-icon-btn bld-toggle-btn active" data-layer="terrain"  title="Terrain layer">▦</button>
+                  <button class="bld-icon-btn bld-toggle-btn active" data-layer="entities" title="Entities layer">⊛</button>
+                  <button class="bld-icon-btn bld-toggle-btn active" data-layer="lights"   title="Lights layer">✦</button>
+                  <button class="bld-icon-btn bld-toggle-btn active" data-layer="edges"    title="Edges layer">⌐</button>
+                  <button class="bld-icon-btn bld-toggle-btn active" data-layer="grid"     title="Grid">⊞</button>
+                </div>
+              </div>
+
+              <div class="bld-tb-sep"></div>
+
+              <!-- Presets -->
+              <div class="bld-tb-group">
+                <div class="bld-tb-label">Preset</div>
+                <div class="bld-tb-row">
+                  <button class="bld-chip" data-preset="tavern">⌂ Tavern</button>
+                  <button class="bld-chip" data-preset="dungeon">⛓ Dungeon</button>
+                  <button class="bld-chip" data-preset="forest">❦ Forest</button>
+                </div>
+              </div>
+
+              <div class="bld-tb-sep"></div>
+
+              <!-- Apply -->
+              <div class="bld-tb-group">
+                <div class="bld-tb-label">Push live</div>
+                <div class="bld-tb-row">
+                  <button class="bld-apply-btn" id="bld-apply">▶ Apply to Game</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ───── LEFT PALETTE (Tools) ───── -->
+            <div class="bld-panel bld-tools" id="bld-tools" data-dock="left">
+              <div class="bld-panel-header">
+                <span class="bld-drag-handle" data-handle="bld-tools" title="Drag">⋮⋮</span>
+                <span class="bld-panel-title">Tools</span>
+                <button class="bld-collapse" data-collapse="bld-tools" title="Collapse">▾</button>
+              </div>
+              <div class="bld-panel-body">
+                <!-- Tabs -->
+                <div class="bld-subtabs">
+                  <button class="bld-subtab active" data-subtab="terrain">Terrain</button>
+                  <button class="bld-subtab" data-subtab="entities">Entities</button>
+                  <button class="bld-subtab" data-subtab="lights">Lights</button>
+                  <button class="bld-subtab" data-subtab="edges">Edges</button>
+                </div>
+
+                <!-- Terrain palette -->
+                <div class="bld-palette" data-pane="terrain">
+                  <button class="bld-tool active" data-brush="floor"    data-key="1">
+                    <span class="bld-tool-icon" style="background:#3a342c;border:1px solid #555">▦</span>
+                    <span class="bld-tool-name">Floor</span><span class="bld-tool-key">1</span>
+                  </button>
+                  <button class="bld-tool" data-brush="wall" data-key="2">
+                    <span class="bld-tool-icon" style="background:#5a5a5a">▰</span>
+                    <span class="bld-tool-name">Wall</span><span class="bld-tool-key">2</span>
+                  </button>
+                  <button class="bld-tool" data-brush="water" data-key="3">
+                    <span class="bld-tool-icon" style="background:#2a4a78">≈</span>
+                    <span class="bld-tool-name">Water</span><span class="bld-tool-key">3</span>
+                  </button>
+                  <button class="bld-tool" data-brush="lava" data-key="4">
+                    <span class="bld-tool-icon" style="background:#7a2a1a">▲</span>
+                    <span class="bld-tool-name">Lava</span><span class="bld-tool-key">4</span>
+                  </button>
+                  <button class="bld-tool" data-brush="pit" data-key="5">
+                    <span class="bld-tool-icon" style="background:#0a0a0a">●</span>
+                    <span class="bld-tool-name">Pit</span><span class="bld-tool-key">5</span>
+                  </button>
+                  <button class="bld-tool" data-brush="door" data-key="6">
+                    <span class="bld-tool-icon" style="background:#6a4a28">⊓</span>
+                    <span class="bld-tool-name">Door</span><span class="bld-tool-key">6</span>
+                  </button>
+                  <button class="bld-tool" data-brush="rough" data-key="7">
+                    <span class="bld-tool-icon" style="background:#4a3a28">⌇</span>
+                    <span class="bld-tool-name">Rough</span><span class="bld-tool-key">7</span>
+                  </button>
+                  <button class="bld-tool" data-brush="zone" data-key="8">
+                    <span class="bld-tool-icon" style="background:rgba(184,130,30,0.18);color:#b8821e;border:1px dashed rgba(184,130,30,0.6)">▢</span>
+                    <span class="bld-tool-name">Zone</span><span class="bld-tool-key">8</span>
+                  </button>
+                  <button class="bld-tool" data-brush="building" data-key="9">
+                    <span class="bld-tool-icon" style="background:rgba(184,130,30,0.12);color:#b8821e">⌂</span>
+                    <span class="bld-tool-name">Building</span><span class="bld-tool-key">9</span>
+                  </button>
+                  <button class="bld-tool bld-tool-erase" data-brush="erase" data-key="E">
+                    <span class="bld-tool-icon" style="background:rgba(174,60,60,0.15);color:#ae3c3c">✕</span>
+                    <span class="bld-tool-name">Erase</span><span class="bld-tool-key">E</span>
+                  </button>
+                </div>
+
+                <!-- Entities palette -->
+                <div class="bld-palette" data-pane="entities" style="display:none">
+                  <button class="bld-tool" data-brush="entity:chest">
+                    <span class="bld-tool-icon" style="background:rgba(184,130,30,0.18);color:#b8821e">⊟</span>
+                    <span class="bld-tool-name">Chest</span>
+                  </button>
+                  <button class="bld-tool" data-brush="entity:trap">
+                    <span class="bld-tool-icon" style="background:rgba(174,60,60,0.15);color:#ae3c3c">⚠</span>
+                    <span class="bld-tool-name">Trap</span>
+                  </button>
+                  <button class="bld-tool" data-brush="entity:portal">
+                    <span class="bld-tool-icon" style="background:rgba(122,63,176,0.18);color:#9d6bd9">◉</span>
+                    <span class="bld-tool-name">Portal</span>
+                  </button>
+                  <button class="bld-tool" data-brush="entity:npc_spawn">
+                    <span class="bld-tool-icon" style="background:rgba(63,111,168,0.18);color:#6090c8">◈</span>
+                    <span class="bld-tool-name">NPC</span>
+                  </button>
+                  <button class="bld-tool" data-brush="entity:cover_zone">
+                    <span class="bld-tool-icon" style="background:rgba(61,143,82,0.18);color:#5fb077">⛨</span>
+                    <span class="bld-tool-name">Cover</span>
+                  </button>
+                </div>
+
+                <!-- Lights palette -->
+                <div class="bld-palette" data-pane="lights" style="display:none">
+                  <button class="bld-tool" data-brush="light:torch">
+                    <span class="bld-tool-icon" style="background:radial-gradient(circle,#ffb04a,#7a3a10);color:#fff">✦</span>
+                    <span class="bld-tool-name">Torch</span>
+                  </button>
+                  <button class="bld-tool" data-brush="light:lamp">
+                    <span class="bld-tool-icon" style="background:radial-gradient(circle,#ffe9a8,#a07a30);color:#fff">✦</span>
+                    <span class="bld-tool-name">Lamp</span>
+                  </button>
+                  <button class="bld-tool" data-brush="light:magic">
+                    <span class="bld-tool-icon" style="background:radial-gradient(circle,#a8d4ff,#3a4ab0);color:#fff">✦</span>
+                    <span class="bld-tool-name">Magic</span>
+                  </button>
+                </div>
+
+                <!-- Edges palette -->
+                <div class="bld-palette" data-pane="edges" style="display:none">
+                  <button class="bld-tool" data-brush="edge:wall">
+                    <span class="bld-tool-icon" style="background:#5a5a5a">═</span>
+                    <span class="bld-tool-name">Wall edge</span>
+                  </button>
+                  <button class="bld-tool" data-brush="edge:window">
+                    <span class="bld-tool-icon" style="background:rgba(63,111,168,0.3)">┅</span>
+                    <span class="bld-tool-name">Window</span>
+                  </button>
+                  <button class="bld-tool" data-brush="edge:door">
+                    <span class="bld-tool-icon" style="background:#6a4a28">⊓</span>
+                    <span class="bld-tool-name">Door edge</span>
+                  </button>
+                </div>
+
+                <button class="bld-clear-btn" id="bld-clear">Clear all tiles</button>
+              </div>
+            </div>
+
+            <!-- ───── RIGHT TOP: Inspector (Properties) ───── -->
+            <div class="bld-panel bld-inspector" id="bld-inspector" data-dock="right-top">
+              <div class="bld-panel-header">
+                <span class="bld-drag-handle" data-handle="bld-inspector" title="Drag">⋮⋮</span>
+                <span class="bld-panel-title">Inspector</span>
+                <button class="bld-collapse" data-collapse="bld-inspector" title="Collapse">▾</button>
+              </div>
+              <div class="bld-panel-body">
+                <!-- Brush info -->
+                <div class="bld-insp-section">
+                  <div class="bld-insp-head">Active brush</div>
+                  <div class="bld-active-brush" id="bld-active-brush">
+                    <span class="bld-tool-icon" style="background:#3a342c;border:1px solid #555">▦</span>
+                    <div>
+                      <div class="bld-active-name">Floor</div>
+                      <div class="bld-active-hint">Left-drag to paint</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Lighting -->
+                <div class="bld-insp-section">
+                  <div class="bld-insp-head">
+                    <span>Lighting</span>
+                    <span class="bld-status-pill bld-status-bright" id="bld-light-status">Bright</span>
+                  </div>
+                  <label class="bld-row-label">
+                    <span>Ambient</span><span id="bld-ambient-val">1.00</span>
+                  </label>
+                  <input type="range" id="bld-ambient" min="0" max="1" step="0.05" value="1" class="bld-slider">
+
+                  <label class="bld-checkbox">
+                    <input type="checkbox" id="bld-indoor">
+                    <span>Indoor (heavy darkness fallback)</span>
+                  </label>
+                </div>
+
+                <!-- Grid -->
+                <div class="bld-insp-section">
+                  <div class="bld-insp-head">Grid</div>
+                  <div class="bld-seg" id="bld-grid-type">
+                    <button class="active" data-grid="square">Square</button>
+                    <button data-grid="hex">Hex</button>
+                    <button data-grid="none">None</button>
+                  </div>
+                  <label class="bld-row-label" style="margin-top:8px">
+                    <span>Tile size</span><span><span id="bld-tile-val">50</span>px</span>
+                  </label>
+                  <input type="range" id="bld-tile-size" min="20" max="100" value="50" class="bld-slider">
+
+                  <div class="bld-grid-2">
+                    <label class="bld-num">
+                      <span>Width</span>
+                      <input type="number" id="bld-cols" value="40" min="5" max="200">
+                    </label>
+                    <label class="bld-num">
+                      <span>Height</span>
+                      <input type="number" id="bld-rows" value="30" min="5" max="200">
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Save indicator -->
+                <div class="bld-save-line" id="bld-save-line">✓ Auto-saved · 12:42</div>
+              </div>
+            </div>
+
+            <!-- ───── RIGHT BOTTOM: Objects list ───── -->
+            <div class="bld-panel bld-objects" id="bld-objects" data-dock="right-bottom">
+              <div class="bld-panel-header">
+                <span class="bld-drag-handle" data-handle="bld-objects" title="Drag">⋮⋮</span>
+                <span class="bld-panel-title">Objects</span>
+                <span class="bld-count-badge" id="bld-obj-count">14</span>
+                <button class="bld-collapse" data-collapse="bld-objects" title="Collapse">▾</button>
+              </div>
+              <div class="bld-panel-body">
+                <input type="search" id="bld-obj-search" class="bld-search" placeholder="Search objects…">
+
+                <div class="bld-obj-tabs">
+                  <button class="bld-obj-tab active" data-objtab="all">All <span>14</span></button>
+                  <button class="bld-obj-tab" data-objtab="entities">⊛ <span>5</span></button>
+                  <button class="bld-obj-tab" data-objtab="lights">✦ <span>6</span></button>
+                  <button class="bld-obj-tab" data-objtab="edges">⌐ <span>2</span></button>
+                  <button class="bld-obj-tab" data-objtab="zones">▢ <span>1</span></button>
+                </div>
+
+                <div class="bld-obj-list" id="bld-obj-list">
+                  <!-- populated by JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- ───── BOTTOM STATUS BAR ───── -->
+            <div class="bld-statusbar">
+              <span class="bld-stat-item"><strong id="bld-coord">12, 8</strong> <span class="bld-stat-label">cell</span></span>
+              <span class="bld-stat-sep"></span>
+              <span class="bld-stat-item">Zoom <strong id="bld-zoom">100%</strong></span>
+              <span class="bld-stat-sep"></span>
+              <span class="bld-stat-item bld-stat-hint">L-drag <em>paint</em> · R-drag <em>pan</em> · Wheel <em>zoom</em> · Shift+click <em>delete</em></span>
+              <span class="bld-stat-spacer"></span>
+              <button class="bld-link-btn" id="bld-lib-open">📂 Library</button>
+              <button class="bld-link-btn" id="bld-lib-save">💾 Snapshot</button>
+            </div>
           </div>
         </div>
 
@@ -1320,6 +1963,222 @@ const observer = new MutationObserver(() => {
   });
 });
 observer.observe(document.querySelector('.gm-tab-content'), { childList: false, subtree: true, attributes: true, attributeFilter: ['class'] });
+
+/* ═══════════════════════════════════════════════════════════════
+   BUILDER — floating panels behavior
+═══════════════════════════════════════════════════════════════ */
+(function initBuilder() {
+  const stage = document.getElementById('bld-stage');
+  if (!stage) return;
+
+  // ── Drag-to-move ─────────────────────────────────────────────
+  document.querySelectorAll('.bld-drag-handle').forEach(handle => {
+    const target = document.getElementById(handle.dataset.handle);
+    if (!target) return;
+    let dragging = false, startX = 0, startY = 0, startL = 0, startT = 0;
+    handle.addEventListener('mousedown', e => {
+      dragging = true;
+      const rect = target.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      startX = e.clientX; startY = e.clientY;
+      startL = rect.left - stageRect.left;
+      startT = rect.top - stageRect.top;
+      // pin to absolute coords (clear centered transform on toolbar)
+      target.style.left = startL + 'px';
+      target.style.top = startT + 'px';
+      target.style.right = 'auto';
+      target.style.bottom = 'auto';
+      target.style.transform = 'none';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const stageRect = stage.getBoundingClientRect();
+      let nx = startL + (e.clientX - startX);
+      let ny = startT + (e.clientY - startY);
+      const w = target.offsetWidth, h = target.offsetHeight;
+      nx = Math.max(4, Math.min(stageRect.width - w - 4, nx));
+      ny = Math.max(4, Math.min(stageRect.height - h - 32, ny));
+      target.style.left = nx + 'px';
+      target.style.top = ny + 'px';
+    });
+    document.addEventListener('mouseup', () => dragging = false);
+  });
+
+  // ── Collapse panels ──────────────────────────────────────────
+  document.querySelectorAll('.bld-collapse').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = document.getElementById(btn.dataset.collapse);
+      if (t) t.classList.toggle('collapsed');
+    });
+  });
+
+  // ── Tool palette switching (subtabs) ─────────────────────────
+  document.querySelectorAll('.bld-subtab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.bld-subtab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      const which = t.dataset.subtab;
+      document.querySelectorAll('.bld-palette').forEach(p => {
+        p.style.display = p.dataset.pane === which ? '' : 'none';
+      });
+    });
+  });
+
+  // ── Brush selection ──────────────────────────────────────────
+  const activeBox = document.getElementById('bld-active-brush');
+  function setActiveBrush(btn) {
+    document.querySelectorAll('.bld-tool').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (activeBox) {
+      const icon = btn.querySelector('.bld-tool-icon').cloneNode(true);
+      const name = btn.querySelector('.bld-tool-name').textContent;
+      const brush = btn.dataset.brush || '';
+      let hint = 'Left-drag to paint';
+      if (brush.startsWith('entity:')) hint = 'Click to place · Shift+click to delete';
+      else if (brush.startsWith('light:')) hint = 'Click to place light source';
+      else if (brush.startsWith('edge:')) hint = 'Click two cells to draw';
+      else if (brush === 'erase') hint = 'Drag to erase tiles';
+      else if (brush === 'building') hint = 'Drag rectangle to build';
+      activeBox.innerHTML = '';
+      activeBox.appendChild(icon);
+      const info = document.createElement('div');
+      info.innerHTML = `<div class="bld-active-name">${name}</div><div class="bld-active-hint">${hint}</div>`;
+      activeBox.appendChild(info);
+    }
+  }
+  document.querySelectorAll('.bld-tool').forEach(btn => {
+    btn.addEventListener('click', () => setActiveBrush(btn));
+  });
+
+  // ── Layer toggles ────────────────────────────────────────────
+  document.querySelectorAll('.bld-toggle-btn').forEach(b => {
+    b.addEventListener('click', () => b.classList.toggle('active'));
+  });
+
+  // ── Grid type segmented ──────────────────────────────────────
+  document.querySelectorAll('#bld-grid-type button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#bld-grid-type button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+
+  // ── Sliders ──────────────────────────────────────────────────
+  const ambient = document.getElementById('bld-ambient');
+  const ambientVal = document.getElementById('bld-ambient-val');
+  const lightStatus = document.getElementById('bld-light-status');
+  if (ambient) {
+    ambient.addEventListener('input', () => {
+      const v = parseFloat(ambient.value);
+      ambientVal.textContent = v.toFixed(2);
+      lightStatus.classList.remove('bld-status-bright', 'bld-status-dim', 'bld-status-dark');
+      if (v >= 0.7) { lightStatus.textContent = 'Bright'; lightStatus.classList.add('bld-status-bright'); }
+      else if (v >= 0.3) { lightStatus.textContent = 'Dim'; lightStatus.classList.add('bld-status-dim'); }
+      else { lightStatus.textContent = 'Dark'; lightStatus.classList.add('bld-status-dark'); }
+    });
+  }
+  const tileSize = document.getElementById('bld-tile-size');
+  const tileVal = document.getElementById('bld-tile-val');
+  if (tileSize) tileSize.addEventListener('input', () => tileVal.textContent = tileSize.value);
+
+  // ── Object list (mock data) ──────────────────────────────────
+  const objects = [
+    { type: 'entity', kind: 'chest',     name: 'Treasure chest',  x: 14, y: 9 },
+    { type: 'entity', kind: 'chest',     name: 'Locked strongbox', x: 8, y: 22 },
+    { type: 'entity', kind: 'trap',      name: 'Pressure plate',   x: 11, y: 14 },
+    { type: 'entity', kind: 'portal',    name: 'Cellar stairs',    x: 5, y: 18 },
+    { type: 'entity', kind: 'npc_spawn', name: 'Barkeep spawn',    x: 16, y: 6 },
+    { type: 'light',  kind: 'torch',     name: 'Torch',            x: 6, y: 8 },
+    { type: 'light',  kind: 'torch',     name: 'Torch',            x: 18, y: 8 },
+    { type: 'light',  kind: 'torch',     name: 'Torch',            x: 6, y: 14 },
+    { type: 'light',  kind: 'torch',     name: 'Torch',            x: 18, y: 14 },
+    { type: 'light',  kind: 'lamp',      name: 'Hearth lamp',      x: 12, y: 11 },
+    { type: 'light',  kind: 'magic',     name: 'Arcane orb',       x: 12, y: 5 },
+    { type: 'edge',   kind: 'window',    name: 'Tavern window',    x: 10, y: 7 },
+    { type: 'edge',   kind: 'door',      name: 'Cellar door',      x: 14, y: 18 },
+    { type: 'zone',   kind: 'interior',  name: 'Tavern interior',  x: 12, y: 12 },
+  ];
+  const ICONS = {
+    chest:    { glyph: '⊟', bg: 'rgba(184,130,30,0.18)',  color: '#b8821e' },
+    trap:     { glyph: '⚠', bg: 'rgba(174,60,60,0.15)',   color: '#ae3c3c' },
+    portal:   { glyph: '◉', bg: 'rgba(122,63,176,0.18)',  color: '#9d6bd9' },
+    npc_spawn:{ glyph: '◈', bg: 'rgba(63,111,168,0.18)',  color: '#6090c8' },
+    cover_zone:{ glyph: '⛨', bg: 'rgba(61,143,82,0.18)',  color: '#5fb077' },
+    torch:    { glyph: '✦', bg: 'rgba(255,176,74,0.18)',  color: '#ffb04a' },
+    lamp:     { glyph: '✦', bg: 'rgba(255,233,168,0.18)', color: '#ffe9a8' },
+    magic:    { glyph: '✦', bg: 'rgba(168,212,255,0.18)', color: '#a8d4ff' },
+    window:   { glyph: '┅', bg: 'rgba(63,111,168,0.18)',  color: '#6090c8' },
+    door:     { glyph: '⊓', bg: 'rgba(106,74,40,0.3)',    color: '#c89870' },
+    interior: { glyph: '▢', bg: 'rgba(184,130,30,0.12)',  color: '#b8821e' },
+  };
+  const objList = document.getElementById('bld-obj-list');
+  let activeObjFilter = 'all';
+  let objQuery = '';
+  function renderObjects() {
+    if (!objList) return;
+    const filtered = objects.filter(o => {
+      if (activeObjFilter !== 'all') {
+        if (activeObjFilter === 'entities' && o.type !== 'entity') return false;
+        if (activeObjFilter === 'lights' && o.type !== 'light') return false;
+        if (activeObjFilter === 'edges' && o.type !== 'edge') return false;
+        if (activeObjFilter === 'zones' && o.type !== 'zone') return false;
+      }
+      if (objQuery && !o.name.toLowerCase().includes(objQuery.toLowerCase())) return false;
+      return true;
+    });
+    if (!filtered.length) {
+      objList.innerHTML = '<div style="text-align:center;padding:18px 0;color:var(--text-faint);font-size:0.7rem">No objects</div>';
+    } else {
+      objList.innerHTML = filtered.map(o => {
+        const ic = ICONS[o.kind] || { glyph: '·', bg: 'rgba(255,255,255,0.05)', color: '#888' };
+        return `<div class="bld-obj-item">
+          <span class="bld-obj-icon" style="background:${ic.bg};color:${ic.color}">${ic.glyph}</span>
+          <div class="bld-obj-info">
+            <div class="bld-obj-name">${o.name}</div>
+            <div class="bld-obj-coord">${o.x}, ${o.y}</div>
+          </div>
+          <button class="bld-obj-del" title="Delete">✕</button>
+        </div>`;
+      }).join('');
+    }
+    document.getElementById('bld-obj-count').textContent = filtered.length;
+  }
+  renderObjects();
+  document.querySelectorAll('.bld-obj-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.bld-obj-tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      activeObjFilter = t.dataset.objtab;
+      renderObjects();
+    });
+  });
+  const search = document.getElementById('bld-obj-search');
+  if (search) search.addEventListener('input', () => { objQuery = search.value; renderObjects(); });
+
+  // ── Coord & zoom mock from canvas ────────────────────────────
+  const canvas = document.getElementById('builder-canvas');
+  const coordEl = document.getElementById('bld-coord');
+  if (canvas && coordEl) {
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const cx = Math.floor((e.clientX - rect.left) / 50);
+      const cy = Math.floor((e.clientY - rect.top) / 50);
+      coordEl.textContent = `${cx}, ${cy}`;
+    });
+  }
+
+  // ── Hotkeys: 1-9, E ──────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (!document.getElementById('tab-builder').classList.contains('active')) return;
+    if (e.target.matches('input, select, textarea')) return;
+    const key = e.key.toUpperCase();
+    const btn = document.querySelector(`.bld-tool[data-key="${key}"]`);
+    if (btn && btn.closest('.bld-palette').style.display !== 'none') {
+      setActiveBrush(btn);
+    }
+  });
+})();
 
 // ── AI SIDEBAR ────────────────────────────────────────────────
 document.getElementById('ai-sidebar-toggle').addEventListener('click', () =>

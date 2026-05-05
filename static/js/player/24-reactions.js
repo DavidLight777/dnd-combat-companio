@@ -52,19 +52,15 @@ function renderReactionsPanel() {
     const notEnoughMana = (a.mana_cost || 0) > cur;
     const disabled = onCd || notEnoughMana;
     const color = a.color || 'var(--accent-orange)';
-    return `<div class="reaction-card ${disabled ? 'disabled' : ''}" data-ca-id="${a.character_ability_id}"
-             style="display:flex;align-items:center;gap:8px;padding:8px 10px;
-                    background:var(--bg-surface);border-left:3px solid ${color};
-                    border-radius:var(--r-sm);transition:all .15s;
-                    opacity:${disabled ? '0.55' : '1'}">
-      <span style="font-size:1.2rem">${a.icon || '⚡'}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:0.85rem">${a.name}</div>
-        ${a.flavor_text ? `<div style="font-size:0.7rem;color:var(--text-muted)">${a.flavor_text}</div>` : ''}
+    return `<div class="reaction-card list-row ${disabled ? 'disabled' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${color}">
+      <div class="lr-ico">${a.icon || '⚡'}</div>
+      <div class="lr-body">
+        <div class="lr-name">${a.name}</div>
+        ${a.flavor_text ? `<div class="lr-meta">${a.flavor_text}</div>` : ''}
       </div>
-      ${a.mana_cost ? `<span style="font-size:0.72rem;color:${notEnoughMana ? 'var(--accent-red)' : '#60a5fa'}">🔮${a.mana_cost}</span>` : ''}
-      ${a.hp_cost   ? `<span style="font-size:0.72rem;color:var(--accent-red)">❤️${a.hp_cost}</span>` : ''}
-      ${onCd ? `<span style="font-size:0.72rem;color:var(--accent-orange);font-weight:600">Used this round</span>` : ''}
+      ${a.mana_cost ? `<span class="lr-cost" style="color:${notEnoughMana ? 'var(--accent-red)' : '#60a5fa'}">🔮${a.mana_cost}</span>` : ''}
+      ${a.hp_cost   ? `<span class="lr-cost" style="color:var(--accent-red)">❤️${a.hp_cost}</span>` : ''}
+      ${onCd ? `<span class="lr-cost">Used</span>` : ''}
       ${!disabled ? `<button class="btn btn-primary btn-sm" data-use-reaction="${a.character_ability_id}">Use</button>` : ''}
     </div>`;
   }).join('');

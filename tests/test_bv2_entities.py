@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from httpx import ASGITransport, AsyncClient
 from main import app
 from app.database import init_db
@@ -184,6 +185,47 @@ async def test_chest_lockpick(client):
 
 
 @pytest.mark.asyncio
+async def test_chest_lockpick_uses_selected_ability_and_advantage(client):
+    sr = await client.post("/api/sessions/create", json={"name": "T"})
+    code = sr.json()["session_code"]
+
+    jr = await client.post("/api/sessions/join", json={
+        "session_code": code, "player_name": "Hero",
+    })
+    char_id = jr.json()["character_id"]
+    await client.patch(f"/api/characters/{char_id}", json={"wisdom": 4})
+
+    mr = await client.post(f"/api/builder-v2/sessions/{code}/maps", json={"name": "M"})
+    map_id = mr.json()["id"]
+    lr = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 10, "rows": 10})
+    loc_id = lr.json()["id"]
+
+    cr = await client.post(f"/api/builder-v2/locations/{loc_id}/chests", json={
+        "col": 2,
+        "row": 2,
+        "name": "Locked Chest",
+        "is_locked": True,
+        "lock_dc": 16,
+    })
+    chest_id = cr.json()["id"]
+
+    with patch("app.routers.builder_v2.chests.random.randint", side_effect=[3, 12]):
+        pr = await client.post(f"/api/builder-v2/chests/{chest_id}/pick-lock", json={
+            "character_id": char_id,
+            "ability": "wisdom",
+            "advantage_mode": "advantage",
+            "d20_count": 2,
+        })
+    assert pr.status_code == 200
+    assert pr.json()["rolls"] == [3, 12]
+    assert pr.json()["chosen_roll"] == 12
+    assert pr.json()["modifier"] == 4
+    assert pr.json()["total"] == 16
+    assert pr.json()["dc"] == 16
+    assert pr.json()["success"] is True
+
+
+@pytest.mark.asyncio
 async def test_portal_size_cells(client):
     """Portal CRUD supports size_cells."""
     sr = await client.post("/api/sessions/create", json={"name": "T"})
@@ -291,6 +333,47 @@ async def test_trap_disarm_marks_trap_disarmed(client):
 
 
 @pytest.mark.asyncio
+async def test_trap_disarm_uses_selected_ability_and_advantage(client):
+    sr = await client.post("/api/sessions/create", json={"name": "T"})
+    code = sr.json()["session_code"]
+
+    jr = await client.post("/api/sessions/join", json={
+        "session_code": code, "player_name": "Hero",
+    })
+    char_id = jr.json()["character_id"]
+    await client.patch(f"/api/characters/{char_id}", json={"intelligence": 3})
+
+    mr = await client.post(f"/api/builder-v2/sessions/{code}/maps", json={"name": "M"})
+    map_id = mr.json()["id"]
+    lr = await client.post(f"/api/builder-v2/maps/{map_id}/locations", json={"cols": 10, "rows": 10})
+    loc_id = lr.json()["id"]
+
+    tr = await client.post(f"/api/builder-v2/locations/{loc_id}/traps", json={
+        "col": 2,
+        "row": 2,
+        "name": "Puzzle Wire",
+        "damage_dice": "1d4",
+        "dc_disarm": 15,
+    })
+    trap_id = tr.json()["id"]
+
+    with patch("app.routers.builder_v2.traps.random.randint", side_effect=[4, 12]):
+        res = await client.post(f"/api/builder-v2/traps/{trap_id}/disarm", json={
+            "character_id": char_id,
+            "ability": "intelligence",
+            "advantage_mode": "advantage",
+            "d20_count": 2,
+        })
+    assert res.status_code == 200
+    assert res.json()["rolls"] == [4, 12]
+    assert res.json()["chosen_roll"] == 12
+    assert res.json()["modifier"] == 3
+    assert res.json()["total"] == 15
+    assert res.json()["dc"] == 15
+    assert res.json()["success"] is True
+
+
+@pytest.mark.asyncio
 async def test_player_map_hides_interior_objects_until_zone_entered(client):
     sr = await client.post("/api/sessions/create", json={"name": "T"})
     code = sr.json()["session_code"]
@@ -340,6 +423,10 @@ async def test_player_map_hides_interior_objects_until_zone_entered(client):
         "current_location_id": loc_id,
         "col": 0,
         "row": 0,
+    })
+    await client.post(f"/api/builder-v2/locations/{loc_id}/visit", json={
+        "character_id": char_id,
+        "visible_cells": [[2, 2], [3, 2], [2, 3], [3, 3]],
     })
     outside = (await client.get(f"/api/map/{code}?character_id={char_id}")).json()
     assert chest.json()["id"] not in [c["id"] for c in outside["_mapChests"]]

@@ -258,11 +258,13 @@ async def _build_state_from_bv2(session, bv2_map, loc, chars, db, character_id: 
             except Exception:
                 revealed_cells = []
     revealed_set = set(revealed_cells)
+    zone_reveal_modes = {z["id"]: z["reveal_mode"] for z in interiors}
     revealed_zone_ids = {
         zone_id
         for (col, row), zone_ids in cell_zone_ids.items()
         if f"{col},{row}" in revealed_set
         for zone_id in zone_ids
+        if zone_reveal_modes.get(zone_id) != "on_enter"
     }
     own_char = next((c for c in chars if character_id and c.id == character_id), None)
     if own_char and own_char.current_location_id == loc.id:

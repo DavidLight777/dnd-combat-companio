@@ -4,638 +4,1043 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Combat Companion — Game Master</title>
-  <link rel="stylesheet" href="/static/css/base.css?v=reworkv3p18">
-  <link rel="stylesheet" href="/static/css/gm.css?v=reworkv3p18">
+  <link rel="stylesheet" href="/static/css/base.css?v=5c9db4df">
+  <link rel="stylesheet" href="/static/css/gm.css?v=ab5ac895">
+  <style>
+    @keyframes pulse-border {
+      0%   { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+      70%  { box-shadow: 0 0 0 6px rgba(255, 193, 7, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+    }
+    .zone-highlight {
+      animation: pulse-border 2s ease-out;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
-  <!-- ── TOP BAR ──────────────────────────────────────────── -->
-  <div class="gm-topbar">
-    <span class="logo">⚔️ Game Master</span>
-    <span class="spacer"></span>
-    <div class="ws-status">
-      <span class="status-dot" id="ws-dot"></span>
-      <span id="ws-label">connecting...</span>
+
+<!-- ── TOP BAR ─────────────────────────────────────────────── -->
+<div class="gm-topbar">
+
+  <div class="topbar-brand">
+    <div class="brand-icon">⚔</div>
+    <div>
+      <div class="brand-name">Combat Companion</div>
+      <div class="brand-sub">Game Master</div>
     </div>
-    <span style="font-size:0.82rem">Players: <strong id="player-count">0</strong></span>
-    <span style="font-size:0.82rem;display:flex;align-items:center;gap:4px" id="session-timer-area">
-      <span>⏱</span><span id="session-timer-display">0:00:00</span>
-      <button class="btn btn-ghost btn-xs" id="btn-timer-toggle" title="Start/Pause Timer">▶</button>
-    </span>
-    <span class="session-code-badge" id="session-code" title="Click to copy code">----</span>
-    <!-- Rework v2: pending wizard-item approvals badge -->
-    <button class="btn btn-ghost btn-sm" id="btn-wizard-pending" title="Pending starting-item approvals" style="display:none;gap:4px">
-      <span>🎁</span><span>Approvals</span>
-      <span id="wizard-pending-count" style="background:var(--accent);color:#000;padding:0 6px;border-radius:8px;font-weight:700;font-size:0.72rem">0</span>
-    </button>
-    <!-- Rework v3: Full Rest button (restores HP, mana, cooldowns, uses for all living players) -->
-    <button class="btn btn-ghost btn-sm" id="btn-full-rest" title="Full Rest — restore HP, mana, cooldowns, and uses for all living players" style="gap:4px">
-      <span>🌙</span><span>Full Rest</span>
-    </button>
-    <button class="btn btn-ghost btn-sm" id="btn-end-session">End Session</button>
   </div>
 
-  <div class="gm-body">
-    <!-- ── SIDEBAR: Party List ────────────────────────────── -->
-    <div class="gm-sidebar">
-      <div class="gm-sidebar-header">
-        <h2>Party & NPCs</h2>
-        <button class="btn btn-ghost btn-xs" id="btn-show-npc-form">+ NPC</button>
+  <div class="topbar-code">
+    <span class="topbar-code-label">Session</span>
+    <span class="session-code-badge" id="session-code" title="Click to copy">----</span>
+  </div>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-stats">
+    <div class="tstat">
+      <span class="tstat-val accent" id="session-name" style="font-size:0.78rem">—</span>
+      <span class="tstat-label">Name</span>
+    </div>
+    <div class="tstat">
+      <span class="tstat-val green" id="session-status">waiting</span>
+      <span class="tstat-label">Status</span>
+    </div>
+    <div class="tstat">
+      <span class="tstat-val" id="session-turn">0</span>
+      <span class="tstat-label">Turn</span>
+    </div>
+    <div class="tstat">
+      <span class="tstat-val" id="connected-count">0</span>
+      <span class="tstat-label">Online</span>
+    </div>
+    <div class="tstat">
+      <div class="ws-status">
+        <span class="status-dot" id="ws-dot"></span>
+        <span id="ws-label" style="font-size:0.66rem">connecting</span>
       </div>
-      <div class="gm-sidebar-body">
-        <div id="npc-form-area" class="hidden"></div>
+      <span class="tstat-label">Server</span>
+    </div>
+    <div class="tstat">
+      <span class="tstat-val" id="player-count">0</span>
+      <span class="tstat-label">Players</span>
+    </div>
+  </div>
+
+  <div class="topbar-actions">
+    <div class="timer-display" id="session-timer-area">
+      <span style="opacity:0.4;font-size:0.8rem">⏱</span>
+      <strong id="session-timer-display">0:00:00</strong>
+      <button class="btn-icon" id="btn-timer-toggle" title="Start/Pause Timer">▶</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="btn-wizard-pending" title="Pending approvals" style="display:none;gap:4px">
+      Approvals <span id="wizard-pending-count" style="background:var(--accent);color:#0a0806;padding:0 5px;border-radius:6px;font-size:0.62rem;font-weight:700">0</span>
+    </button>
+    <button class="btn btn-ghost btn-sm" id="btn-full-rest" style="gap:4px">🌙 Full Rest</button>
+    <button class="btn btn-danger btn-sm" id="btn-end-session">End Session</button>
+  </div>
+</div>
+
+<!-- Hidden info-grid (JS compatibility — original JS reads these IDs) -->
+<div class="info-grid" style="display:none">
+  <div class="info-card"><div class="label">Session</div><div class="value" id="_session-name2">—</div></div>
+  <div class="info-card"><div class="label">Status</div><div class="value" id="_session-status2">waiting</div></div>
+  <div class="info-card"><div class="label">Turn</div><div class="value" id="_session-turn2">0</div></div>
+  <div class="info-card"><div class="label">Connected</div><div class="value" id="_connected-count2">0</div></div>
+</div>
+
+<div class="gm-body">
+
+  <!-- ── PARTY SIDEBAR ───────────────────────────────────────── -->
+  <div class="gm-sidebar">
+    <div class="sidebar-section grow">
+      <div class="sidebar-head">
+        <h2>Party <span id="party-count" style="color:var(--text-faint);font-weight:400"></span></h2>
+      </div>
+      <div class="sidebar-body tight">
         <div id="party-list"></div>
       </div>
+    </div>
 
-      <!-- FIX: GM At The Table Control Panel -->
-      <div class="gm-sidebar-header" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
-        <h2>🗺️ At The Table</h2>
+    <div class="npc-section">
+      <div class="sidebar-head">
+        <h2>NPCs <span id="npc-count" style="color:var(--text-faint);font-weight:400"></span></h2>
+        <button class="btn btn-ghost btn-xs" id="btn-show-npc-spawn" style="padding:1px 6px;font-size:0.6rem">+ NPC</button>
       </div>
-      <div class="gm-sidebar-body" id="gm-table-controls" style="font-size:0.78rem">
-        <div style="color:var(--text-muted);padding:6px">Loading NPCs...</div>
+      <div class="sidebar-body tight">
+        <div id="npc-spawn-area" class="hidden" style="padding:4px 0">
+          <select id="npc-spawn-select" style="width:100%;font-size:0.72rem;margin-bottom:4px"></select>
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:0.7rem;color:var(--text-muted)">Count:</span>
+            <input type="number" id="npc-spawn-count" value="1" min="1" max="20" style="width:40px;font-size:0.72rem">
+            <button class="btn btn-primary btn-xs" id="btn-npc-spawn" style="margin-left:auto;font-size:0.7rem">Spawn</button>
+          </div>
+        </div>
+        <div id="npc-list"></div>
       </div>
     </div>
 
-    <!-- ── MAIN AREA ──────────────────────────────────────── -->
-    <div class="gm-main">
-      <!-- Info cards -->
-      <div class="info-grid">
-        <div class="info-card"><div class="label">Session</div><div class="value" id="session-name">—</div></div>
-        <div class="info-card"><div class="label">Status</div><div class="value" id="session-status">waiting</div></div>
-        <div class="info-card"><div class="label">Turn</div><div class="value" id="session-turn">0</div></div>
-        <div class="info-card"><div class="label">Connected</div><div class="value" id="connected-count">0</div></div>
-      </div>
+  </div>
 
-      <!-- Tabs -->
-      <div class="gm-tabs">
-        <button class="gm-tab active" data-tab="detail">Character Detail</button>
-        <button class="gm-tab" data-tab="items">Item Database</button>
-        <button class="gm-tab" data-tab="combat">⚔️ Combat</button>
-        <button class="gm-tab" data-tab="initiative">Initiative</button>
-        <button class="gm-tab" data-tab="map">Map</button>
-        <button class="gm-tab" data-tab="builder">🏗️ Builder</button>
-        <button class="gm-tab" data-tab="actions">Quick Actions</button>
-        <button class="gm-tab" data-tab="log">Event Log</button>
-        <button class="gm-tab" data-tab="races-classes">Races & Professions</button>
-        <button class="gm-tab" data-tab="npc-library">NPC Library</button>
-        <button class="gm-tab" data-tab="quests">📜 Quests</button>
-        <button class="gm-tab" data-tab="announcements">📢 Board</button>
-        <button class="gm-tab" data-tab="abilities">✨ Abilities</button>
-      </div>
+  <!-- ── MAIN AREA ────────────────────────────────────────────── -->
+  <div class="gm-main">
 
-      <!-- TAB: Abilities (Phase 6 + Rework v2 starting-pool filters) -->
-      <div class="tab-content" id="tab-abilities" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>✨ Ability Manager</h2>
-            <button class="btn btn-primary btn-sm" id="btn-new-ability">+ New Ability</button>
-          </div>
-          <div class="detail-body">
-            <!-- Rework v2 filter bar -->
-            <div id="ab-filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0 10px;border-bottom:1px dashed var(--border);margin-bottom:10px">
-              <span style="font-size:0.72rem;color:var(--text-muted)">Filter:</span>
-              <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
-                <input type="checkbox" id="ab-filter-pool"> 🎁 Starting Pool only
-              </label>
-              <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
-                Rarity:
-                <select id="ab-filter-rarity" style="font-size:0.75rem">
-                  <option value="">any</option>
-                  <option value="common">common</option>
-                  <option value="uncommon">uncommon</option>
-                  <option value="rare">rare</option>
-                  <option value="epic">epic</option>
-                  <option value="legendary">legendary</option>
-                </select>
-              </label>
-              <span id="ab-pool-summary" style="font-size:0.7rem;color:var(--text-muted);margin-left:auto"></span>
+    <!-- HUD strip -->
+    <div class="gm-hud">
+      <div class="hud-cell">
+        <span class="hc-label">Session</span>
+        <span class="hc-value" id="hud-name">—</span>
+      </div>
+      <div class="hud-cell">
+        <span class="hc-label">Status</span>
+        <span class="hc-value" id="hud-status" style="font-size:0.82rem;color:var(--accent-green)">Waiting</span>
+      </div>
+      <div class="hud-cell">
+        <span class="hc-label">Round</span>
+        <span class="hc-value" id="hud-turn">0</span>
+      </div>
+      <div class="hud-cell">
+        <span class="hc-label">Connected</span>
+        <span class="hc-value" id="hud-connected">0</span>
+      </div>
+    </div>
+
+    <!-- Tab layout -->
+    <div class="gm-tab-layout">
+
+      <!-- Vertical nav -->
+      <nav class="gm-tab-nav">
+
+        <div class="tab-group">
+          <span class="tab-group-lbl">Character</span>
+          <button class="gm-tab active" data-tab="detail">
+            <span class="tab-icon">◉</span>Detail
+          </button>
+          <button class="gm-tab" data-tab="abilities">
+            <span class="tab-icon">✦</span>Abilities
+          </button>
+        </div>
+
+        <div class="tab-group">
+          <span class="tab-group-lbl">Combat</span>
+          <button class="gm-tab" data-tab="combat">
+            <span class="tab-icon">⚔</span>Combat
+          </button>
+          <button class="gm-tab" data-tab="initiative">
+            <span class="tab-icon">⟳</span>Initiative
+          </button>
+          <button class="gm-tab" data-tab="actions">
+            <span class="tab-icon">⚡</span>Quick Actions
+          </button>
+        </div>
+
+        <div class="tab-group">
+          <span class="tab-group-lbl">World</span>
+          <button class="gm-tab" data-tab="map">
+            <span class="tab-icon">◈</span>Map
+          </button>
+          <button class="gm-tab" data-tab="builder-v2">
+            <span class="tab-icon">⊕</span>Builder
+          </button>
+          <button class="gm-tab" data-tab="items">
+            <span class="tab-icon">⊞</span>Items
+          </button>
+          <button class="gm-tab" data-tab="cards">
+            <span class="tab-icon">🃏</span>Cards
+          </button>
+          <button class="gm-tab" data-tab="npc-library">
+            <span class="tab-icon">⊛</span>NPC Library
+          </button>
+          <button class="gm-tab" data-tab="races-classes">
+            <span class="tab-icon">◎</span>Races &amp; Prof.
+          </button>
+        </div>
+
+        <div class="tab-group">
+          <span class="tab-group-lbl">Session</span>
+          <button class="gm-tab" data-tab="quests">
+            <span class="tab-icon">⊚</span>Quests
+          </button>
+          <button class="gm-tab" data-tab="announcements">
+            <span class="tab-icon">⊜</span>Board
+          </button>
+          <button class="gm-tab" data-tab="log">
+            <span class="tab-icon">≡</span>Event Log
+          </button>
+        </div>
+
+      </nav>
+
+      <!-- Tab content -->
+      <div class="gm-tab-content">
+
+        <!-- ── Abilities ─────────────────────────────────────── -->
+        <div class="tab-content" id="tab-abilities">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>✨ Ability Manager</h2>
+              <button class="btn btn-primary btn-sm" id="btn-new-ability">+ New Ability</button>
             </div>
-            <div id="gm-abilities-list"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB: Character Detail -->
-      <div class="tab-content active" id="tab-detail">
-        <div id="char-detail" style="padding:16px">
-          <p class="text-muted">Select a character from the sidebar to view details.</p>
-        </div>
-      </div>
-
-      <!-- TAB: Item Database -->
-      <div class="tab-content" id="tab-items" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>🗄️ Item Database</h2>
-            <button class="btn btn-primary btn-sm" id="btn-new-item">+ New Item</button>
-            <button class="btn btn-ghost btn-sm" id="btn-new-category">+ Category</button>
-          </div>
-          <div class="detail-body">
-            <!-- Filters -->
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
-              <input type="text" id="item-search" placeholder="Search items..." style="flex:1;min-width:150px">
-              <select id="item-filter-category" style="min-width:100px"><option value="">All Categories</option></select>
-              <select id="item-filter-rarity" style="min-width:100px">
-                <option value="">All Rarities</option>
-                <option value="common">Common</option>
-                <option value="uncommon">Uncommon</option>
-                <option value="rare">Rare</option>
-                <option value="epic">Epic</option>
-                <option value="legendary">Legendary</option>
-                <option value="mythic">Mythic</option>
-                <option value="divine">Divine</option>
-              </select>
+            <div class="detail-body">
+              <div id="ab-filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px dashed var(--border);margin-bottom:10px">
+                <span style="font-size:0.65rem;color:var(--text-muted)">Filter:</span>
+                <label style="font-size:0.72rem;display:flex;align-items:center;gap:4px">
+                  <input type="checkbox" id="ab-filter-pool"> Starting Pool only
+                </label>
+                <label style="font-size:0.72rem;display:flex;align-items:center;gap:4px">
+                  Rarity:
+                  <select id="ab-filter-rarity" style="font-size:0.7rem;padding:2px 6px">
+                    <option value="">any</option><option value="common">common</option>
+                    <option value="uncommon">uncommon</option><option value="rare">rare</option>
+                    <option value="epic">epic</option><option value="legendary">legendary</option>
+                  </select>
+                </label>
+                <span id="ab-pool-summary" style="font-size:0.65rem;color:var(--text-muted);margin-left:auto"></span>
+              </div>
+              <div id="gm-abilities-list"></div>
             </div>
-            <!-- Item Grid -->
-            <div id="item-grid" class="item-grid"></div>
           </div>
         </div>
-      </div>
 
-      <!-- Item Editor Modal -->
-      <div id="item-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h2 id="item-modal-title">New Item</h2>
-            <button class="btn-icon" id="btn-close-item-modal">✕</button>
+        <!-- ── Character Detail ──────────────────────────────── -->
+        <div class="tab-content active" id="tab-detail">
+          <div id="char-detail">
+            <p class="text-muted" style="font-size:0.8rem">Select a character from the sidebar to view details.</p>
           </div>
-          <div class="modal-body" style="max-height:70vh;overflow-y:auto">
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Name</label>
-                <input type="text" id="item-ed-name" placeholder="Item name">
-              </div>
-              <div class="form-group">
-                <label>Category</label>
-                <select id="item-ed-category"></select>
-              </div>
-              <div class="form-group">
-                <label>Rarity</label>
-                <select id="item-ed-rarity">
-                  <option value="common">Common</option>
-                  <option value="uncommon">Uncommon</option>
-                  <option value="rare">Rare</option>
-                  <option value="epic">Epic</option>
-                  <option value="legendary">Legendary</option>
-                  <option value="mythic">Mythic</option>
-                  <option value="divine">Divine</option>
+        </div>
+
+        <!-- ── Item Database ─────────────────────────────────── -->
+        <div class="tab-content" id="tab-items">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>🗄 Item Database</h2>
+              <button class="btn btn-primary btn-sm" id="btn-new-item">+ New Item</button>
+              <button class="btn btn-ghost btn-sm" id="btn-new-category">+ Category</button>
+            </div>
+            <div class="detail-body">
+              <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <input type="text" id="item-search" placeholder="Search items…" style="flex:1;min-width:140px">
+                <select id="item-filter-category" style="min-width:96px"><option value="">All Categories</option></select>
+                <select id="item-filter-rarity" style="min-width:96px">
+                  <option value="">All Rarities</option><option value="common">Common</option>
+                  <option value="uncommon">Uncommon</option><option value="rare">Rare</option>
+                  <option value="epic">Epic</option><option value="legendary">Legendary</option>
+                  <option value="mythic">Mythic</option><option value="divine">Divine</option>
                 </select>
               </div>
-              <div class="form-group">
-                <label>Price</label>
+              <div id="item-grid" class="item-grid"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Card Library ──────────────────────────────────── -->
+        <div class="tab-content" id="tab-cards">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>🃏 Card Library</h2>
+              <div style="display:flex;gap:5px">
+                <button class="btn btn-primary btn-sm" id="btn-new-card">+ New Card</button>
+                <button class="btn btn-ghost btn-sm" id="btn-refresh-cards">↻ Refresh</button>
+              </div>
+            </div>
+            <div class="detail-body">
+              <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <input type="text" id="card-search" placeholder="Search cards…" style="flex:1;min-width:140px">
+                <select id="card-filter-type" style="min-width:96px">
+                  <option value="">All Types</option>
+                  <option value="character">Character</option>
+                  <option value="location">Location</option>
+                  <option value="item">Item</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div id="card-grid" class="item-grid"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Combat ────────────────────────────────────────── -->
+        <div class="tab-content" id="tab-combat">
+          <div id="combat-panel"></div>
+        </div>
+
+        <!-- ── Initiative ────────────────────────────────────── -->
+        <div class="tab-content" id="tab-initiative">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>⚔ Initiative Tracker</h2>
+              <div style="display:flex;gap:5px">
+                <button class="btn btn-primary btn-sm" id="btn-roll-initiative">🎲 Roll All</button>
+                <button class="btn btn-ghost btn-sm" id="btn-start-combat">▶ Start</button>
+                <button class="btn btn-ghost btn-sm" id="btn-next-turn">⏭ Next</button>
+                <button class="btn btn-danger btn-sm" id="btn-end-combat">⏹ End</button>
+              </div>
+            </div>
+            <div class="detail-body">
+              <div id="initiative-order"><p class="text-muted" style="font-size:0.78rem">Roll initiative to begin.</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Map ───────────────────────────────────────────── -->
+        <div class="tab-content" id="tab-map">
+          <div class="map-toolbar">
+            <button class="btn btn-primary btn-sm" id="btn-map-load-library">📂 Load from Library</button>
+            <button class="btn btn-danger btn-sm" id="btn-remove-map">🗑 Remove</button>
+            <select id="map-location-switcher"
+                    title="Switch active location"
+                    style="padding:4px 8px;border-radius:4px;background:#1a1814;
+                           color:#fff;border:1px solid #3a3530;font-size:0.75rem">
+              <option value="">— No active location —</option>
+            </select>
+            <div class="sep"></div>
+            <select id="map-floor-select" class="btn btn-ghost btn-sm" style="min-width:110px"></select>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
+            <button class="btn btn-ghost btn-xs" id="btn-grid-style">▢ Square</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-toggle-fog">Fog: OFF</button>
+            <button class="btn btn-ghost btn-xs" id="btn-fog-paint">🖌 Reveal</button>
+            <button class="btn btn-ghost btn-xs" id="btn-fog-reveal-all">Reveal All</button>
+            <button class="btn btn-ghost btn-xs" id="btn-fog-reset">Reset</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-center-map">🎯 Center</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-place-chest">📦 Chest</button>
+            <button class="btn btn-ghost btn-xs" id="btn-list-chests">📦 List</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs" id="btn-map-lock">🗺 Map: ON</button>
+          </div>
+          <div class="map-toolbar" id="map-draw-toolbar">
+            <button class="btn btn-ghost btn-xs map-mode-btn active" data-mode="">🖱</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="freehand">✏</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="rectangle">▭</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="circle">○</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="line">╱</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="arrow">→</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="marker">📌</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="erase">🗑</button>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="measure">📏</button>
+            <div class="sep"></div>
+            <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="obj-wall">🧱</button>
+            <button class="btn btn-ghost btn-xs" id="btn-clear-objects">🧨 Clear Walls</button>
+            <div class="sep"></div>
+            <input type="color" id="draw-color" value="#ff0000" style="width:24px;height:20px;border:none;background:none;cursor:pointer">
+            <input type="range" id="draw-width" min="1" max="8" value="2" style="width:55px">
+            <label style="font-size:0.63rem;color:var(--text-muted);display:flex;align-items:center;gap:3px"><input type="checkbox" id="draw-visible" checked> Visible</label>
+            <button class="btn btn-ghost btn-xs" id="btn-clear-drawings">🧹 Clear</button>
+          </div>
+          <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
+            <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
+            <div id="map-lighting-hud" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.45);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 10px;font-size:0.75rem;font-weight:500;color:#fff;pointer-events:none;z-index:5"></div>
+          </div>
+        </div>
+
+        <!-- ── Builder v2 ────────────────────────────────────── -->
+        <div class="tab-content" id="tab-builder-v2">
+          <div style="display:flex;flex:1;overflow:hidden">
+            <!-- Left sidebar -->
+            <div style="width:220px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto">
+
+              <!-- Map -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Map</div>
+                <select id="bv2-map-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
+                <div style="display:flex;gap:4px">
+                  <button id="bv2-btn-new-map" class="btn btn-primary btn-xs" style="flex:1">+ New Map</button>
+                  <button id="bv2-btn-delete-map" class="btn btn-danger btn-xs" title="Delete">🗑</button>
+                </div>
+              </div>
+
+              <!-- Location -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Location</div>
+                <select id="bv2-loc-select" class="form-control" style="width:100%;margin-bottom:6px;font-size:0.78rem"></select>
+                <div style="display:flex;gap:4px">
+                  <button id="bv2-btn-new-loc" class="btn btn-primary btn-xs" style="flex:1">+ New</button>
+                  <button id="bv2-btn-delete-loc" class="btn btn-danger btn-xs" title="Delete">🗑</button>
+                </div>
+                <div style="padding:6px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <label style="flex:1 0 100%;font-size:0.7rem;color:var(--text-muted)">Ambient light</label>
+                  <input id="bv2-loc-ambient" type="range" min="0" max="1" step="0.05" value="1" style="flex:1">
+                  <span id="bv2-loc-ambient-val" style="width:32px;font-size:0.7rem">1.00</span>
+                  <label style="flex:1 0 100%;font-size:0.7rem;margin-top:4px;display:flex;gap:4px;align-items:center">
+                    <input id="bv2-loc-indoor" type="checkbox"> Indoor (heavy darkness fallback)
+                  </label>
+                  <div id="bv2-lighting-status" style="flex:1 0 100%;margin-top:4px;font-size:0.7rem;font-weight:600;padding:2px 6px;border-radius:4px;width:fit-content">Bright</div>
+                </div>
+                <button id="bv2-btn-apply" class="btn btn-success btn-sm" style="width:100%;margin-top:8px;font-weight:600">▶ Apply to Game</button>
+                <div id="bv2-save-indicator" style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin-top:4px;min-height:14px"></div>
+              </div>
+
+              <!-- Grid -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Grid</div>
+                <button id="bv2-btn-grid-type" class="btn btn-ghost btn-xs" style="width:100%;margin-bottom:6px">▢ Square Grid</button>
+                <label style="font-size:0.7rem;color:var(--text-muted)">Tile Size: <span id="bv2-tile-size-val">50</span>px</label>
+                <input id="bv2-tile-size" type="range" min="20" max="100" value="50" style="width:100%;margin-bottom:6px">
                 <div style="display:flex;gap:4px;align-items:center">
-                  <span style="font-size:0.75rem;color:#e0c97f">P</span><input type="number" id="item-ed-price-p" value="0" min="0" style="width:52px">
-                  <span style="font-size:0.75rem;color:#fbbf24">G</span><input type="number" id="item-ed-price-g" value="0" min="0" style="width:52px">
-                  <span style="font-size:0.75rem;color:#94a3b8">S</span><input type="number" id="item-ed-price-s" value="0" min="0" style="width:52px">
-                  <span style="font-size:0.75rem;color:#b87333">B</span><input type="number" id="item-ed-price-b" value="0" min="0" style="width:52px">
+                  <label style="font-size:0.7rem;color:var(--text-muted)">W:</label>
+                  <input id="bv2-cols" type="number" min="5" max="200" value="40" style="width:50px;font-size:0.75rem" class="form-control">
+                  <label style="font-size:0.7rem;color:var(--text-muted)">H:</label>
+                  <input id="bv2-rows" type="number" min="5" max="200" value="30" style="width:50px;font-size:0.75rem" class="form-control">
                 </div>
-                <input type="hidden" id="item-ed-price" value="0">
               </div>
-              <div class="form-group" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-                <label><input type="checkbox" id="item-ed-equippable"> Equippable</label>
-                <label><input type="checkbox" id="item-ed-consumable"> Consumable</label>
-                <!-- FIX 6: Potion toggle -->
-                <label><input type="checkbox" id="item-ed-is-potion"> 🧪 This is a potion</label>
-              </div>
-              <div class="form-group">
-                <label>Mana Cost to use (0 = free)</label>
-                <input type="number" id="item-ed-mana-cost" value="0" min="0" style="width:80px">
-              </div>
-            </div>
 
-            <!-- FIX 6: Potion Identity (toggled) -->
-            <div id="potion-identity-section" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg-surface-3);border-radius:var(--r-md);border-left:3px solid #a855f7">
-              <h3 style="font-size:0.85rem;margin-bottom:8px;display:flex;align-items:center;gap:6px">🧪 Potion Identity</h3>
-              <div class="form-group" style="margin-bottom:6px">
-                <label style="font-size:0.78rem">Icon</label>
-                <div id="potion-icon-picker" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
-                  <!-- icons injected by JS -->
+              <!-- Brushes -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Terrain</div>
+                <div class="builder-tool-grid">
+                  <button class="bv2-brush active" data-brush="floor" title="Floor (1)">⬜<span>Floor</span></button>
+                  <button class="bv2-brush" data-brush="wall"  title="Wall (2)">🧱<span>Wall</span></button>
+                  <button class="bv2-brush" data-brush="water" title="Water (3)">💧<span>Water</span></button>
+                  <button class="bv2-brush" data-brush="lava"  title="Lava (4)">🔥<span>Lava</span></button>
+                  <button class="bv2-brush" data-brush="pit"   title="Pit (5)">🕳<span>Pit</span></button>
+                  <button class="bv2-brush" data-brush="door"  title="Door (6)">🚪<span>Door</span></button>
+                  <button class="bv2-brush" data-brush="rough" title="Rough (7)">⛰<span>Rough</span></button>
+                  <button class="bv2-brush" data-brush="erase" title="Erase (E)">🧹<span>Erase</span></button>
+                  <button class="bv2-brush" data-brush="zone" title="Zone — marks an interior area (room, building). Assign a roof via the Interiors panel.">▦<span>Zone</span></button>
+                  <button class="bv2-brush" data-brush="building" title="Building: drag rectangle = walls + floor + door + interior zone (B)">🏠<span>Building</span></button>
                 </div>
-                <input type="hidden" id="item-ed-potion-icon" value="🧪">
+                <button id="bv2-btn-clear" class="btn btn-danger btn-xs" style="width:100%;margin-top:6px">🗑 Clear All Tiles</button>
               </div>
-            </div>
-            <div class="form-group" style="margin-top:8px">
-              <label>Description</label>
-              <textarea id="item-ed-desc" rows="2" placeholder="Item description..."></textarea>
-            </div>
-            <div class="form-group" style="margin-top:8px">
-              <label>Tags (comma-separated)</label>
-              <input type="text" id="item-ed-tags" placeholder="magic, cursed, two-handed" style="width:100%">
-            </div>
 
-            <!-- Weapon Stats (toggled) -->
-            <div style="margin-top:12px">
-              <label><input type="checkbox" id="item-ed-is-weapon"> This is a weapon</label>
-            </div>
-            <div id="weapon-stats-section" class="hidden" style="margin-top:8px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-md)">
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <label style="font-size:0.78rem">Dice:</label>
-                <input type="number" id="item-ed-wdice-count" value="1" min="1" style="width:48px">
-                <span>d</span>
-                <input type="number" id="item-ed-wdice-type" value="6" min="1" style="width:48px">
-                <label style="font-size:0.78rem">Type:</label>
-                <select id="item-ed-wdmg-type">
-                  <option value="physical">Physical</option>
-                  <option value="fire">Fire</option>
-                  <option value="ice">Ice</option>
-                  <option value="lightning">Lightning</option>
-                  <option value="poison">Poison</option>
-                  <option value="magic">Magic</option>
-                  <option value="necrotic">Necrotic</option>
-                  <option value="radiant">Radiant</option>
-                </select>
-                <label style="font-size:0.78rem">Range:</label>
-                <input type="text" id="item-ed-wrange" placeholder="melee" style="width:70px">
-                <!-- Rework v3 Phase 7: grid-cell range. Enforced server-side:
-                     attackers beyond this many cells from the target on the
-                     battle map get a 403 OUT_OF_RANGE toast. -->
-                <label style="font-size:0.78rem" title="Max distance in battle-grid cells">📏 Cells:</label>
-                <input type="number" id="item-ed-wrange-cells" value="1" min="1" max="40" style="width:56px" title="Range in cells (1 = melee adjacent)">
+              <!-- Interior Zones -->
+              <div id="bv2-interior-section" style="padding:10px;border-bottom:1px solid var(--border);display:none">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Interior Zones</div>
+                <div id="bv2-interior-list" style="max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
-              <!-- Rework: stat that contributes bonus to hit & damage rolls -->
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-                <label style="font-size:0.78rem">Hit stat:</label>
-                <select id="item-ed-whitstat">
-                  <option value="strength">Strength</option>
-                  <option value="dexterity">Dexterity</option>
-                  <option value="constitution">Constitution</option>
-                  <option value="intelligence">Intelligence</option>
-                  <option value="wisdom">Wisdom</option>
-                  <option value="charisma">Charisma</option>
-                </select>
-                <label style="font-size:0.78rem">Damage stat:</label>
-                <select id="item-ed-wdmgstat">
-                  <option value="strength">Strength</option>
-                  <option value="dexterity">Dexterity</option>
-                  <option value="constitution">Constitution</option>
-                  <option value="intelligence">Intelligence</option>
-                  <option value="wisdom">Wisdom</option>
-                  <option value="charisma">Charisma</option>
-                  <option value="">None</option>
-                </select>
-                <span style="font-size:0.68rem;color:var(--text-muted)">Bonus = stat value directly (e.g. STR 3 → +3).</span>
-              </div>
-              <!-- Rework v3: optional preset damage modes (1h/2h, elemental, etc.). -->
-              <div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-                  <label style="font-size:0.78rem;font-weight:600">Damage Modes <span style="font-weight:400;color:var(--text-muted)">(optional presets — players pick one)</span></label>
-                  <button type="button" class="btn btn-ghost btn-xs" id="item-ed-add-dmode">+ Add mode</button>
+
+              <!-- Entities -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Entities</div>
+                <div class="builder-tool-grid">
+                  <button class="bv2-brush" data-brush="entity:chest" title="Chest">🗃<span>Chest</span></button>
+                  <button class="bv2-brush" data-brush="entity:trap" title="Trap">⚠<span>Trap</span></button>
+                  <button class="bv2-brush" data-brush="entity:portal" title="Portal">🌀<span>Portal</span></button>
+                  <button class="bv2-brush" data-brush="entity:npc_spawn" title="NPC Spawn">⊛<span>NPC</span></button>
+                  <button class="bv2-brush" data-brush="entity:cover_zone" title="Cover">⛑<span>Cover</span></button>
                 </div>
-                <div id="item-ed-dmodes" style="display:flex;flex-direction:column;gap:4px"></div>
-                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px">Leave empty to use the fixed Dice above. Otherwise the first mode is the default.</div>
+                <div id="bv2-entity-list" style="margin-top:8px;max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
-            </div>
 
-            <!-- Use Effects (for consumables/potions) -->
-            <div id="use-effects-section" class="hidden" style="margin-top:12px;padding:8px;background:var(--bg-surface-3);border-radius:var(--r-md)">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                <h3 style="font-size:0.85rem;flex:1">🧪 Use Effects</h3>
-                <button class="btn btn-ghost btn-xs" id="btn-add-use-effect">+ Add Effect</button>
+              <!-- Lights -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Lights</div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">
+                  Ambient: <span id="bv2-ambient-val">0.40</span>
+                </label>
+                <input type="range" id="bv2-ambient-slider" min="0" max="1" step="0.05"
+                       value="0.4" style="width:100%;margin-bottom:6px">
+                <div class="builder-tool-grid">
+                  <button class="bv2-light-brush" data-preset="torch" title="Torch">🔥<span>Torch</span></button>
+                  <button class="bv2-light-brush" data-preset="lamp"  title="Lamp">💡<span>Lamp</span></button>
+                  <button class="bv2-light-brush" data-preset="magic" title="Magic">✨<span>Magic</span></button>
+                </div>
+                <div id="bv2-light-list" style="margin-top:8px;max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
-              <div id="use-effect-editor-list"></div>
-            </div>
 
-            <!-- Bonuses -->
-            <div style="margin-top:12px">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                <h3 style="font-size:0.85rem;flex:1">Bonuses</h3>
-                <button class="btn btn-ghost btn-xs" id="btn-add-bonus">+ Add Bonus</button>
+              <!-- Edges -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Edges</div>
+                <button class="bv2-edge-brush btn btn-ghost btn-xs" style="width:100%" title="Draw edge">🔗 Draw Edge</button>
+                <div id="bv2-edge-list" style="margin-top:8px;max-height:120px;overflow-y:auto;font-size:0.75rem"></div>
               </div>
-              <div id="bonus-editor-list"></div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-ghost btn-sm" id="btn-cancel-item">Cancel</button>
-            <button class="btn btn-danger btn-sm hidden" id="btn-delete-item">Delete Item</button>
-            <button class="btn btn-primary btn-sm" id="btn-save-item">Save Item</button>
-          </div>
-        </div>
-      </div>
 
-      <!-- Category Modal -->
-      <div id="category-modal" class="modal-overlay hidden">
-        <div class="modal-content" style="max-width:360px">
-          <div class="modal-header">
-            <h2>New Category</h2>
-            <button class="btn-icon" id="btn-close-cat-modal">✕</button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group"><label>Name</label><input type="text" id="cat-ed-name" placeholder="Category name"></div>
-            <div class="form-group"><label>Icon (emoji)</label><input type="text" id="cat-ed-icon" value="📦" style="width:60px"></div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-ghost btn-sm" id="btn-cancel-cat">Cancel</button>
-            <button class="btn btn-primary btn-sm" id="btn-save-cat">Save</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB: Combat (Stage 5) -->
-      <div class="tab-content" id="tab-combat" style="padding:16px">
-        <div id="combat-panel"></div>
-      </div>
-
-      <!-- TAB: Initiative -->
-      <div class="tab-content" id="tab-initiative" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>⚔️ Initiative Tracker</h2>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-primary btn-sm" id="btn-roll-initiative">🎲 Roll All</button>
-              <button class="btn btn-ghost btn-sm" id="btn-start-combat">▶ Start Combat</button>
-              <button class="btn btn-ghost btn-sm" id="btn-next-turn">⏭ Next Turn</button>
-              <button class="btn btn-danger btn-sm" id="btn-end-combat">⏹ End Combat</button>
-            </div>
-          </div>
-          <div class="detail-body">
-            <div id="initiative-order"><p class="text-muted">Roll initiative to begin.</p></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB: Map -->
-      <div class="tab-content" id="tab-map" style="padding:0;display:none;flex-direction:column;height:calc(100vh - 160px)">
-        <div style="display:flex;gap:6px;padding:8px 12px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
-          <label class="btn btn-primary btn-sm" style="cursor:pointer">
-            📁 Upload Map <input type="file" id="map-upload" accept="image/*" style="display:none">
-          </label>
-          <button class="btn btn-danger btn-sm" id="btn-remove-map" title="Remove uploaded map image">🗑 Remove Map</button>
-          <button class="btn btn-ghost btn-xs" id="btn-toggle-grid">Grid: ON</button>
-          <button class="btn btn-ghost btn-xs" id="btn-grid-style" title="Switch between square and hex grid">Style: ▢ Square</button>
-          <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
-          <input type="range" id="grid-size-slider" min="20" max="100" value="50" style="width:80px">
-          <span id="grid-size-label" style="font-size:0.72rem;min-width:28px">50</span>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <button class="btn btn-ghost btn-xs" id="btn-toggle-fog">Fog: OFF</button>
-          <button class="btn btn-ghost btn-xs" id="btn-fog-paint">🖌️ Reveal</button>
-          <button class="btn btn-ghost btn-xs" id="btn-fog-reveal-all">Reveal All</button>
-          <button class="btn btn-ghost btn-xs" id="btn-fog-reset">Reset Fog</button>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <button class="btn btn-ghost btn-xs" id="btn-center-map">🎯 Center</button>
-        </div>
-        <!-- Drawing Toolbar (Stage 9) -->
-        <div id="map-draw-toolbar" style="display:flex;gap:4px;padding:4px 12px;background:var(--bg-surface);border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-xs map-mode-btn active" data-mode="" title="Select/Pan">🖱️</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="freehand" title="Freehand Draw">✏️</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="rectangle" title="Rectangle">▭</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="circle" title="Circle">○</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="line" title="Line">╱</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="arrow" title="Arrow">→</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="marker" title="Place Marker">📌</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="erase" title="Erase">🗑️</button>
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="measure" title="Measure Distance">📏</button>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <!-- Rework v3 Phase 5: map-objects / walls toolbar. `obj-wall`
-               enters a drag-to-place rectangle mode handled in
-               gm-app.js (see the Phase 5 `initMapObjectsTool` IIFE). -->
-          <button class="btn btn-ghost btn-xs map-mode-btn" data-mode="obj-wall" title="Draw Wall (blocks movement)">🧱</button>
-          <button class="btn btn-ghost btn-xs" id="btn-clear-objects" title="Clear All Walls/Objects">🧨 Clear Walls</button>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <input type="color" id="draw-color" value="#ff0000" style="width:28px;height:22px;border:none;background:none;cursor:pointer" title="Draw Color">
-          <input type="range" id="draw-width" min="1" max="8" value="2" style="width:60px" title="Line Width">
-          <label style="font-size:0.68rem;color:var(--text-muted);display:flex;align-items:center;gap:3px">
-            <input type="checkbox" id="draw-visible" checked> Visible
-          </label>
-          <button class="btn btn-ghost btn-xs" id="btn-clear-drawings" title="Clear All Drawings">🧹 Clear</button>
-        </div>
-        <div style="flex:1;position:relative;overflow:hidden;background:#111">
-          <canvas id="map-canvas" style="display:block;width:100%;height:100%"></canvas>
-        </div>
-      </div>
-
-      <!-- TAB: Builder -->
-      <div class="tab-content" id="tab-builder" style="padding:0;display:none;flex-direction:column;height:calc(100vh - 160px)">
-        <div id="builder-toolbar" style="display:flex;gap:6px;padding:8px 12px;background:var(--bg-surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
-          <select id="builder-floor-select" class="btn btn-ghost btn-sm" style="min-width:120px"></select>
-          <button id="btn-new-floor" class="btn btn-primary btn-sm">+ Floor</button>
-          <button id="btn-delete-floor" class="btn btn-danger btn-sm">🗑</button>
-          <button id="btn-activate-floor" class="btn btn-ghost btn-sm">▶ Activate</button>
-          <button id="btn-builder-grid-type" class="btn btn-ghost btn-xs">▢ Square</button>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <label style="font-size:0.72rem;color:var(--text-muted)">Size:</label>
-          <input id="builder-tile-size" type="range" min="20" max="100" value="50" style="width:80px">
-          <span id="builder-tile-size-val" style="font-size:0.72rem;min-width:28px">50</span>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <label style="font-size:0.72rem;color:var(--text-muted)">Bounds:</label>
-          <input id="builder-map-cols" type="number" min="5" max="200" value="40" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:2px 4px;border-radius:var(--r-xs);font-size:0.75rem">
-          <span style="font-size:0.72rem;color:var(--text-muted)">×</span>
-          <input id="builder-map-rows" type="number" min="5" max="200" value="30" style="width:50px;background:var(--bg-surface-2);color:var(--text);border:1px solid var(--border);padding:2px 4px;border-radius:var(--r-xs);font-size:0.75rem">
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <button class="btn btn-ghost btn-xs builder-brush active" data-brush="floor" title="Floor">⬜</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="wall" title="Wall">🧱</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="door" title="Door">🚪</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="water" title="Water">💧</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="pit" title="Pit">🕳️</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_up" title="Stairs Up">⬆️</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="stairs_down" title="Stairs Down">⬇️</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="trap" title="Trap Tile">⚠️</button>
-          <button class="btn btn-ghost btn-xs builder-brush" data-brush="erase" title="Erase">🧹</button>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <button id="btn-clear-tiles" class="btn btn-ghost btn-xs">Clear</button>
-          <button id="btn-save-tiles" class="btn btn-primary btn-xs">💾 Save</button>
-          <span style="width:1px;height:18px;background:var(--border)"></span>
-          <button id="btn-place-trap" class="btn btn-danger btn-xs" title="Place Interactive Trap">⚠️ Trap</button>
-        </div>
-        <div style="flex:1;position:relative;overflow:hidden;background:#111">
-          <canvas id="builder-canvas" style="display:block;width:100%;height:100%"></canvas>
-        </div>
-      </div>
-
-      <!-- TAB: Quick Actions -->
-      <div class="tab-content" id="tab-actions" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header"><h2>⚔️ Damage All Players</h2></div>
-          <div class="detail-body">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <label style="font-size:0.8rem;color:var(--text-muted)">Enemy Roll:</label>
-              <input type="number" id="aoe-enemy-roll" style="width:60px">
-              <label style="font-size:0.8rem;color:var(--text-muted)">Damage:</label>
-              <input type="number" id="aoe-damage" style="width:60px">
-              <button class="btn btn-danger btn-sm" id="btn-aoe-damage">Apply to All</button>
-            </div>
-            <div class="result-box" id="aoe-result" style="margin-top:8px"><span class="text-muted">—</span></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB: Event Log (enhanced Stage 10) -->
-      <div class="tab-content" id="tab-log" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>📜 Event Log</h2>
-            <button class="btn btn-ghost btn-xs" id="btn-export-log" title="Export as .txt">📥 Export</button>
-          </div>
-          <div class="detail-body">
-            <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
-              <button class="btn btn-xs log-filter-btn active" data-log-filter="all">All</button>
-              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="combat">⚔️ Combat</button>
-              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="economy">💰 Economy</button>
-              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="inventory">🎒 Inventory</button>
-              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="quest">📜 Quests</button>
-              <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="map">🗺️ Map</button>
-              <span style="flex:1"></span>
-              <input type="text" id="log-search" placeholder="Search log..." style="width:140px;font-size:0.75rem;padding:3px 6px">
-            </div>
-            <div class="event-log" id="event-log"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB: Quests (Stage 8) -->
-      <div class="tab-content" id="tab-quests" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>📜 Quests</h2>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-secondary btn-xs" id="btn-quest-assign-quick">📤 Assign Quest</button>
-              <button class="btn btn-primary btn-xs" id="btn-quest-create">+ Quest Template</button>
-            </div>
-          </div>
-          <div class="detail-body">
-            <!-- Sub-tabs -->
-            <div style="display:flex;gap:8px;margin-bottom:12px">
-              <button class="btn btn-sm quest-sub active" data-qsub="active" style="font-size:0.78rem">Active Quests</button>
-              <button class="btn btn-sm btn-ghost quest-sub" data-qsub="templates" style="font-size:0.78rem">Quest Templates</button>
-            </div>
-            <div id="quest-active-panel"></div>
-            <div id="quest-templates-panel" style="display:none"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB: NPC Library (Stage 7) -->
-      <div class="tab-content" id="tab-npc-library" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>📚 NPC Library</h2>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-primary btn-xs" id="btn-npc-create-folder">+ Folder</button>
-              <button class="btn btn-primary btn-xs" id="btn-npc-create-template">+ NPC Template</button>
-              <button class="btn btn-secondary btn-xs" id="btn-npc-create-event">+ Event</button>
-            </div>
-          </div>
-          <div class="detail-body">
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <!-- Folders + Templates -->
-              <div style="flex:2;min-width:320px">
-                <h3 style="font-size:0.85rem;margin-bottom:8px">Folders & Templates</h3>
-                <div id="npc-folder-tree"></div>
-                <hr style="border-color:var(--border);margin:12px 0">
-                <h3 style="font-size:0.85rem;margin-bottom:8px">All Templates</h3>
-                <div id="npc-template-list"></div>
+              <!-- Library -->
+              <div style="padding:10px;border-bottom:1px solid var(--border)">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Library</div>
+                <button id="bv2-btn-save-library" class="btn btn-primary btn-xs" style="width:100%;margin-bottom:4px">💾 Save Snapshot</button>
+                <button id="bv2-btn-library" class="btn btn-ghost btn-xs" style="width:100%">📂 Open Library</button>
               </div>
-              <!-- Event Templates -->
-              <div style="flex:1;min-width:240px">
-                <h3 style="font-size:0.85rem;margin-bottom:8px">Event Templates</h3>
-                <div id="npc-event-list"></div>
+
+              <!-- Help -->
+              <div style="padding:10px;font-size:0.7rem;color:var(--text-muted);line-height:1.5">
+                <strong style="color:var(--text)">Hotkeys</strong><br>
+                1-7 select brush · E erase<br>
+                Left drag = paint · Right drag = pan · Wheel = zoom<br>
+                Click = place entity · Shift+click = delete entity<br>
+                <em>Auto-saves on every stroke.</em><br>
+                Apply pushes the location live to all players.
+              </div>
+
+            </div>
+
+            <!-- Canvas area -->
+            <div style="flex:1;position:relative;overflow:hidden;background:#0a0908">
+              <canvas id="bv2-canvas" style="display:block;width:100%;height:100%"></canvas>
+              <div id="bv2-empty-msg" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--text-muted);pointer-events:none;font-size:0.95rem;text-align:center;padding:20px">
+                <div>
+                  <div style="font-size:2.5rem;margin-bottom:12px">🗺️</div>
+                  <div>Create a Map and a Location to start drawing.</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- TAB: Races & Professions (Rework v2 — classes renamed to professions in UI) -->
-      <div class="tab-content" id="tab-races-classes" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>🧬 Races & Professions</h2>
-            <div style="display:flex;gap:6px">
+        <!-- ── Quick Actions ─────────────────────────────────── -->
+        <div class="tab-content" id="tab-actions">
+          <div class="detail-panel">
+            <div class="detail-header"><h2>⚔ Damage All Players</h2></div>
+            <div class="detail-body">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <label style="font-size:0.75rem;color:var(--text-muted)">Enemy Roll:</label>
+                <input type="number" id="aoe-enemy-roll" style="width:58px">
+                <label style="font-size:0.75rem;color:var(--text-muted)">Damage:</label>
+                <input type="number" id="aoe-damage" style="width:58px">
+                <button class="btn btn-danger btn-sm" id="btn-aoe-damage">Apply to All</button>
+              </div>
+              <div class="result-box" id="aoe-result" style="margin-top:8px"><span class="text-muted">—</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Event Log ─────────────────────────────────────── -->
+        <div class="tab-content" id="tab-log">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>📜 Event Log</h2>
+              <button class="btn btn-ghost btn-xs" id="btn-export-log">📥 Export</button>
+            </div>
+            <div class="detail-body">
+              <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+                <button class="btn btn-xs log-filter-btn active" data-log-filter="all">All</button>
+                <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="combat">⚔ Combat</button>
+                <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="economy">💰 Economy</button>
+                <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="inventory">🎒 Inventory</button>
+                <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="quest">📜 Quests</button>
+                <button class="btn btn-xs btn-ghost log-filter-btn" data-log-filter="map">🗺 Map</button>
+                <span style="flex:1"></span>
+                <input type="text" id="log-search" placeholder="Search…" style="width:120px;font-size:0.7rem">
+              </div>
+              <div class="event-log" id="event-log"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Quests ─────────────────────────────────────────── -->
+        <div class="tab-content" id="tab-quests">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>📜 Quests</h2>
+              <div style="display:flex;gap:5px">
+                <button class="btn btn-ghost btn-sm" id="btn-quest-assign-quick">📤 Assign</button>
+                <button class="btn btn-primary btn-sm" id="btn-quest-create">+ Template</button>
+              </div>
+            </div>
+            <div class="detail-body">
+              <div style="display:flex;gap:7px;margin-bottom:12px">
+                <button class="btn btn-sm quest-sub active" data-qsub="active">Active Quests</button>
+                <button class="btn btn-sm btn-ghost quest-sub" data-qsub="templates">Templates</button>
+              </div>
+              <div id="quest-active-panel"></div>
+              <div id="quest-templates-panel" style="display:none"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── NPC Library ────────────────────────────────────── -->
+        <div class="tab-content" id="tab-npc-library">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>📚 NPC Library</h2>
+              <div style="display:flex;gap:5px">
+                <button class="btn btn-primary btn-xs" id="btn-npc-create-folder">+ Folder</button>
+                <button class="btn btn-primary btn-xs" id="btn-npc-create-template">+ NPC</button>
+                <button class="btn btn-ghost btn-xs" id="btn-npc-create-event">+ Event</button>
+              </div>
+            </div>
+            <div class="detail-body">
+              <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div style="flex:2;min-width:280px">
+                  <p class="sub-h">Folders &amp; Templates</p>
+                  <div id="npc-folder-tree"></div>
+                  <hr class="section-divider">
+                  <div id="npc-template-list"></div>
+                </div>
+                <div style="flex:1;min-width:210px">
+                  <p class="sub-h">Event Templates</p>
+                  <div id="npc-event-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Races & Professions ───────────────────────────── -->
+        <div class="tab-content" id="tab-races-classes">
+          <div class="detail-panel">
+            <div class="detail-header">
+              <h2>🧬 Races &amp; Professions</h2>
               <button class="btn btn-primary btn-xs" id="btn-seed-rc">Seed Defaults</button>
             </div>
-          </div>
-          <div class="detail-body">
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <!-- Races column -->
-              <div style="flex:1;min-width:280px">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                  <h3 style="font-size:0.85rem;flex:1">Races</h3>
-                  <button class="btn btn-primary btn-xs" id="btn-create-race">+ Create Race</button>
+            <div class="detail-body">
+              <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div style="flex:1;min-width:250px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+                    <p class="sub-h" style="margin:0;flex:1">Races</p>
+                    <button class="btn btn-primary btn-xs" id="btn-create-race">+ Race</button>
+                  </div>
+                  <div id="rc-races-list"></div>
                 </div>
-                <div id="rc-races-list"></div>
-              </div>
-              <!-- Professions column (internal ORM is still `CharacterClass` — UI-only rename) -->
-              <div style="flex:1;min-width:280px">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                  <h3 style="font-size:0.85rem;flex:1">Professions</h3>
-                  <button class="btn btn-primary btn-xs" id="btn-create-class">+ Create Profession</button>
+                <div style="flex:1;min-width:250px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+                    <p class="sub-h" style="margin:0;flex:1">Professions</p>
+                    <button class="btn btn-primary btn-xs" id="btn-create-class">+ Profession</button>
+                  </div>
+                  <div id="rc-classes-list"></div>
                 </div>
-                <div id="rc-classes-list"></div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <!-- TAB: Announcements (Stage 10) -->
-      <div class="tab-content" id="tab-announcements" style="padding:16px">
-        <div class="detail-panel">
-          <div class="detail-header">
-            <h2>📢 Announcement Board</h2>
-          </div>
-          <div class="detail-body">
-            <div style="display:flex;gap:6px;margin-bottom:12px">
-              <textarea id="announce-input" rows="2" placeholder="Write an announcement..." style="flex:1;font-size:0.82rem;resize:vertical"></textarea>
-              <div style="display:flex;flex-direction:column;gap:4px">
-                <button class="btn btn-primary btn-sm" id="btn-post-announce">📤 Post</button>
-                <label style="font-size:0.7rem;display:flex;align-items:center;gap:3px"><input type="checkbox" id="announce-pin"> 📌 Pin</label>
+
+        <!-- ── Announcements ─────────────────────────────────── -->
+        <div class="tab-content" id="tab-announcements">
+          <div class="detail-panel">
+            <div class="detail-header"><h2>📢 Announcement Board</h2></div>
+            <div class="detail-body">
+              <div style="display:flex;gap:8px;margin-bottom:14px">
+                <textarea id="announce-input" rows="2" placeholder="Write an announcement…" style="flex:1;font-size:0.78rem;resize:vertical"></textarea>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <button class="btn btn-primary btn-sm" id="btn-post-announce">📤 Post</button>
+                  <label style="font-size:0.65rem;display:flex;align-items:center;gap:3px"><input type="checkbox" id="announce-pin"> 📌 Pin</label>
+                </div>
               </div>
+              <div id="announcements-list"></div>
             </div>
-            <div id="announcements-list"></div>
           </div>
         </div>
-      </div>
 
-    </div>
+      </div><!-- /gm-tab-content -->
+    </div><!-- /gm-tab-layout -->
+  </div><!-- /gm-main -->
 
-    <!-- ── AI SIDEBAR ─────────────────────────────────────── -->
-    <div class="gm-ai-sidebar" id="ai-sidebar">
-      <div class="gm-sidebar-header" style="cursor:pointer" id="ai-sidebar-toggle">
-        <h2>🤖 ARIA AI</h2>
-        <button class="btn btn-ghost btn-xs" id="btn-ai-collapse">◀</button>
-      </div>
-      <div id="ai-sidebar-content">
-        <div class="ai-quick-actions" style="padding:6px 8px;display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
-          <button class="btn btn-ghost btn-xs" data-ai-quick="narrate">🎭 Narrate</button>
-          <button class="btn btn-ghost btn-xs" data-ai-quick="npc">⚔️ NPC Action</button>
-          <button class="btn btn-ghost btn-xs" data-ai-quick="item">🗡️ Gen Item</button>
-          <button class="btn btn-ghost btn-xs" data-ai-quick="summary">📜 Summary</button>
-        </div>
-        <div id="ai-messages" style="flex:1;overflow-y:auto;padding:8px;font-size:0.8rem"></div>
-        <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:4px">
-          <input type="text" id="ai-input" placeholder="Ask ARIA..." style="flex:1;font-size:0.8rem">
-          <button class="btn btn-primary btn-sm" id="btn-ai-send">Send</button>
-        </div>
-      </div>
+  <!-- ── AI SIDEBAR ──────────────────────────────────────────── -->
+  <div class="gm-ai-sidebar" id="ai-sidebar">
+    <div class="ai-hdr" id="ai-sidebar-toggle">
+      <span class="ai-live-dot"></span>
+      <h2 class="ai-hdr-text">ARIA AI</h2>
+      <button class="btn-icon" id="btn-ai-collapse" style="font-size:0.65rem">◀</button>
     </div>
-  </div>
-
-  <!-- ── FLOATING DICE ROLL LOG ─────────────────────────────── -->
-  <div id="roll-log-panel" style="
-    position:fixed; bottom:12px; right:12px; width:340px; max-height:320px;
-    background:var(--bg-surface); border:1px solid var(--border);
-    border-radius:var(--r-lg); box-shadow:0 4px 24px rgba(0,0,0,.35);
-    z-index:900; display:flex; flex-direction:column; overflow:hidden;
-  ">
-    <div id="roll-log-header" style="
-      padding:8px 12px; background:var(--bg-surface-2); border-bottom:1px solid var(--border);
-      display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
-    ">
-      <span style="font-size:1rem">🎲</span>
-      <span style="font-weight:700; font-size:0.82rem; flex:1">Dice Roll Log</span>
-      <span id="roll-log-count" style="
-        font-size:0.65rem; padding:1px 6px; border-radius:10px;
-        background:var(--accent); color:#fff; font-weight:700; display:none;
-      ">0</span>
-      <button class="btn btn-ghost btn-xs" id="roll-log-toggle" style="font-size:0.7rem">▼</button>
-    </div>
-    <div id="roll-log-body" style="flex:1; overflow-y:auto; padding:6px 10px; font-size:0.78rem; max-height:260px">
-      <div style="color:var(--text-muted); font-size:0.75rem; text-align:center; padding:12px 0">
-        Rolls from players will appear here...
+    <div id="ai-sidebar-content" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div class="ai-quick-actions">
+        <button class="btn btn-ghost btn-xs" data-ai-quick="narrate">🎭 Narrate</button>
+        <button class="btn btn-ghost btn-xs" data-ai-quick="npc">⚔ NPC</button>
+        <button class="btn btn-ghost btn-xs" data-ai-quick="item">🗡 Item</button>
+        <button class="btn btn-ghost btn-xs" data-ai-quick="summary">📜 Summary</button>
+      </div>
+      <div id="ai-messages"></div>
+      <div class="ai-input-area">
+        <input type="text" id="ai-input" placeholder="Ask ARIA…">
+        <button class="btn btn-primary btn-sm" id="btn-ai-send">Send</button>
       </div>
     </div>
   </div>
+</div><!-- /gm-body -->
 
-  <script src="/static/js/websocket-client.js?v=reworkv3p18"></script>
-  <script src="/static/js/character-sheet-core.js?v=reworkv3p18"></script>
-  <script src="/static/js/map-canvas.js?v=reworkv3p18"></script>
-  <script src="/static/js/gm-app.js?v=reworkv3p18"></script>
+<!-- ── ITEM MODAL ───────────────────────────────────────────── -->
+<div id="item-modal" class="modal-overlay hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="item-modal-title">New Item</h2>
+      <button class="btn-icon" id="btn-close-item-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Name</label><input type="text" id="item-ed-name" placeholder="Item name"></div>
+        <div class="form-group"><label>Category</label><select id="item-ed-category"></select></div>
+        <div class="form-group"><label>Rarity</label>
+          <select id="item-ed-rarity">
+            <option value="common">Common</option><option value="uncommon">Uncommon</option>
+            <option value="rare">Rare</option><option value="epic">Epic</option>
+            <option value="legendary">Legendary</option><option value="mythic">Mythic</option>
+            <option value="divine">Divine</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Price</label>
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:0.65rem;color:#e0c97f">P</span><input type="number" id="item-ed-price-p" value="0" min="0" style="width:44px">
+            <span style="font-size:0.65rem;color:#f5c842">G</span><input type="number" id="item-ed-price-g" value="0" min="0" style="width:44px">
+            <span style="font-size:0.65rem;color:#94a3b8">S</span><input type="number" id="item-ed-price-s" value="0" min="0" style="width:44px">
+            <span style="font-size:0.65rem;color:#b87333">B</span><input type="number" id="item-ed-price-b" value="0" min="0" style="width:44px">
+          </div>
+          <input type="hidden" id="item-ed-price" value="0">
+        </div>
+        <div class="form-group" style="flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="flex-direction:row;gap:4px"><input type="checkbox" id="item-ed-equippable"> Equippable</label>
+          <label style="flex-direction:row;gap:4px"><input type="checkbox" id="item-ed-consumable"> Consumable</label>
+          <label style="flex-direction:row;gap:4px"><input type="checkbox" id="item-ed-is-potion"> Potion</label>
+        </div>
+        <div class="form-group"><label>Mana Cost</label><input type="number" id="item-ed-mana-cost" value="0" min="0" style="width:68px"></div>
+      </div>
+      <div id="potion-identity-section" class="hidden" style="margin-top:10px;padding:10px;background:var(--bg-surface-3);border-radius:var(--r-md);border-left:3px solid #a855f7">
+        <h3 style="font-size:0.78rem;margin-bottom:8px">🧪 Potion Identity</h3>
+        <div class="form-group"><label>Icon</label><div id="potion-icon-picker" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div><input type="hidden" id="item-ed-potion-icon" value="🧪"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px"><label>Description</label><textarea id="item-ed-desc" rows="2" placeholder="Item description…"></textarea></div>
+      <div class="form-group" style="margin-top:8px"><label>Tags (comma-separated)</label><input type="text" id="item-ed-tags" placeholder="magic, cursed, two-handed" style="width:100%"></div>
+      <div style="margin-top:12px"><label style="font-size:0.78rem"><input type="checkbox" id="item-ed-is-weapon"> This is a weapon</label></div>
+      <div id="weapon-stats-section" class="hidden" style="margin-top:10px;padding:10px;background:var(--bg-surface-3);border-radius:var(--r-md)">
+        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+          <label style="font-size:0.7rem">Dice:</label>
+          <input type="number" id="item-ed-wdice-count" value="1" min="1" style="width:42px">
+          <span>d</span>
+          <input type="number" id="item-ed-wdice-type" value="6" min="1" style="width:42px">
+          <label style="font-size:0.7rem">Type:</label>
+          <select id="item-ed-wdmg-type"><option>Physical</option><option>Fire</option><option>Ice</option><option>Lightning</option><option>Poison</option><option>Magic</option><option>Necrotic</option><option>Radiant</option></select>
+          <label style="font-size:0.7rem">Range:</label>
+          <input type="text" id="item-ed-wrange" placeholder="melee" style="width:60px">
+          <label style="font-size:0.7rem">Cells:</label>
+          <input type="number" id="item-ed-wrange-cells" value="1" min="1" max="40" style="width:48px">
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:7px">
+          <label style="font-size:0.7rem">Hit stat:</label>
+          <select id="item-ed-whitstat"><option>Strength</option><option>Dexterity</option><option>Constitution</option><option>Intelligence</option><option>Wisdom</option><option>Charisma</option></select>
+          <label style="font-size:0.7rem">Damage stat:</label>
+          <select id="item-ed-wdmgstat"><option>Strength</option><option>Dexterity</option><option>Constitution</option><option>Intelligence</option><option>Wisdom</option><option>Charisma</option><option value="">None</option></select>
+        </div>
+        <div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+            <label style="font-size:0.72rem;font-weight:600">Damage Modes</label>
+            <button type="button" class="btn btn-ghost btn-xs" id="item-ed-add-dmode">+ Add mode</button>
+          </div>
+          <div id="item-ed-dmodes" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+      </div>
+      <div id="use-effects-section" class="hidden" style="margin-top:12px;padding:10px;background:var(--bg-surface-3);border-radius:var(--r-md)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <h3 style="font-size:0.78rem;flex:1">🧪 Use Effects</h3>
+          <button class="btn btn-ghost btn-xs" id="btn-add-use-effect">+ Add Effect</button>
+        </div>
+        <div id="use-effect-editor-list"></div>
+      </div>
+      <div style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <h3 style="font-size:0.78rem;flex:1">Bonuses</h3>
+          <button class="btn btn-ghost btn-xs" id="btn-add-bonus">+ Add Bonus</button>
+        </div>
+        <div id="bonus-editor-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-item">Cancel</button>
+      <button class="btn btn-danger btn-sm hidden" id="btn-delete-item">Delete Item</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-item">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CATEGORY MODAL ───────────────────────────────────────── -->
+<div id="category-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:360px">
+    <div class="modal-header">
+      <h2>New Category</h2>
+      <button class="btn-icon" id="btn-close-cat-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>Name</label><input type="text" id="cat-ed-name" placeholder="Category name"></div>
+      <div class="form-group" style="margin-top:8px"><label>Icon (emoji)</label><input type="text" id="cat-ed-icon" value="📦" style="width:56px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-cat">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-cat">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CARD LIBRARY MODAL ─────────────────────────────────── -->
+<div id="card-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header">
+      <h2 id="card-modal-title">New Card</h2>
+      <button class="btn-icon" id="btn-close-card-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Name</label><input type="text" id="card-ed-name" placeholder="Card name"></div>
+        <div class="form-group"><label>Type</label>
+          <select id="card-ed-type">
+            <option value="character">Character</option>
+            <option value="location">Location</option>
+            <option value="item">Item</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:10px"><label>Description</label><textarea id="card-ed-desc" rows="3" placeholder="Card description…"></textarea></div>
+      <div class="form-group" style="margin-top:10px"><label>Extra Data (JSON)</label><textarea id="card-ed-data" rows="2" placeholder='{"key": "value"}'></textarea></div>
+      <div style="margin-top:12px">
+        <label style="font-size:0.78rem">Image</label>
+        <div id="card-image-preview" style="margin-top:6px;max-width:200px;max-height:150px;overflow:hidden;border-radius:var(--r-md);background:var(--bg-surface-3)">
+          <img id="card-preview-img" src="" style="width:100%;height:auto;display:none">
+          <div id="card-no-image" style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.7rem">No image</div>
+        </div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin-top:6px;display:inline-block">📁 Upload Image<input type="file" id="card-image-upload" accept="image/*" style="display:none"></label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-card">Cancel</button>
+      <button class="btn btn-danger btn-sm hidden" id="btn-delete-card">Delete</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-card">Save Card</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CHEST MODAL ──────────────────────────────────────────── -->
+
+<!-- ── BV2 ENTITY MODAL ─────────────────────────────────────── -->
+<div id="bv2-entity-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:560px">
+    <div class="modal-header">
+      <h2 id="bv2-entity-modal-title">Entity</h2>
+      <button class="btn-icon" id="bv2-entity-modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="bv2-entity-modal-body">
+      <input type="hidden" id="bv2-ent-id">
+      <input type="hidden" id="bv2-ent-type">
+      <div class="form-section">
+        <div class="form-section-title">📍 Base</div>
+        <div class="form-group"><label>Name</label><input type="text" id="bv2-ent-name" placeholder="Name"></div>
+        <div class="form-group"><label>Type</label><input type="text" id="bv2-ent-type-display" readonly style="background:var(--bg-surface-2)"></div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><label>Col</label><input type="number" id="bv2-ent-col" min="0"></div>
+          <div class="form-group" style="flex:1"><label>Row</label><input type="number" id="bv2-ent-row" min="0"></div>
+        </div>
+        <div class="form-group" style="margin-top:8px">
+          <label class="toggle-switch" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="bv2-ent-visible">
+            <span class="slider"></span>
+            <span style="font-size:0.75rem;color:var(--text-muted)">Visible to players</span>
+          </label>
+        </div>
+      </div>
+      <!-- Typed entity fields injected here by 50-entities.js -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="bv2-ent-delete" style="margin-right:auto">Delete</button>
+      <button class="btn btn-ghost btn-sm" id="bv2-ent-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="bv2-ent-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── BV2 LIGHT FLOATING PANEL ──────────────────────────── -->
+<div id="bv2-light-panel" class="floating-panel hidden" style="top:80px;right:20px">
+  <div class="floating-panel-header" id="bv2-light-panel-header">
+    <span id="bv2-light-panel-title">New Light</span>
+    <button class="btn-icon" id="bv2-light-panel-close">✕</button>
+  </div>
+  <div class="floating-panel-body" id="bv2-light-panel-body">
+    <input type="hidden" id="bv2-light-id">
+    <div class="form-section">
+      <div class="form-section-title">📍 Position</div>
+      <div style="display:flex;gap:8px">
+        <div class="form-group" style="flex:1"><label>Col</label><input type="number" id="bv2-light-col" min="0"></div>
+        <div class="form-group" style="flex:1"><label>Row</label><input type="number" id="bv2-light-row" min="0"></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">💡 Light Settings</div>
+      <div class="form-group"><label>Radius (cells)</label>
+        <div class="slider-group">
+          <input type="range" id="bv2-light-radius" min="0" max="20" step="0.5" value="4"
+                 oninput="this.nextElementSibling.textContent=this.value">
+          <span class="slider-value">4</span>
+        </div>
+      </div>
+      <div class="form-group"><label>Bright radius (cells) <small style="color:var(--text-muted)">0 = auto</small></label>
+        <div class="slider-group">
+          <input type="range" id="bv2-light-bright" min="0" max="20" step="0.5" value="0"
+                 oninput="this.nextElementSibling.textContent=this.value">
+          <span class="slider-value">0</span>
+        </div>
+      </div>
+      <div class="form-group"><label>Intensity</label>
+        <div class="slider-group">
+          <input type="range" id="bv2-light-intensity" min="0" max="2" step="0.05" value="1"
+                 oninput="this.nextElementSibling.textContent=this.value">
+          <span class="slider-value">1</span>
+        </div>
+      </div>
+      <div class="form-group"><label>Color</label><input type="color" id="bv2-light-color" style="width:100%;height:32px"></div>
+      <div class="form-group"><label>Kind</label><input type="text" id="bv2-light-kind"></div>
+    </div>
+  </div>
+  <div class="floating-panel-footer">
+    <button class="btn btn-danger btn-sm" id="bv2-light-delete" style="margin-right:auto">Delete</button>
+    <button class="btn btn-ghost btn-sm" id="bv2-light-preview">👁 Preview</button>
+    <button class="btn btn-ghost btn-sm" id="bv2-light-cancel">Cancel</button>
+    <button class="btn btn-primary btn-sm" id="bv2-light-save">Save</button>
+  </div>
+</div>
+
+<!-- ── BV2 EDGE MODAL ──────────────────────────────────────── -->
+<div id="bv2-edge-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:360px">
+    <div class="modal-header">
+      <h2 id="bv2-edge-modal-title">New Edge</h2>
+      <button class="btn-icon" id="bv2-edge-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Side</label>
+          <select id="bv2-edge-side" style="width:100%">
+            <option value="north">North</option>
+            <option value="south">South</option>
+            <option value="east">East</option>
+            <option value="west">West</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;gap:8px">
+          <div style="flex:1"><label>Range Start</label><input type="number" id="bv2-edge-range-start" min="0" style="width:100%"></div>
+          <div style="flex:1"><label>Range End</label><input type="number" id="bv2-edge-range-end" min="0" style="width:100%"></div>
+        </div>
+        <div class="form-group"><label>Target Location ID</label><input type="number" id="bv2-edge-target-loc" min="1" style="width:100%"></div>
+        <div class="form-group" style="display:flex;gap:8px">
+          <div style="flex:1"><label>Target Col</label><input type="number" id="bv2-edge-target-col" min="0" style="width:100%"></div>
+          <div style="flex:1"><label>Target Row</label><input type="number" id="bv2-edge-target-row" min="0" style="width:100%"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="bv2-edge-cancel">Cancel</button>
+      <button class="btn btn-primary" id="bv2-edge-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── BV2 LIBRARY MODAL ───────────────────────────────────── -->
+<div id="bv2-library-modal" class="modal-overlay hidden">
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header">
+      <h2>Library</h2>
+      <button class="btn-icon" id="bv2-library-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="bv2-library-list" style="max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="bv2-library-cancel">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── DICE ROLL LOG ─────────────────────────────────────────── -->
+<div id="roll-log-panel">
+  <div id="roll-log-header">
+    <span style="font-size:0.88rem">🎲</span>
+    <span class="rh-title">Dice Roll Log</span>
+    <span id="roll-log-count">0</span>
+    <button class="btn-icon" id="roll-log-toggle" style="font-size:0.62rem">▼</button>
+  </div>
+  <div id="roll-log-body">
+    <div style="color:var(--text-muted);font-size:0.7rem;text-align:center;padding:14px 0">Rolls will appear here…</div>
+  </div>
+</div>
+
+<!-- ── TWEAKS PANEL ──────────────────────────────────────────── -->
+<div id="tweaks-panel">
+  <span class="tweaks-title">Tweaks</span>
+  <label>AI Sidebar
+    <label class="toggle-switch"><input type="checkbox" id="tweak-ai" checked onchange="document.getElementById('ai-sidebar').style.display=this.checked?'flex':'none'"><span class="slider"></span></label>
+  </label>
+  <label>Dice Log
+    <label class="toggle-switch"><input type="checkbox" id="tweak-dice" checked onchange="document.getElementById('roll-log-panel').style.display=this.checked?'flex':'none'"><span class="slider"></span></label>
+  </label>
+  <label>Compact Nav
+    <label class="toggle-switch"><input type="checkbox" id="tweak-compact" onchange="toggleCompactNav(this.checked)"><span class="slider"></span></label>
+  </label>
+  <label style="gap:10px">Accent
+    <input type="color" value="#b8821e" id="tweak-accent" style="width:28px;height:22px;border:none;background:none;cursor:pointer;padding:0" onchange="document.documentElement.style.setProperty('--accent',this.value);document.documentElement.style.setProperty('--accent-hover',this.value)">
+  </label>
+</div>
+
+  <script src="/static/js/websocket-client.js?v=fa4e4b73"></script>
+  <script src="/static/js/character-sheet-core.js?v=ed9108df"></script>
+  <script src="/static/js/sprite-loader.js?v=c49054d2"></script>
+  <script src="/static/js/map-canvas/index.js?v=11474c6a"></script>
+  <script src="/static/js/map-canvas/state.js?v=1e92a56c"></script>
+  <script src="/static/js/map-canvas/render.js?v=2fe70cca"></script>
+  <script src="/static/js/map-canvas/events.js?v=eaa957b4"></script>
+  <script src="/static/js/map-canvas/lighting.js?v=9103f18b"></script>
+  <script src="/static/js/map-canvas/hex-math.js?v=e7f00c5a"></script>
+  <script src="/static/js/map-canvas/token-anim.js?v=710c8860"></script>
+  <script src="/static/js/map-canvas/fog.js?v=85919ea5"></script>
+  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
+  <script src="/static/js/gm/01-core.js?v=93197955"></script>
+  <script src="/static/js/gm/02-characters.js?v=945df34f"></script>
+  <script src="/static/js/gm/03-level-up.js?v=c7001bc4"></script>
+  <script src="/static/js/gm/04-status-effects.js?v=990f9e4d"></script>
+  <script src="/static/js/gm/05-npc-sidebar.js?v=124a08ba"></script>
+  <script src="/static/js/gm/06-map-main.js?v=0c583f7f"></script>
+  <script src="/static/js/gm/07-session-ops.js?v=458b41e4"></script>
+  <script src="/static/js/gm/08-websocket.js?v=d936a328"></script>
+  <script src="/static/js/gm/09-items.js?v=d916d660"></script>
+  <script src="/static/js/gm/10-ai-chat.js?v=3a6ce006"></script>
+  <script src="/static/js/gm/11-combat.js?v=e42458ed"></script>
+  <script src="/static/js/gm/12-races-classes.js?v=c90bcad8"></script>
+  <script src="/static/js/gm/13-quests.js?v=a3737178"></script>
+  <script src="/static/js/gm/14-npc-library.js?v=84546120"></script>
+  <script src="/static/js/gm/15-meta-stage10.js?v=bd282fba"></script>
+  <script src="/static/js/gm/16-abilities.js?v=0f651965"></script>
+  <script src="/static/js/gm/17-npc-panels.js?v=8d30c997"></script>
+  <script src="/static/js/gm/19-chests.js?v=a2298fe5"></script>
+  <script src="/static/js/gm/20-init.js?v=df88a1f4"></script>
+  <script src="/static/js/builder_v2/00-state.js?v=66efba55"></script>
+  <script src="/static/js/builder_v2/10-api.js?v=3c76e9e0"></script>
+  <script src="/static/js/builder_v2/20-mapview.js?v=988fcc08"></script>
+  <script src="/static/js/builder_v2/30-editor.js?v=991bda66"></script>
+  <script src="/static/js/builder_v2/40-websocket.js?v=0831c400"></script>
+  <script src="/static/js/builder_v2/50-entities.js?v=3f0fde39"></script>
+  <script src="/static/js/builder_v2/60-fov.js?v=8d02af1e"></script>
+  <script src="/static/js/builder_v2/70-lights.js?v=b9a8dc77"></script>
+  <script src="/static/js/builder_v2/80-edges.js?v=b574baa0"></script>
+  <script src="/static/js/builder_v2/90-library.js?v=eee7c1f5"></script>
+  <script src="/static/js/builder_v2/95-interiors.js?v=6e72efbb"></script>
+  <script src="/static/js/builder_v2/96-building.js?v=1653fc40"></script>
 </body>
 </html>

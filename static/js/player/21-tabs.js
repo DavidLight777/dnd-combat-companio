@@ -9,6 +9,8 @@ $$('.player-tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     $$('.player-tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    const tabbar = document.querySelector('.tabbar');
+    if (tabbar && btn.dataset.idx != null) tabbar.dataset.active = btn.dataset.idx;
     // Hide every tab (force inline display:none to defeat any prior inline override)
     $$('.player-tab').forEach(t => {
       t.classList.remove('active');
@@ -17,7 +19,7 @@ $$('.player-tab-btn').forEach(btn => {
     const tab = document.getElementById(btn.dataset.tab);
     if (tab) {
       tab.classList.add('active');
-      tab.style.display = 'block';
+      tab.style.display = tab.id === 'tab-main' ? 'flex' : 'block';
     }
     // Lazy-load tabs
     if (btn.dataset.tab === 'tab-abilities') loadAbilities();

@@ -49,8 +49,11 @@ function renderAbilities() {
     const rarity = a.ability_rank || a.rarity || 'common';
     const rarityChip = `<span class="rarity-chip rarity-${rarity}">${rarity}</span>`;
     const clickable = !onCd && a.ability_type !== 'passive' && !depleted;
-    return `<div class="ability-card ${onCd ? 'on-cooldown' : ''} ${depleted ? 'depleted' : ''} ${a.ability_type === 'passive' ? 'passive' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${a.color||'#60a5fa'}">
-      <div class="ab-name">${a.icon||'⚡'} ${a.name} ${typeBadge} ${rarityChip}</div>
+    return `<div class="ability-card ab-card ${onCd ? 'on-cooldown' : ''} ${depleted ? 'depleted' : ''} ${a.ability_type === 'passive' ? 'passive' : ''}" data-ca-id="${a.character_ability_id}" style="border-left:3px solid ${a.color||'#60a5fa'}">
+      <div class="ab-h">
+        <div class="ab-ico">${a.icon||'⚡'}</div>
+        <div><div class="ab-name">${a.name} ${typeBadge}</div><div class="ab-tag">${rarityChip}</div></div>
+      </div>
       <div class="ab-meta" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">
         ${costParts.length ? `<span class="ab-cost">${costParts.join(' · ')}</span>` : ''}
         ${usesTag}
