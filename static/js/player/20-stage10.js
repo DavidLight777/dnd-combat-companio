@@ -12,12 +12,13 @@ async function loadPlayerAnnouncements() {
     if (!el) return;
     if (!list.length) { el.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No announcements yet.</p>'; return; }
     el.innerHTML = list.map(a => `
-      <div style="padding:8px 10px;margin-bottom:6px;border-radius:8px;border:1px solid ${a.is_pinned ? 'var(--accent)' : 'var(--border)'};background:${a.is_pinned ? 'rgba(212,175,55,0.06)' : 'var(--bg-surface-2)'}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-weight:600;font-size:0.78rem">${a.is_pinned ? '📌 ' : ''}${a.author_name || 'GM'}</span>
-          <span style="font-size:0.68rem;color:var(--text-muted)">${a.posted_at ? new Date(a.posted_at).toLocaleString() : ''}</span>
+      <div class="list-row announcement-row" style="border-left:3px solid ${a.is_pinned ? 'var(--accent)' : 'var(--border)'}">
+        <div class="lr-ico">${a.is_pinned ? '📌' : '📢'}</div>
+        <div class="lr-body">
+          <div class="lr-name">${a.author_name || 'GM'}</div>
+          <div class="lr-meta">${a.content}</div>
+          <div class="lr-meta">${a.posted_at ? new Date(a.posted_at).toLocaleString() : ''}</div>
         </div>
-        <div style="font-size:0.82rem;white-space:pre-wrap">${a.content}</div>
       </div>
     `).join('');
   } catch (e) { console.error('loadPlayerAnnouncements', e); }
@@ -53,16 +54,16 @@ async function loadPlayerNotes() {
     if (!el) return;
     if (!notes.length) { el.innerHTML = '<p class="text-muted" style="font-size:0.8rem">No notes yet. Click "+ New Note" to add one.</p>'; return; }
     el.innerHTML = notes.map(n => `
-      <div style="padding:8px 10px;margin-bottom:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface-2)">
+      <div class="journal-entry">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <strong style="font-size:0.82rem">${n.title || 'Untitled'}</strong>
+          <strong class="je-title">${n.title || 'Untitled'}</strong>
           <div style="display:flex;gap:3px">
             <button class="btn btn-ghost btn-xs" data-edit-pnote="${n.id}">✏️</button>
             <button class="btn btn-ghost btn-xs" data-del-pnote="${n.id}" style="color:var(--danger)">🗑️</button>
           </div>
         </div>
-        <div style="font-size:0.8rem;white-space:pre-wrap">${n.content}</div>
-        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:4px">${n.updated_at ? new Date(n.updated_at).toLocaleString() : ''}</div>
+        <div class="je-excerpt" style="white-space:pre-wrap">${n.content}</div>
+        <div class="je-date">${n.updated_at ? new Date(n.updated_at).toLocaleString() : ''}</div>
       </div>
     `).join('');
     el.querySelectorAll('[data-edit-pnote]').forEach(btn => {

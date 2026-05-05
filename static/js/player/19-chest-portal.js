@@ -27,32 +27,50 @@ async function openPlayerChestModal(chest) {
     const content = overlay.querySelector('#pc-chest-content');
     const items = data.items || [];
     
-    if (!items.length) {
-      content.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted)">Chest is empty</div>';
-      return;
-    }
-
     if (data.is_locked) {
       content.innerHTML = `
         <div style="text-align:center;padding:12px">
           <div style="font-size:1.5rem;margin-bottom:8px">🔒</div>
           <div>This chest is locked</div>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">Lock DC: ${data.lock_dc}</div>
-          <button class="btn btn-primary btn-sm" id="pc-pick-lock" style="margin-top:12px">🔓 Pick Lock</button>
+          <div id="pc-lock-form" style="margin-top:12px"></div>
         </div>`;
-      content.querySelector('#pc-pick-lock').addEventListener('click', async () => {
-        try {
-          const res = await api.post(`/api/builder-v2/chests/${chest.id}/pick-lock`, { character_id: CHAR_ID });
-          showToast(res.success ? '🔓 Lock picked!' : '🔒 Lockpick failed!');
+      if (typeof createD20RollForm !== 'function') {
+        showToast('Roll UI failed to load');
+        return;
+      }
+      createD20RollForm(content.querySelector('#pc-lock-form'), {
+        idPrefix: 'pc-lock',
+        hideRollType: true,
+        defaultAbility: 'dexterity',
+        maxDice: 5,
+        rollButtonText: 'Pick Lock',
+        onRoll: async ({ ability, diceCount, advantageMode }) => {
+          const advantage_mode = advantageMode;
+          const d20_count = diceCount;
+          const res = await api.post(`/api/builder-v2/chests/${chest.id}/pick-lock`, { character_id: CHAR_ID, ability, advantage_mode, d20_count });
+          if (!res?.rolls) throw new Error(res?.detail || 'Lockpick failed');
+          const mod = res.modifier >= 0 ? `+${res.modifier}` : `${res.modifier}`;
+          showToast(`${res.success ? '🔓 Lock picked!' : '🔒 Lockpick failed!'} Roll ${res.rolls.join(', ')} → ${res.chosen_roll}${mod} = ${res.total} vs DC ${res.dc}`);
           if (res.success) {
-            overlay.remove();
-            openPlayerChestModal(chest); // Re-open to show contents
+            setTimeout(() => {
+              overlay.remove();
+              openPlayerChestModal(chest); // Re-open to show contents
+            }, 400);
           }
-        } catch (e) {
-          showToast('Lockpick failed');
-          console.error(e);
-        }
+          return res;
+        },
+        resultFormatter: res => {
+          if (!res?.rolls) return '';
+          const mod = res.modifier >= 0 ? `+${res.modifier}` : `${res.modifier}`;
+          return `<span style="color:var(--accent)">${res.rolls.join(', ')} → ${res.chosen_roll}${mod} = ${res.total} vs DC ${res.dc}</span>`;
+        },
       });
+      return;
+    }
+
+    if (!items.length) {
+      content.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted)">Chest is empty</div>';
       return;
     }
 
@@ -61,7 +79,7 @@ async function openPlayerChestModal(chest) {
         ${items.map((it, i) => `
           <label style="display:flex;align-items:center;gap:8px;background:var(--bg-surface-2);padding:8px;border-radius:var(--r-sm);cursor:pointer">
             <input type="checkbox" class="pc-item-check" value="${i}" checked>
-            <span style="flex:1;font-size:0.8rem">${it.item_name || 'Unknown'} x${it.quantity || 1}</span>
+            <span style="flex:1;font-size:0.8rem">${it.name || it.item_name || 'Unknown'} x${it.quantity || 1}</span>
           </label>
         `).join('')}
       </div>

@@ -1,4 +1,21 @@
 (function () {
+  MapCanvas.prototype._isCellVisibleToPlayer = function(col, row) {
+    if (this.role !== 'player') return true;
+    let vis = null;
+    if (this.ownCharacterId != null && typeof this.computeVisibleCells === 'function') {
+      const own = (this.tokens || []).find(t => t.character_id === this.ownCharacterId);
+      if (own && own.x != null && own.y != null) {
+        const gs = this.gridSize || 50;
+        const ownCol = Math.floor(own.x * this.mapWidth / gs);
+        const ownRow = Math.floor(own.y * this.mapHeight / gs);
+        vis = this.computeVisibleCells(ownCol, ownRow, own.sight_range_cells || 8);
+        this.currentVisible = vis;
+      }
+    }
+    if (!vis) vis = this.currentVisible;
+    return !vis || vis.has(`${col},${row}`);
+  }
+
   MapCanvas.prototype._renderHexGrid = function(ctx) {
     const size = this._hexSize();
     const w = this.mapWidth, h = this.mapHeight;
@@ -538,6 +555,7 @@
         const c = _axialToPixel(t.col, t.row);
         if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
         if (this.role !== 'gm' && t.is_hidden) continue;
+        if (!this._isCellVisibleToPlayer(t.col, t.row)) continue;
         ctx.fillStyle = 'rgba(255,69,0,0.6)';
         _hexPath(c.x, c.y, size - 2);
         ctx.fill();
@@ -550,6 +568,7 @@
         const c = _axialToPixel(ch.col, ch.row);
         if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
         if (this.role !== 'gm' && ch.is_hidden) continue;
+        if (!this._isCellVisibleToPlayer(ch.col, ch.row)) continue;
         ctx.fillStyle = 'rgba(139,69,19,0.75)';
         _hexPath(c.x, c.y, size - 2);
         ctx.fill();
@@ -565,6 +584,7 @@
       for (const p of (this.portals || [])) {
         const c = _axialToPixel(p.col, p.row);
         if (c.x < -gs || c.y < -gs || c.x > mw + gs || c.y > mh + gs) continue;
+        if (!this._isCellVisibleToPlayer(p.col, p.row)) continue;
         ctx.fillStyle = 'rgba(153,50,204,0.6)';
         _hexPath(c.x, c.y, size - 2);
         ctx.fill();
@@ -623,6 +643,7 @@
         const px = t.col * gs, py = t.row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
         if (this.role !== 'gm' && t.is_hidden) continue;
+        if (!this._isCellVisibleToPlayer(t.col, t.row)) continue;
         if (size > 1) {
           ctx.fillStyle = 'rgba(255,69,0,0.25)';
           ctx.fillRect(px, py, size * gs, size * gs);
@@ -641,6 +662,7 @@
         const px = ch.col * gs, py = ch.row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
         if (this.role !== 'gm' && ch.is_hidden && ch.visible_to_players !== true) continue;
+        if (!this._isCellVisibleToPlayer(ch.col, ch.row)) continue;
         ctx.fillStyle = 'rgba(139,69,19,0.75)';
         ctx.fillRect(px + 1, py + 1, gs - 2, gs - 2);
         ctx.strokeStyle = '#FFD700';
@@ -655,6 +677,7 @@
         const size = p.size_cells || 1;
         const px = p.col * gs, py = p.row * gs;
         if (px < 0 || py < 0 || px >= mw || py >= mh) continue;
+        if (!this._isCellVisibleToPlayer(p.col, p.row)) continue;
         if (size > 1) {
           ctx.fillStyle = 'rgba(153,50,204,0.25)';
           ctx.fillRect(px, py, size * gs, size * gs);

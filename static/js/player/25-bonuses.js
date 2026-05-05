@@ -47,7 +47,7 @@ async function renderBonusesPenalties() {
         const label = b.stat_name
           ? `${b.stat_name.toUpperCase()} ${b.value > 0 ? '+' : ''}${b.value}`
           : `${b.bonus_type.replace(/_/g,' ')} ${b.value > 0 ? '+' : ''}${b.value}`;
-        return `<div style="margin-bottom:3px"><span style="color:var(--accent-green)">${label}</span> <span style="color:var(--text-muted)">from ${b.source}</span></div>`;
+        return `<div class="list-row heal"><div class="lr-ico">🛡</div><div class="lr-body"><div class="lr-name">${label}</div><div class="lr-meta">from ${b.source}</div></div></div>`;
       }).join('');
     } else {
       bonusEl.innerHTML = '<span class="text-muted">No active bonuses</span>';
@@ -67,7 +67,7 @@ async function renderBonusesPenalties() {
       }
     }
     penaltyEl.innerHTML = entries.length ?
-      entries.map(e => `<div style="margin-bottom:3px">${e}</div>`).join('') :
+      entries.map(e => `<div class="list-row atk"><div class="lr-ico">⚠</div><div class="lr-body"><div class="lr-name">${e}</div></div></div>`).join('') :
       '<span class="text-muted">No active penalties</span>';
   } catch { penaltyEl.innerHTML = '<span class="text-muted">No active penalties</span>'; }
 }

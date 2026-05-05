@@ -87,6 +87,7 @@
     for (let i = this.mapChests.length - 1; i >= 0; i--) {
       const ch = this.mapChests[i];
       if (this.role !== 'gm' && ch.is_hidden && ch.visible_to_players !== true) continue;
+      if (this._isCellVisibleToPlayer && !this._isCellVisibleToPlayer(ch.col, ch.row)) continue;
       const px = ch.col * gs, py = ch.row * gs;
       if (mx >= px && mx <= px + gs && my >= py && my <= py + gs) return ch;
     }
@@ -100,6 +101,7 @@
     for (let i = this.portals.length - 1; i >= 0; i--) {
       const p = this.portals[i];
       const size = p.size_cells || 1;
+      if (this._isCellVisibleToPlayer && !this._isCellVisibleToPlayer(p.col, p.row)) continue;
       const px = p.col * gs, py = p.row * gs;
       if (mx >= px && mx <= px + size * gs && my >= py && my <= py + size * gs) return p;
     }
@@ -112,6 +114,7 @@
     for (let i = this.traps.length - 1; i >= 0; i--) {
       const t = this.traps[i];
       const size = t.size_cells || 1;
+      if (this._isCellVisibleToPlayer && !this._isCellVisibleToPlayer(t.col, t.row)) continue;
       const px = t.col * gs, py = t.row * gs;
       if (mx >= px && mx <= px + size * gs && my >= py && my <= py + size * gs) return t;
     }

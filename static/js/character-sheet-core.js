@@ -216,6 +216,7 @@ function createDiceRollWidget(container, opts = {}) {
       ${label ? `<div class="widget-label">${label}</div>` : ''}
       ${showDiceSelector ? `
         <div class="dice-selector">
+          <span class="dice-label">Dice:</span>
           <input type="number" class="dice-count" min="1" max="20"
                  value="${state.diceCount}" ${lockDiceCount ? 'readonly' : ''}>
           <span style="color:var(--text-muted)">d</span>
@@ -226,9 +227,9 @@ function createDiceRollWidget(container, opts = {}) {
       ` : ''}
       ${showAdvantage ? `
         <div class="adv-toggle">
-          <button class="adv-btn" data-mode="disadvantage" title="Disadvantage — roll twice, take lower">Disadv</button>
           <button class="adv-btn active" data-mode="normal" title="Normal">Normal</button>
           <button class="adv-btn" data-mode="advantage" title="Advantage — roll twice, take higher">Adv</button>
+          <button class="adv-btn" data-mode="disadvantage" title="Disadvantage — roll twice, take lower">Dis</button>
         </div>
       ` : ''}
       ${showRollButton ? `
@@ -366,8 +367,104 @@ function formatRollBreakdown({ diceLabel = 'D20', allRolls = [], chosenIndex = 0
   return lead + modsStr + totalStr;
 }
 
+function createD20RollForm(container, opts = {}) {
+  if (!container) return null;
+  const abilityOptions = opts.abilityOptions || [
+    ['strength', 'Strength'],
+    ['dexterity', 'Dexterity'],
+    ['constitution', 'Constitution'],
+    ['intelligence', 'Intelligence'],
+    ['wisdom', 'Wisdom'],
+    ['charisma', 'Charisma'],
+  ];
+  const rollTypeOptions = opts.hideRollType ? [] : (opts.rollTypeOptions || [
+    ['ability_check', 'Ability Check'],
+    ['saving_throw', 'Saving Throw'],
+    ['skill_check', 'Skill Check'],
+  ]);
+  const diceTypes = opts.diceTypes || [20];
+  const idPrefix = opts.idPrefix || `d20-roll-${Math.random().toString(36).slice(2)}`;
+  const state = {
+    ability: opts.defaultAbility || abilityOptions[0][0],
+    rollType: opts.defaultRollType || rollTypeOptions[0]?.[0] || 'ability_check',
+    diceCount: Math.max(1, Math.min(opts.maxDice || 20, parseInt(opts.defaultDiceCount) || 1)),
+    diceType: parseInt(opts.defaultDiceType || diceTypes[0] || 20),
+    advantageMode: opts.defaultAdvantageMode || 'normal',
+  };
+  container.innerHTML = `
+    <div class="d20-roll-form">
+      ${opts.title ? `<div class="d20-roll-title">🎲 ${opts.title}</div>` : ''}
+      <select class="d20-roll-ability" id="${idPrefix}-ability">
+        ${abilityOptions.map(([v, l]) => `<option value="${v}"${v === state.ability ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <select class="d20-roll-type" id="${idPrefix}-type" ${opts.hideRollType ? 'style="display:none"' : ''}>
+        ${rollTypeOptions.map(([v, l]) => `<option value="${v}"${v === state.rollType ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <div class="d20-roll-dice-row">
+        <span>Dice:</span>
+        <input type="number" class="d20-roll-count" id="${idPrefix}-d20" min="1" max="${opts.maxDice || 20}" value="${state.diceCount}">
+        <span>d</span>
+        <select class="d20-roll-die" id="${idPrefix}-die" ${diceTypes.length === 1 ? 'disabled' : ''}>
+          ${diceTypes.map(d => `<option value="${d}"${d === state.diceType ? ' selected' : ''}>${d}</option>`).join('')}
+        </select>
+      </div>
+      <div class="d20-roll-mode" id="${idPrefix}-mode">
+        <button type="button" data-mode="normal" class="${state.advantageMode === 'normal' ? 'active' : ''}">Normal</button>
+        <button type="button" data-mode="advantage" class="${state.advantageMode === 'advantage' ? 'active' : ''}">ADV</button>
+        <button type="button" data-mode="disadvantage" class="${state.advantageMode === 'disadvantage' ? 'active' : ''}">DIS</button>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm d20-roll-btn" id="${idPrefix}-roll">🎲 ${opts.rollButtonText || 'Roll'}</button>
+      <div class="d20-roll-result hidden"></div>
+    </div>`;
+
+  const root = container.querySelector('.d20-roll-form');
+  const abilityEl = root.querySelector('.d20-roll-ability');
+  const typeEl = root.querySelector('.d20-roll-type');
+  const countEl = root.querySelector('.d20-roll-count');
+  const dieEl = root.querySelector('.d20-roll-die');
+  const modeBtns = root.querySelectorAll('.d20-roll-mode button');
+  const rollBtn = root.querySelector('.d20-roll-btn');
+  const resultEl = root.querySelector('.d20-roll-result');
+
+  function syncState() {
+    state.ability = abilityEl.value;
+    state.rollType = typeEl.value || state.rollType;
+    state.diceCount = Math.max(1, Math.min(opts.maxDice || 20, parseInt(countEl.value) || 1));
+    state.diceType = parseInt(dieEl.value) || 20;
+    countEl.value = state.diceCount;
+  }
+  function showResult(html) {
+    resultEl.classList.remove('hidden');
+    resultEl.innerHTML = html || '';
+  }
+  function setLoading(isLoading) {
+    rollBtn.disabled = !!isLoading;
+    if (isLoading) showResult('<span style="color:var(--text-muted)">Rolling...</span>');
+  }
+  modeBtns.forEach(btn => btn.addEventListener('click', () => {
+    state.advantageMode = btn.dataset.mode;
+    modeBtns.forEach(b => b.classList.toggle('active', b === btn));
+  }));
+  rollBtn.addEventListener('click', async () => {
+    syncState();
+    setLoading(true);
+    try {
+      const res = typeof opts.onRoll === 'function' ? await opts.onRoll({ ...state }) : null;
+      const formatted = typeof opts.resultFormatter === 'function' ? opts.resultFormatter(res, { ...state }) : (res?.description || res?.breakdown || '');
+      showResult(formatted);
+    } catch (e) {
+      const msg = e?.body?.detail || e?.message || 'Roll failed';
+      showResult(`<span style="color:var(--accent-red)">${typeof msg === 'object' ? JSON.stringify(msg) : msg}</span>`);
+    } finally {
+      setLoading(false);
+    }
+  });
+  return { getState: () => ({ ...state }), showResult, setLoading, root };
+}
+
 // Expose globally (no modules in this codebase)
 if (typeof window !== 'undefined') {
   window.createDiceRollWidget = createDiceRollWidget;
   window.formatRollBreakdown  = formatRollBreakdown;
+  window.createD20RollForm = createD20RollForm;
 }

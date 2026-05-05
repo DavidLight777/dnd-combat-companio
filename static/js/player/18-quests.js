@@ -64,16 +64,16 @@ function renderPlayerQuestCard(q) {
   }
 
   return `
-    <div style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:8px;background:var(--bg-surface);border-left:3px solid ${statusColors[q.status] || 'var(--border)'}">
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:1rem">${statusIcons[q.status] || '📜'}</span>
-        <span style="font-weight:700;font-size:0.88rem">${q.title}</span>
+    <div class="list-row quest-row" style="border-left:3px solid ${statusColors[q.status] || 'var(--border)'}">
+      <div class="lr-ico">${statusIcons[q.status] || '📜'}</div>
+      <div class="lr-body">
+        <div class="lr-name">${q.title}</div>
+        ${q.description ? `<div class="lr-meta">${q.description}</div>` : ''}
+        ${q.source_npc_name ? `<div class="lr-meta">From: ${q.source_npc_name}</div>` : ''}
+        ${stageChain ? `<div style="margin-top:6px;display:flex;gap:3px;align-items:center;flex-wrap:wrap">${stageChain}</div>` : ''}
+        ${rewardHtml}
+        ${q.status !== 'active' && q.completed_at ? `<div class="lr-meta">${q.status === 'completed' ? 'Completed' : 'Failed'}: ${new Date(q.completed_at).toLocaleString()}</div>` : ''}
       </div>
-      ${q.source_npc_name ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">From: ${q.source_npc_name}</div>` : ''}
-      ${q.description ? `<div style="font-size:0.75rem;margin-top:4px">${q.description}</div>` : ''}
-      ${stageChain ? `<div style="margin-top:6px;display:flex;gap:3px;align-items:center;flex-wrap:wrap">${stageChain}</div>` : ''}
-      ${rewardHtml}
-      ${q.status !== 'active' && q.completed_at ? `<div style="font-size:0.6rem;color:var(--text-muted);margin-top:4px">${q.status === 'completed' ? 'Completed' : 'Failed'}: ${new Date(q.completed_at).toLocaleString()}</div>` : ''}
     </div>
   `;
 }

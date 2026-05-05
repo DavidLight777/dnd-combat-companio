@@ -143,8 +143,14 @@ function updateTargetInfo() {
     const t = tableParticipants.find(c => c.id === selectedTargetId);
     info.style.display = 'block';
     $('#selected-target-name').textContent = t ? t.name : `#${selectedTargetId}`;
+    const dockTarget = $('#dock-target');
+    const dockTargetName = $('#dock-target-name');
+    if (dockTarget) dockTarget.style.display = 'flex';
+    if (dockTargetName) dockTargetName.textContent = t ? t.name : `#${selectedTargetId}`;
   } else {
     info.style.display = 'none';
+    const dockTarget = $('#dock-target');
+    if (dockTarget) dockTarget.style.display = 'none';
   }
 }
 

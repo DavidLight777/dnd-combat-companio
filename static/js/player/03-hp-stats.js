@@ -44,10 +44,10 @@ function renderCharStatsSidebar() {
     const modText = modSum !== 0 ? `<span style="font-size:0.6rem;color:${modSum > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}"​>${modSum > 0 ? '+' : ''}${modSum}</span>` : '';
     const plusBtn = hasPoints ? `<button class="btn btn-xs btn-primary stat-plus-btn" data-stat="${s.key}" style="padding:1px 6px;font-size:0.65rem;margin-left:4px" title="+1 ${s.label}"​>+1</button>` : '';
     return `
-      <div style="padding:4px;background:var(--bg-surface);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:space-between">
+      <div class="sm-cell" style="display:flex;align-items:center;justify-content:space-between">
         <div>
-          <div style="font-size:0.65rem;color:var(--text-muted)">${s.label}</div>
-          <div style="font-weight:700">${total} ${modText}</div>
+          <span class="sm-key">${s.label}</span>
+          <span class="sm-val">${total} ${modText}</span>
         </div>
         ${plusBtn}
       </div>`;

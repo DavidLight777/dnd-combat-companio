@@ -86,15 +86,28 @@ function _mountConfirmPanel(innerHtml) {
 }
 
 function _actionCard({id, icon, label, sub, subColor = 'var(--text-muted)'}) {
-  return `<div class="action-card" id="${id}" role="button" tabindex="0"
-            style="flex:1 1 140px;min-width:140px;background:var(--bg-surface);
-                   border:1px solid var(--border);border-radius:var(--r-md);
-                   padding:10px;cursor:pointer;transition:all .15s;
-                   display:flex;flex-direction:column;align-items:center;gap:3px;
-                   text-align:center">
-    <div class="ac-icon" style="font-size:1.5rem">${icon}</div>
-    <div style="font-weight:600;font-size:0.82rem">${label}</div>
-    <div class="ac-sub" style="font-size:0.68rem;color:${subColor}">${sub}</div>
+  return `<div class="action-card list-row" id="${id}" role="button" tabindex="0">
+    <div class="lr-ico">${icon}</div>
+    <div class="lr-body">
+      <div class="lr-name">${label}</div>
+      <div class="lr-meta" style="color:${subColor}">${sub}</div>
+    </div>
+    <div class="lr-cost">Action</div>
+  </div>`;
+}
+
+function _dockSection(title, rows) {
+  return rows.length ? `<div class="dp-section-title">${title}</div>${rows.join('')}` : '';
+}
+
+function _dockActionRow({ id = '', icon = '⚡', name, meta = '', cost = '', cls = '', data = '' }) {
+  return `<div class="list-row ${cls}" ${id ? `id="${id}"` : ''} ${data} role="button" tabindex="0">
+    <div class="lr-ico">${icon}</div>
+    <div class="lr-body">
+      <div class="lr-name">${name}</div>
+      ${meta ? `<div class="lr-meta">${meta}</div>` : ''}
+    </div>
+    ${cost ? `<div class="lr-cost">${cost}</div>` : ''}
   </div>`;
 }
 
@@ -102,12 +115,12 @@ function renderActionMenu() {
   const body = $('#action-menu-body');
   if (!body || !char) return;
 
-  // Ensure 2×2 wrapping
-  body.style.display = 'flex';
-  body.style.flexWrap = 'wrap';
-  body.style.gap = '8px';
+  body.style.display = 'block';
+  body.style.flexWrap = '';
+  body.style.gap = '';
 
   const items = inventoryData?.items || [];
+  const supportEl = document.getElementById('dock-support-actions');
 
   // Attack: main_hand weapon equipped
   const wpn = items.find(i => i.is_equipped && i.equipped_slot === 'main_hand' && i.weapon_stats);
@@ -119,43 +132,77 @@ function renderActionMenu() {
   );
   // Ability: ≥1 active/reaction ability not all on cooldown
   const activeAbs = (abilitiesData || []).filter(a =>
-    a.ability_type !== 'passive' && a.is_unlocked !== false && (a.cooldown_remaining || 0) <= 0
+    a.ability_type !== 'passive' && a.ability_type !== 'reaction' && a.is_unlocked !== false && (a.cooldown_remaining || 0) <= 0
   );
 
-  const cards = [];
+  const basicRows = [];
   if (wpn) {
     const ws = wpn.weapon_stats;
     // Rework v3 Phase 7: show grid-cell range on the Attack card so
     // the player knows how close they must be before clicking. Server
     // still enforces the check; this is just pre-empting the 403.
     const rng = ws.range_cells != null ? ` · 📏${ws.range_cells}` : '';
-    cards.push(_actionCard({
+    basicRows.push(_dockActionRow({
       id: 'action-attack', icon: '⚔️', label: 'Attack',
-      sub: `${wpn.name} · ${ws.dice_count}d${ws.dice_type}${rng}`,
-    }));
-  }
-  if (activeAbs.length) {
-    cards.push(_actionCard({
-      id: 'action-ability', icon: '✨', label: 'Ability',
-      sub: `${activeAbs.length} ready`,
-    }));
-  }
-  if (potions.length) {
-    cards.push(_actionCard({
-      id: 'action-potion', icon: '🧪', label: 'Potion',
-      sub: `${potions.length} available`,
-    }));
-  }
-  if (useables.length) {
-    cards.push(_actionCard({
-      id: 'action-use-item', icon: '🎒', label: 'Use Item',
-      sub: `${useables.length} available`,
+      name: 'Attack',
+      meta: `${wpn.name} · ${ws.dice_count}d${ws.dice_type}${rng}`,
+      cost: 'Action',
+      cls: 'atk',
     }));
   }
 
-  body.innerHTML = cards.length
-    ? cards.join('')
+  const offensiveAbs = activeAbs.filter(a => {
+    const effects = Array.isArray(a.effect) ? a.effect : (a.effect && Array.isArray(a.effect.effects) ? a.effect.effects : []);
+    return a.requires_hit_roll || a.damage_dice_count || effects.some(e => e?.type === 'damage');
+  });
+  const supportAbs = activeAbs.filter(a => !offensiveAbs.includes(a));
+  const abilityRows = offensiveAbs.map(a => _dockActionRow({
+    icon: a.icon || '✨',
+    name: a.name,
+    meta: a.flavor_text || a.description || (a.damage_dice_count ? `${a.damage_dice_count}d${a.damage_dice_type} ${a.damage_type || ''}` : ''),
+    cost: [a.mana_cost ? `${a.mana_cost} Mana` : '', a.cooldown_remaining ? `CD ${a.cooldown_remaining}` : a.cooldown_turns ? `CD ${a.cooldown_turns}` : '', a.current_uses != null ? `${a.current_uses}/${a.max_uses || ''} uses` : ''].filter(Boolean).join('<br>'),
+    cls: a.damage_dice_count ? 'magic' : 'atk',
+    data: `data-action-ability-id="${a.character_ability_id}"`,
+  }));
+  const itemRows = useables.map(i => _dockActionRow({
+    icon: CATEGORY_ICONS[i.category] || '🎒',
+    name: i.name,
+    meta: i.description || 'Usable item',
+    cost: i.quantity > 1 ? `×${i.quantity}` : 'Item',
+    cls: 'item',
+    data: `data-action-item-id="${i.inventory_id}"`,
+  }));
+
+  body.innerHTML = (basicRows.length || abilityRows.length || itemRows.length)
+    ? [
+        _dockSection('Basic Actions', basicRows),
+        _dockSection('Abilities', abilityRows),
+        _dockSection('Items', itemRows),
+      ].join('')
     : '<span class="text-muted" style="font-size:0.82rem;padding:8px">No actions available — equip a weapon, learn an ability, or get items</span>';
+
+  if (supportEl) {
+    const potionRows = potions.map(i => _dockActionRow({
+      icon: (i.is_potion && i.potion_icon) ? i.potion_icon : '🧪',
+      name: i.name,
+      meta: i.description || 'Consumable',
+      cost: i.quantity > 1 ? `×${i.quantity}` : 'Use',
+      cls: 'heal',
+      data: `data-action-potion-id="${i.inventory_id}"`,
+    }));
+    const supportRows = supportAbs.map(a => _dockActionRow({
+      icon: a.icon || '💚',
+      name: a.name,
+      meta: a.flavor_text || a.description || 'Support ability',
+      cost: [a.mana_cost ? `${a.mana_cost} Mana` : '', a.cooldown_remaining ? `CD ${a.cooldown_remaining}` : a.cooldown_turns ? `CD ${a.cooldown_turns}` : '', a.current_uses != null ? `${a.current_uses}/${a.max_uses || ''} uses` : ''].filter(Boolean).join('<br>'),
+      cls: 'heal',
+      data: `data-action-ability-id="${a.character_ability_id}"`,
+    }));
+    supportEl.innerHTML = [
+      _dockSection('Healing & Support', supportRows),
+      _dockSection('Consumables', potionRows),
+    ].join('') || '<div class="text-muted" style="font-size:0.78rem;padding:8px">No support actions available.</div>';
+  }
 
   // Hover / click styling
   body.querySelectorAll('.action-card').forEach(el => {
@@ -164,13 +211,24 @@ function renderActionMenu() {
   });
 
   const atkBtn   = body.querySelector('#action-attack');
-  const abiBtn   = body.querySelector('#action-ability');
-  const potBtn   = body.querySelector('#action-potion');
-  const itemBtn  = body.querySelector('#action-use-item');
   if (atkBtn)  atkBtn.addEventListener('click',   () => openAttackConfirm(wpn));
-  if (abiBtn)  abiBtn.addEventListener('click',   () => openAbilityPicker(activeAbs));
-  if (potBtn)  potBtn.addEventListener('click',   () => openItemPicker(potions,  'Potions',   '🧪'));
-  if (itemBtn) itemBtn.addEventListener('click',  () => openItemPicker(useables, 'Use Item', '🎒'));
+  document.querySelectorAll('[data-action-ability-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const caId = parseInt(el.dataset.actionAbilityId);
+      const ab = abilitiesData.find(a => a.character_ability_id === caId);
+      if (!ab) return;
+      const panel = _mountConfirmPanel(`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:1.2rem">${ab.icon || '✨'}</span><span style="font-weight:700;flex:1">${ab.name}</span><button class="btn btn-ghost btn-xs" id="ap-close">✕</button></div><div id="ap-confirm-area"></div>`);
+      if (!panel) return;
+      panel.querySelector('#ap-close').addEventListener('click', _closeConfirmPanel);
+      _mountAbilityConfirm(panel, ab);
+    });
+  });
+  document.querySelectorAll('[data-action-potion-id]').forEach(el => {
+    el.addEventListener('click', () => openItemPicker(potions, 'Potions', '🧪'));
+  });
+  document.querySelectorAll('[data-action-item-id]').forEach(el => {
+    el.addEventListener('click', () => openItemPicker(useables, 'Use Item', '🎒'));
+  });
 }
 
 // ── Attack confirmation panel (two-step: Hit → Damage) ───────
