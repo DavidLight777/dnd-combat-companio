@@ -37,6 +37,7 @@ class NoCacheStaticFiles(StaticFiles):
 from app import realtime  # noqa: F401
 from app.database import init_db
 from app.routers.abilities import router as abilities_router
+from app.routers.achievements import router as achievements_router
 from app.routers.ai import router as ai_router
 from app.routers.announcements import router as announcements_router
 from app.routers.builder_v2 import router as builder_v2_router
@@ -115,6 +116,7 @@ app.include_router(notes_router)
 app.include_router(session_timer_router)
 app.include_router(combat_actions_router)
 app.include_router(abilities_router)
+app.include_router(achievements_router)
 app.include_router(memory_router)
 app.include_router(professions_router)
 app.include_router(poisons_router)

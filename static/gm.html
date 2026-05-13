@@ -63,6 +63,13 @@
       <span class="tstat-label">Server</span>
     </div>
     <div class="tstat">
+      <select id="rules-system-select" title="Rules system" style="background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text-primary);font-size:0.66rem;padding:2px 5px;max-width:96px">
+        <option value="legacy">Legacy</option>
+        <option value="knave_like">Knave-like</option>
+      </select>
+      <span class="tstat-label">System</span>
+    </div>
+    <div class="tstat">
       <span class="tstat-val" id="player-count">0</span>
       <span class="tstat-label">Players</span>
     </div>
@@ -1020,15 +1027,16 @@
         '<script src="/static/js/pixi/10-renderer.js?v=63d16a04"><\/script>'
       );
     }
-  </script>  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
-  <script src="/static/js/gm/01-core.js?v=93197955"></script>
+  </script>
+  <!-- gm-app.js was split into modules under /static/js/gm/ — load order matters! -->
+  <script src="/static/js/gm/01-core.js?v=knave1"></script>
   <script src="/static/js/gm/02-characters.js?v=945df34f"></script>
   <script src="/static/js/gm/03-level-up.js?v=c7001bc4"></script>
   <script src="/static/js/gm/04-status-effects.js?v=990f9e4d"></script>
   <script src="/static/js/gm/05-npc-sidebar.js?v=124a08ba"></script>
   <script src="/static/js/gm/06-map-main.js?v=0c583f7f"></script>
-  <script src="/static/js/gm/07-session-ops.js?v=458b41e4"></script>
-  <script src="/static/js/gm/08-websocket.js?v=d936a328"></script>
+  <script src="/static/js/gm/07-session-ops.js?v=knave1"></script>
+  <script src="/static/js/gm/08-websocket.js?v=knave1"></script>
   <script src="/static/js/gm/09-items.js?v=d916d660"></script>
   <script src="/static/js/gm/10-ai-chat.js?v=3a6ce006"></script>
   <script src="/static/js/gm/11-combat.js?v=e42458ed"></script>
@@ -1036,10 +1044,10 @@
   <script src="/static/js/gm/13-quests.js?v=a3737178"></script>
   <script src="/static/js/gm/14-npc-library.js?v=84546120"></script>
   <script src="/static/js/gm/15-meta-stage10.js?v=bd282fba"></script>
-  <script src="/static/js/gm/16-abilities.js?v=0f651965"></script>
+  <script src="/static/js/gm/16-abilities.js?v=knave1"></script>
   <script src="/static/js/gm/17-npc-panels.js?v=8d30c997"></script>
   <script src="/static/js/gm/19-chests.js?v=a2298fe5"></script>
-  <script src="/static/js/gm/20-init.js?v=df88a1f4"></script>
+  <script src="/static/js/gm/20-init.js?v=knave1"></script>
   <script src="/static/js/builder_v2/00-state.js?v=66efba55"></script>
   <script src="/static/js/builder_v2/10-api.js?v=3c76e9e0"></script>
   <script src="/static/js/builder_v2/20-mapview.js?v=494e54da"></script>

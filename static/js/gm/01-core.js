@@ -24,6 +24,31 @@ $('#session-code').textContent = SESSION_CODE;
 let characters = [];
 let selectedCharId = null;
 let _gmAdvModes = {};  // per-panel advantage mode
+let rulesSystem = sessionStorage.getItem('rules_system') || 'legacy';
+
+function applyRulesSystemUi() {
+  document.body.dataset.rulesSystem = rulesSystem;
+  const sel = document.getElementById('rules-system-select');
+  if (sel) sel.value = rulesSystem;
+}
+
+async function loadSessionInfo() {
+  try {
+    const s = await api.get(`/api/sessions/${SESSION_CODE}`);
+    rulesSystem = s.rules_system || 'legacy';
+    sessionStorage.setItem('rules_system', rulesSystem);
+    $('#session-name').textContent = s.name || '—';
+    $('#session-status').textContent = s.status || 'waiting';
+    $('#session-turn').textContent = s.turn_number ?? 0;
+    $('#player-count').textContent = s.player_count ?? 0;
+    applyRulesSystemUi();
+    return s;
+  } catch (e) {
+    console.warn('loadSessionInfo failed:', e);
+    applyRulesSystemUi();
+    return null;
+  }
+}
 
 // ── Advantage Toggle helper ──────────────────────────────────
 function makeAdvToggle(panelKey) {

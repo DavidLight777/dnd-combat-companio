@@ -25,6 +25,7 @@ let charData = null;      // Alias for shop access
 let calcLog = [];         // Calc log entries
 let rollHistory = [];     // Roll history entries
 let _atkD20Result = null; // Last d20 roll
+let rulesSystem = sessionStorage.getItem('rules_system') || 'legacy';
 // Rework v3: per-panel state carries BOTH the mode and the dice count.
 // { attack: { mode: 'normal', diceCount: 1 }, ... }
 let _advantageModes = {};
@@ -123,6 +124,18 @@ function showToast(msg) {
   document.body.appendChild(t);
   requestAnimationFrame(() => t.style.opacity = '1');
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
+}
+async function loadSessionInfo() {
+  try {
+    const s = await api.get(`/api/sessions/${SESSION_CODE}`);
+    rulesSystem = s.rules_system || 'legacy';
+    sessionStorage.setItem('rules_system', rulesSystem);
+    document.body.dataset.rulesSystem = rulesSystem;
+    return s;
+  } catch {
+    document.body.dataset.rulesSystem = rulesSystem;
+    return null;
+  }
 }
 function confirmAction(msg) {
   return new Promise(resolve => {

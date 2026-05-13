@@ -16,12 +16,13 @@ _ABILITY_FIELDS = [
     "aoe_radius", "damage_type", "custom_damage_type", "mana_cost",
     "hp_cost", "cooldown_turns", "requires_hit_roll", "hit_stat",
     "damage_stat", "damage_dice_count", "damage_dice_type",
-    "is_passive", "passive_effect", "effect", "range", "range_cells",
+    "is_passive", "passive_effect", "effect", "usage_policy",
+    "automation_level", "knave_kind", "range", "range_cells",
     "rarity", "is_in_starting_pool", "max_uses",
     "is_conditional", "conditional_text",
 ]
 
-_ABILITY_JSON_FIELDS = ["tags", "passive_effect", "effect"]
+_ABILITY_JSON_FIELDS = ["tags", "passive_effect", "effect", "usage_policy"]
 
 
 def _set_ability_fields(a: Ability, body: dict):
@@ -76,6 +77,9 @@ def _ability_dict(a: Ability) -> dict:
         "is_passive": a.is_passive,
         "passive_effect": _parse_json_field(a.passive_effect),
         "effect": _parse_json_field(a.effect),
+        "usage_policy": _parse_json_field(a.usage_policy),
+        "automation_level": a.automation_level or "full",
+        "knave_kind": a.knave_kind,
         "range": a.range,
         "rarity": a.rarity or "common",
         "is_in_starting_pool": bool(a.is_in_starting_pool),

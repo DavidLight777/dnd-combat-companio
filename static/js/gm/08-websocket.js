@@ -232,6 +232,12 @@ ws.on('wizard.completed', data => {
     addLog('wizard', `✅ Starting item approved for character #${data.character_id} (${data.rarity})`);
   }
 });
+ws.on('session.rules_system_changed', data => {
+  rulesSystem = data?.rules_system || 'legacy';
+  sessionStorage.setItem('rules_system', rulesSystem);
+  applyRulesSystemUi();
+  addLog('session', `Rules system → ${rulesSystem === 'knave_like' ? 'Knave-like' : 'Legacy'}`);
+});
 
 async function openGmWizardApprovalModal(charId) {
   // Avoid duplicates

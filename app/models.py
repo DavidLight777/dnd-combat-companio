@@ -31,6 +31,7 @@ class Session(Base):
 
     # Phase 17 Round 3: GM can lock the map for players
     map_locked_for_players: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+    rules_system: Mapped[str] = mapped_column(String(20), default="legacy", server_default="legacy")
 
     characters: Mapped[list["Character"]] = relationship(
         back_populates="session", cascade="all, delete-orphan",
@@ -1018,6 +1019,9 @@ class Ability(Base):
 
     # Effects chain
     effect: Mapped[str] = mapped_column(Text, default="{}")  # JSON — same schema as use_effect
+    usage_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    automation_level: Mapped[str] = mapped_column(String(20), default="full", server_default="full")
+    knave_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
     range: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Rework v3 Phase 7: range in battle-grid cells (Chebyshev metric).
     # Enforced server-side when attacker & target both have map
@@ -1042,6 +1046,33 @@ class Ability(Base):
     rank_configs: Mapped[list["AbilityRankConfig"]] = relationship(
         back_populates="ability", cascade="all, delete-orphan", lazy="selectin"
     )
+
+
+class AchievementTemplate(Base):
+    __tablename__ = "achievement_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str] = mapped_column(Text, default="🏆")
+    effects: Mapped[str] = mapped_column(Text, default="[]")
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CharacterAchievement(Base):
+    __tablename__ = "character_achievements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("achievement_templates.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str] = mapped_column(Text, default="🏆")
+    effects: Mapped[str] = mapped_column(Text, default="[]")
+    granted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 # ── Typed config fields shared by level & rank configs ──

@@ -1,5 +1,5 @@
 # Import sub-modules to register their routes
-from app.routers.wizard import features, finalize, gm, items, state
+from app.routers.wizard import features, finalize, gm, items, knave, state
 
 # Re-export helpers that other modules might import
 from app.routers.wizard.common import (

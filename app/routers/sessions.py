@@ -24,6 +24,7 @@ from app.schemas import SessionCreate, SessionCreated, SessionJoin, SessionJoine
 from app.websocket_manager import manager
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+VALID_RULES_SYSTEMS = {"legacy", "knave_like"}
 
 WORD_POOL = [
     "WOLF", "HAWK", "BEAR", "LION", "RAVEN", "STORM", "BLADE", "FIRE",
@@ -57,7 +58,8 @@ async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_ses
             raise HTTPException(500, "Could not generate unique session code")
 
     gm_token = secrets.token_hex(16)
-    session = Session(code=code, name=body.name, gm_token=gm_token)
+    rules_system = body.rules_system if body.rules_system in VALID_RULES_SYSTEMS else "legacy"
+    session = Session(code=code, name=body.name, gm_token=gm_token, rules_system=rules_system)
     db.add(session)
     await db.commit()
     await db.refresh(session)
@@ -88,6 +90,7 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
     # HP/AC are 0 and will be computed during wizard finalize (Step 6).
     # Mana defaults to 10 from the model.
     player_token = secrets.token_hex(16)
+    is_knave = (session.rules_system or "legacy") == "knave_like"
     character = Character(
         session_id=session.id,
         player_token=player_token,
@@ -95,11 +98,15 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
         current_hp=0,
         max_hp=0,
         armor_class=0,
-        race_id=body.race_id,
+        race_id=None if is_knave else body.race_id,
         age=body.age,
         gender=body.gender,
-        strength=1, dexterity=1, constitution=1,
-        intelligence=1, wisdom=1, charisma=1,
+        strength=0 if is_knave else 1,
+        dexterity=0 if is_knave else 1,
+        constitution=0 if is_knave else 1,
+        intelligence=0 if is_knave else 1,
+        wisdom=0 if is_knave else 1,
+        charisma=0 if is_knave else 1,
         level=0,
         experience=0,
         declined_stats=False,
@@ -115,7 +122,7 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
         session_id=session.id,
         current_step=1,
         is_completed=False,
-        data="{}",
+        data=json.dumps({"rules_system": "knave_like"} if is_knave else {}),
         gm_approved=False,
     )
     db.add(wizard)
@@ -125,7 +132,7 @@ async def join_session(body: SessionJoin, db: AsyncSession = Depends(get_session
     # that was explicitly confirmed (Q1 in REWORK_PLAN.md).
     hp_bonus = 0
     initiative_bonus = 0
-    if body.race_id:
+    if body.race_id and not is_knave:
         race = await db.get(Race, body.race_id)
         if race:
             bonuses = json.loads(race.bonuses) if race.bonuses else []
@@ -177,6 +184,7 @@ async def session_history(db: AsyncSession = Depends(get_session)):
             "status": s.status, "turn_number": s.turn_number,
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "player_count": len([c for c in s.characters if not c.is_npc]),
+            "rules_system": s.rules_system or "legacy",
         }
         for s in sessions
     ]
@@ -200,6 +208,7 @@ async def get_session_info(code: str, db: AsyncSession = Depends(get_session)):
         status=session.status, turn_number=session.turn_number,
         player_count=player_count,
         map_locked_for_players=session.map_locked_for_players,
+        rules_system=session.rules_system or "legacy",
     )
 
 
@@ -220,6 +229,15 @@ async def update_session_settings(code: str, body: dict, db: AsyncSession = Depe
     if "map_locked_for_players" in body:
         session.map_locked_for_players = bool(body["map_locked_for_players"])
         changed = True
+    rules_changed = False
+    if "rules_system" in body:
+        rules_system = str(body["rules_system"] or "legacy")
+        if rules_system not in VALID_RULES_SYSTEMS:
+            raise HTTPException(400, "rules_system must be legacy or knave_like")
+        if (session.rules_system or "legacy") != rules_system:
+            session.rules_system = rules_system
+            changed = True
+            rules_changed = True
 
     if changed:
         await db.commit()
@@ -229,10 +247,18 @@ async def update_session_settings(code: str, body: dict, db: AsyncSession = Depe
             })
         except Exception:
             pass
+        if rules_changed:
+            try:
+                await manager.broadcast_to_session(session.code, "session.rules_system_changed", {
+                    "rules_system": session.rules_system or "legacy",
+                })
+            except Exception:
+                pass
 
     return {
         "ok": True,
         "map_locked_for_players": session.map_locked_for_players,
+        "rules_system": session.rules_system or "legacy",
     }
 
 

@@ -68,7 +68,8 @@ async def propose_item(char_id: int, body: ProposeItemBody, db: AsyncSession = D
     if ws.is_completed:
         raise HTTPException(400, "Wizard already completed")
     data = _data(ws)
-    if "starting_roll" not in data:
+    is_knave = data.get("rules_system") == "knave_like"
+    if "starting_roll" not in data and not is_knave:
         raise HTTPException(400, "Roll the starting-item dice first")
 
     # Validate category vs. supplied detail blocks
@@ -107,7 +108,8 @@ async def approve_item(char_id: int, body: ApproveItemBody, db: AsyncSession = D
     """
     char, ws = await _ensure_state(char_id, db)
     data = _data(ws)
-    if "proposed_item" not in data or "starting_roll" not in data:
+    is_knave = data.get("rules_system") == "knave_like"
+    if "proposed_item" not in data or ("starting_roll" not in data and not is_knave):
         raise HTTPException(400, "Nothing to approve yet")
     if data.get("gm_approved"):
         raise HTTPException(400, "Item already approved")
@@ -117,7 +119,7 @@ async def approve_item(char_id: int, body: ApproveItemBody, db: AsyncSession = D
     name = body.name if body.name is not None else proposal["name"]
     description = body.description if body.description is not None else proposal.get("description", "")
     category = (body.category or proposal.get("category") or "misc").lower()
-    rarity = (body.rarity_override or data["starting_roll"]["rarity"]).lower()
+    rarity = (body.rarity_override or data.get("starting_roll", {}).get("rarity") or "common").lower()
 
     # Build the Item row
     is_weapon = category == "weapon"

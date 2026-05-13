@@ -396,6 +396,12 @@
     let rolledRarity = null;
     let statChoice = null;        // 'accept' | 'decline'
     let declinedStats = false;
+    let joinRulesSystem = 'legacy';
+    let knaveStatsRolled = false;
+    let knaveHpRolled = false;
+    let knaveHpRerollUsed = false;
+    const KNAVE_STATS = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+    const KNAVE_STAT_LABELS = { strength:'Сила', dexterity:'Ловкость', constitution:'Тело', intelligence:'Интелект', wisdom:'Мудрость', charisma:'Харизма' };
 
     function showStep(n) {
       for (let i = 1; i <= 7; i++) {
@@ -446,15 +452,33 @@
       if (!age || age < 1) { errBox('#join-error', 'Please enter a valid age.'); return; }
       if (!gender) { errBox('#join-error', 'Please enter a gender.'); return; }
       try {
-        const r = await fetch('/api/races-classes/races');
-        races = await r.json();
-      } catch { races = []; }
-      renderRaceGrid();
-      showStep(2);
+        const sr = await fetch(`/api/sessions/${encodeURIComponent(code)}`);
+        if (sr.ok) {
+          const s = await sr.json();
+          joinRulesSystem = s.rules_system || 'legacy';
+        } else {
+          joinRulesSystem = 'legacy';
+        }
+      } catch { joinRulesSystem = 'legacy'; }
+      sessionStorage.setItem('rules_system', joinRulesSystem);
+      if (joinRulesSystem === 'knave_like') {
+        renderKnaveProfileStep();
+        showStep(2);
+      } else {
+        try {
+          const r = await fetch('/api/races-classes/races');
+          races = await r.json();
+        } catch { races = []; }
+        renderRaceGrid();
+        showStep(2);
+      }
     });
 
     function renderRaceGrid() {
       const grid = $('#race-grid');
+      const step = $('#join-step-2');
+      step.querySelector('h3').textContent = 'Choose Race';
+      step.querySelector('p').textContent = 'Your race provides stat bonuses + an HP die rolled at creation and on every level-up.';
       const noRaceCard = `<div class="rc-card${selectedRaceId === null ? ' selected' : ''}" data-race-id="none">
         <div class="rc-name">No Race <span class="hp-die-chip">d8</span></div>
         <div class="rc-desc">Skip race selection. Default HP die d8.</div>
@@ -476,7 +500,227 @@
       });
     }
 
-    $('#btn-join-next-2')  ?.addEventListener('click', () => showStep(3));
+    function renderKnaveProfileStep() {
+      const step = $('#join-step-2');
+      step.querySelector('h3').textContent = 'Knave-like Profile';
+      step.querySelector('p').textContent = 'Race is skipped in this system. Add optional character details, then roll 3d6 stats.';
+      $('#race-grid').innerHTML = `
+        <div class="sub-box" style="grid-column:1/-1">
+          <div class="sub-grid">
+            <div class="form-group"><label>Physique</label><input id="kn-physique" placeholder="Костлявое телосложение"></div>
+            <div class="form-group"><label>Face</label><input id="kn-face" placeholder="Острое лицо"></div>
+            <div class="form-group"><label>Hair</label><input id="kn-hair" placeholder="Серые волнистые волосы"></div>
+            <div class="form-group"><label>Clothes</label><input id="kn-clothes" placeholder="Модная одежда"></div>
+            <div class="form-group"><label>Speech</label><input id="kn-speech" placeholder="Задыхающаяся речь"></div>
+            <div class="form-group"><label>Personality</label><input id="kn-personality" placeholder="Дисциплинированность, агрессивность"></div>
+          </div>
+          <div class="form-group"><label>Notes / curse / mutation / alignment</label><textarea id="kn-notes" rows="3" placeholder="Мститель, проклят, хаос, мутация..."></textarea></div>
+        </div>`;
+    }
+
+    async function ensureJoined() {
+      const code   = $('#join-code').value.trim().toUpperCase();
+      const name   = $('#join-name').value.trim();
+      const age    = parseInt($('#join-age').value || '0');
+      const gender = $('#join-gender').value.trim();
+      if (joinedCharacterId) return;
+      const res = await fetch('/api/sessions/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_code: code, player_name: name,
+          race_id: joinRulesSystem === 'knave_like' ? null : selectedRaceId, age, gender,
+        }),
+      });
+      if (!res.ok) throw new Error(await readErr(res));
+      const data = await res.json();
+      joinedCharacterId = data.character_id;
+      joinedSessionCode = data.session_code;
+      joinedPlayerToken = data.player_token;
+      sessionStorage.setItem('player_token', data.player_token);
+      sessionStorage.setItem('character_id', data.character_id);
+      sessionStorage.setItem('session_code', data.session_code);
+    }
+
+    async function runKnaveStep2() {
+      await ensureJoined();
+      const profile = {
+        physique: $('#kn-physique')?.value.trim() || '',
+        face: $('#kn-face')?.value.trim() || '',
+        hair: $('#kn-hair')?.value.trim() || '',
+        clothes: $('#kn-clothes')?.value.trim() || '',
+        speech: $('#kn-speech')?.value.trim() || '',
+        personality: $('#kn-personality')?.value.trim() || '',
+        notes: $('#kn-notes')?.value.trim() || '',
+      };
+      await fetch(`/api/wizard/${joinedCharacterId}/knave/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile }),
+      });
+      renderKnaveStatsStep();
+      showStep(3);
+    }
+
+    function renderKnaveStatsStep() {
+      $('#join-step-3').innerHTML = `
+        <h3 style="font-size:0.85rem;margin-bottom:4px">Roll Characteristics</h3>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px">Roll 3d6 for each characteristic. After rolling, you may swap two stats once.</p>
+        <div id="knave-stats-view" style="margin-bottom:10px"></div>
+        <button class="btn btn-primary" id="btn-knave-roll-stats" style="width:100%">🎲 Roll 3d6 × 6</button>
+        <div id="knave-swap-box" style="display:none;margin-top:10px">
+          <div class="sub-grid">
+            <select id="kn-swap-a">${KNAVE_STATS.map(s => `<option value="${s}">${KNAVE_STAT_LABELS[s]}</option>`).join('')}</select>
+            <select id="kn-swap-b">${KNAVE_STATS.map(s => `<option value="${s}">${KNAVE_STAT_LABELS[s]}</option>`).join('')}</select>
+          </div>
+          <button class="btn btn-ghost" id="btn-knave-swap" style="width:100%;margin-top:6px">Swap once</button>
+        </div>
+        <button class="btn btn-secondary" id="btn-knave-to-hp" style="display:none;width:100%;margin-top:10px">Continue →</button>
+        <div class="error-msg hidden" id="knave-stats-error"></div>`;
+      $('#btn-knave-roll-stats').addEventListener('click', rollKnaveStats);
+      $('#btn-knave-swap').addEventListener('click', swapKnaveStats);
+      $('#btn-knave-to-hp').addEventListener('click', () => { renderKnaveHpStep(); showStep(4); });
+    }
+
+    function renderKnaveStats(stats) {
+      $('#knave-stats-view').innerHTML = KNAVE_STATS.map(s => {
+        const r = stats[s] || {};
+        return `<div class="summary-row"><span>${KNAVE_STAT_LABELS[s]}</span><strong>${(r.rolls || []).join(' + ')} = ${r.total ?? '?'}</strong></div>`;
+      }).join('');
+    }
+
+    async function rollKnaveStats() {
+      try {
+        const res = await fetch(`/api/wizard/${joinedCharacterId}/knave/roll-stats`, { method: 'POST' });
+        if (!res.ok) throw new Error(await readErr(res));
+        const data = await res.json();
+        renderKnaveStats(data.stats);
+        knaveStatsRolled = true;
+        $('#knave-swap-box').style.display = '';
+        $('#btn-knave-to-hp').style.display = '';
+      } catch (e) { errBox('#knave-stats-error', e.message); }
+    }
+
+    async function swapKnaveStats() {
+      try {
+        const res = await fetch(`/api/wizard/${joinedCharacterId}/knave/swap-stats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stat_a: $('#kn-swap-a').value, stat_b: $('#kn-swap-b').value }),
+        });
+        if (!res.ok) throw new Error(await readErr(res));
+        const ws = await res.json();
+        const stats = ws.data.knave_stats || {};
+        const swap = ws.data.stat_swap || {};
+        if (swap.after) {
+          stats[swap.stat_a] = { rolls: [swap.after[swap.stat_a]], total: swap.after[swap.stat_a] };
+          stats[swap.stat_b] = { rolls: [swap.after[swap.stat_b]], total: swap.after[swap.stat_b] };
+        }
+        renderKnaveStats(stats);
+        $('#btn-knave-swap').disabled = true;
+      } catch (e) { errBox('#knave-stats-error', e.message); }
+    }
+
+    function renderKnaveHpStep() {
+      $('#join-step-4').innerHTML = `
+        <h3 style="font-size:0.85rem;margin-bottom:4px">Roll HP</h3>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px">Roll physical HP and spiritual HP. One reroll is available before finalizing.</p>
+        <div id="knave-hp-view" style="margin-bottom:10px"></div>
+        <button class="btn btn-primary" id="btn-knave-roll-hp" style="width:100%">🎲 Roll HP</button>
+        <div id="knave-reroll-box" style="display:none;margin-top:10px">
+          <select id="kn-reroll-type" style="width:100%;margin-bottom:6px"><option value="physical">Physical HP</option><option value="spiritual">Spiritual HP</option><option value="both">Both</option></select>
+          <button class="btn btn-ghost" id="btn-knave-reroll-hp" style="width:100%">Reroll once</button>
+        </div>
+        <button class="btn btn-secondary" id="btn-knave-to-item" style="display:none;width:100%;margin-top:10px">Continue to Starting Item →</button>
+        <div class="error-msg hidden" id="knave-hp-error"></div>`;
+      $('#btn-knave-roll-hp').addEventListener('click', rollKnaveHp);
+      $('#btn-knave-reroll-hp').addEventListener('click', rerollKnaveHp);
+      $('#btn-knave-to-item').addEventListener('click', () => { renderKnaveItemStep(); showStep(5); });
+    }
+
+    function renderKnaveHp(hp) {
+      $('#knave-hp-view').innerHTML = `
+        <div class="summary-row"><span>HP</span><strong>${(hp.hp_rolls || []).join(' + ')} = ${hp.hp_total}</strong></div>
+        <div class="summary-row"><span>Spiritual HP</span><strong>${(hp.spirit_hp_rolls || []).join(' + ')} = ${hp.spirit_hp_total}</strong></div>`;
+    }
+
+    async function rollKnaveHp() {
+      try {
+        const res = await fetch(`/api/wizard/${joinedCharacterId}/knave/roll-hp`, { method: 'POST' });
+        if (!res.ok) throw new Error(await readErr(res));
+        const data = await res.json();
+        renderKnaveHp(data.hp);
+        knaveHpRolled = true;
+        $('#knave-reroll-box').style.display = '';
+        $('#btn-knave-to-item').style.display = '';
+      } catch (e) { errBox('#knave-hp-error', e.message); }
+    }
+
+    async function rerollKnaveHp() {
+      try {
+        const res = await fetch(`/api/wizard/${joinedCharacterId}/knave/reroll-hp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reroll_type: $('#kn-reroll-type').value }),
+        });
+        if (!res.ok) throw new Error(await readErr(res));
+        const data = await res.json();
+        renderKnaveHp(data.hp);
+        knaveHpRerollUsed = true;
+        $('#btn-knave-reroll-hp').disabled = true;
+      } catch (e) { errBox('#knave-hp-error', e.message); }
+    }
+
+    function renderKnaveItemStep() {
+      showStep(5);
+      $('#join-step-5').innerHTML = `
+        <h3 style="font-size:0.85rem;margin-bottom:4px">Starting Equipment</h3>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px">Describe one custom item for GM approval, or skip and enter the game.</p>
+        <div class="form-group"><label>Item Name</label><input id="kn-item-name" placeholder="10-foot pole, crocodile bite, magic earring..."></div>
+        <div class="form-group"><label>Description</label><textarea id="kn-item-desc" rows="3"></textarea></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" id="btn-kn-submit-item" style="flex:1">Submit to GM</button><button class="btn btn-ghost" id="btn-kn-skip-item" style="flex:1">Skip</button></div>
+        <div class="error-msg hidden" id="kn-item-error"></div>`;
+      $('#btn-kn-submit-item').addEventListener('click', submitKnaveItem);
+      $('#btn-kn-skip-item').addEventListener('click', () => { renderKnaveFinalizeStep(); showStep(6); });
+    }
+
+    async function submitKnaveItem() {
+      const name = $('#kn-item-name').value.trim();
+      if (!name) { errBox('#kn-item-error', 'Please name your item.'); return; }
+      try {
+        const res = await fetch(`/api/wizard/${joinedCharacterId}/propose-item`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description: $('#kn-item-desc').value.trim(), category: 'misc' }),
+        });
+        if (!res.ok) throw new Error(await readErr(res));
+        renderKnaveFinalizeStep();
+        showStep(6);
+      } catch (e) { errBox('#kn-item-error', e.message); }
+    }
+
+    function renderKnaveFinalizeStep() {
+      $('#join-step-6').innerHTML = `
+        <h3 style="font-size:0.85rem;margin-bottom:4px">Enter the World</h3>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px">Finalize your Knave-like character.</p>
+        <button class="btn btn-primary" id="btn-knave-finalize" style="width:100%">Enter Game →</button>
+        <div class="error-msg hidden" id="kn-final-error"></div>`;
+      $('#btn-knave-finalize').addEventListener('click', async () => {
+        try {
+          const res = await fetch(`/api/wizard/${joinedCharacterId}/knave/finalize`, { method: 'POST' });
+          if (!res.ok) throw new Error(await readErr(res));
+          window.location.href = `/player?code=${joinedSessionCode}`;
+        } catch (e) { errBox('#kn-final-error', e.message); }
+      });
+    }
+
+    $('#btn-join-next-2')  ?.addEventListener('click', async () => {
+      if (joinRulesSystem === 'knave_like') {
+        try { await runKnaveStep2(); } catch (e) { errBox('#join-error', e.message); }
+        return;
+      }
+      showStep(3);
+    });
     $('#btn-join-back-2')  ?.addEventListener('click', () => showStep(1));
     $('#btn-join-back-3')  ?.addEventListener('click', () => showStep(2));
 

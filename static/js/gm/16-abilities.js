@@ -81,6 +81,12 @@ function renderGmAbilities() {
     const usesChip   = a.max_uses
       ? `<span title="Max uses per grant" style="font-size:0.62rem;color:var(--accent-green);font-weight:600">⚡ ${a.max_uses}</span>`
       : '';
+    const policyChip = a.usage_policy?.limit_type
+      ? `<span title="Usage policy" style="font-size:0.62rem;color:var(--accent);font-weight:600">⏱ ${a.usage_policy.limit_type}</span>`
+      : '';
+    const knaveChip  = a.knave_kind
+      ? `<span style="font-size:0.62rem;padding:1px 6px;border-radius:8px;background:rgba(96,165,250,0.15);color:#93c5fd;font-weight:700">${a.knave_kind}</span>`
+      : '';
     const condChip   = a.is_conditional
       ? `<span title="${(a.conditional_text || 'GM discretion').replace(/"/g,'&quot;')}" style="font-size:0.62rem;color:var(--accent);font-style:italic;cursor:help">※ Cond</span>`
       : '';
@@ -91,8 +97,10 @@ function renderGmAbilities() {
           <span style="font-size:1.1rem">${a.icon||'⚡'}</span>
           <span style="font-weight:700;font-size:0.85rem">${a.name}</span>
           ${rarityChip}
+          ${knaveChip}
           ${poolChip}
           ${usesChip}
+          ${policyChip}
           ${condChip}
           <span style="font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--bg-surface-2);border:1px solid var(--border)">${typeBadge}</span>
           ${a.mana_cost ? `<span style="font-size:0.65rem;color:#60a5fa;font-weight:600">🔮 ${a.mana_cost}</span>` : ''}
@@ -278,6 +286,29 @@ async function showAbilityEditor(existing = null) {
         </label>
         <input id="ab-conditional-text" type="text" placeholder="When condition X is met…" value="${(d.conditional_text||'').replace(/"/g,'&quot;')}"
                style="flex:1;font-size:0.78rem;display:${d.is_conditional?'':'none'}">
+      </div>
+      <div data-rules-only="knave_like" style="display:${rulesSystem==='knave_like'?'':'none'};gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px">Knave Kind
+          <select id="ab-knave-kind" style="font-size:0.78rem">
+            ${['','technique','spell','trait','reaction','ritual'].map(k => `<option value="${k}" ${k===(d.knave_kind||'')?'selected':''}>${k || '—'}</option>`).join('')}
+          </select>
+        </label>
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px">Automation
+          <select id="ab-automation" style="font-size:0.78rem">
+            ${['full','partial','narrative'].map(k => `<option value="${k}" ${k===(d.automation_level||'full')?'selected':''}>${k}</option>`).join('')}
+          </select>
+        </label>
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px">Usage
+          <select id="ab-usage-type" style="font-size:0.78rem">
+            ${['none','per_turn','cooldown','per_rest','per_day','charges','duration'].map(k => `<option value="${k}" ${k===(d.usage_policy?.limit_type||'none')?'selected':''}>${k}</option>`).join('')}
+          </select>
+        </label>
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px">Uses / Charges
+          <input id="ab-usage-uses" type="number" min="0" value="${d.usage_policy?.uses ?? ''}" placeholder="—" style="width:74px;font-size:0.78rem">
+        </label>
+        <label style="font-size:0.72rem;display:flex;flex-direction:column;gap:2px">Duration
+          <input id="ab-usage-duration" type="number" min="0" value="${d.usage_policy?.duration_turns ?? ''}" placeholder="turns" style="width:74px;font-size:0.78rem">
+        </label>
       </div>
     </fieldset>
 
@@ -596,6 +627,19 @@ async function showAbilityEditor(existing = null) {
       is_passive: (overlay.querySelector('[name="ab-type"]:checked')?.value || 'active') === 'passive',
       passive_effect: passiveBonuses.length ? { bonuses: passiveBonuses } : null,
       effect: { effects: editorEffects },
+      usage_policy: (() => {
+        const limit_type = overlay.querySelector('#ab-usage-type')?.value || 'none';
+        if (limit_type === 'none') return null;
+        const uses = parseInt(overlay.querySelector('#ab-usage-uses')?.value || '');
+        const duration = parseInt(overlay.querySelector('#ab-usage-duration')?.value || '');
+        return {
+          limit_type,
+          uses: isNaN(uses) ? null : uses,
+          duration_turns: isNaN(duration) ? null : duration,
+        };
+      })(),
+      automation_level: overlay.querySelector('#ab-automation')?.value || 'full',
+      knave_kind: overlay.querySelector('#ab-knave-kind')?.value || null,
       rarity: overlay.querySelector('#ab-rarity').value || 'common',
       is_in_starting_pool: overlay.querySelector('#ab-starting-pool').checked,
       max_uses: (() => {

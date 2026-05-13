@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class SessionCreate(BaseModel):
     name: str = "New Session"
     code: str | None = None
+    rules_system: str = "legacy"
 
 
 class SessionJoin(BaseModel):
@@ -27,6 +28,7 @@ class SessionOut(BaseModel):
     turn_number: int
     player_count: int
     map_locked_for_players: bool = False
+    rules_system: str = "legacy"
 
 
 class SessionCreated(BaseModel):
